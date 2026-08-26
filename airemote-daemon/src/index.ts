@@ -1,0 +1,99 @@
+#!/usr/bin/env node
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseCliArgs, printHelp, VERSION, type CliOptions } from './cli.js';
+import { loadConfig, type Config } from './config.js';
+import type { AppContext } from './context.js';
+import { log } from './log.js';
+import { listLocalAddresses } from './network.js';
+import { PermissionManager } from './permissions.js';
+import { RunNotifier } from './run-notifier.js';
+import { createRegistry } from './runtimes/registry.js';
+import { startServer } from './server.js';
+
+function printConnectInfo(config: Config): void {
+  const protocol = config.tls ? 'https' : 'http';
+  const port = config.port;
+  const lan = listLocalAddresses();
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(config.host);
+
+  if (loopback) {
+    log.warn(`bound to ${config.host} — remote clients on the LAN cannot reach it.`);
+    log.warn('to accept LAN connections, start with: AIREMOTE_HOST=0.0.0.0');
+    if (lan.length > 0) {
+      log.info(`your LAN address(es): ${lan.map((a) => `${protocol}://${a}:${port}`).join(', ')}`);
+    }
+  } else if (lan.length > 0) {
+    log.info('connect from another device using one of:');
+    for (const addr of lan) log.info(`  ${protocol}://${addr}:${port}`);
+  } else {
+    log.info(`listening on ${protocol}://${config.host}:${port} (no LAN IPv4 detected)`);
+  }
+}
+
+async function main(): Promise<void> {
+  let cli: CliOptions;
+  try {
+    cli = parseCliArgs(process.argv.slice(2));
+  } catch (err) {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n\n${printHelp()}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  if (cli.help) {
+    process.stdout.write(printHelp());
+    return;
+  }
+  if (cli.version) {
+    process.stdout.write(`airemote ${VERSION}\n`);
+    return;
+  }
+
+  const config = loadConfig(process.env, {
+    host: cli.host,
+    port: cli.port,
+    workspace: cli.workspace,
+    dataDir: cli.dataDir,
+    token: cli.token,
+    permissionMode: cli.permissionMode,
+  });
+  // Lazy-import the DB so `--help` / `--version` don't load node:sqlite
+  // (and don't print Node's experimental-sqlite warning on stderr).
+  const { Db } = await import('./db.js');
+  const db = new Db(path.join(config.dataDir, 'airemote.sqlite'));
+  const registry = createRegistry();
+
+  log.info('airemote daemon starting');
+  log.info(`data dir: ${config.dataDir}`);
+  log.info(`workspace: ${config.workspace}`);
+
+  const claude = await registry.detect('claude', process.env);
+  if (claude?.available) {
+    const authState = claude.authed === true ? 'authenticated' : claude.authed === false ? 'NOT authenticated' : 'auth unknown';
+    log.info(`claude: v${claude.version ?? '?'} (${authState})`);
+    log.info(`claude capabilities: ${JSON.stringify(claude.capabilities)}`);
+  } else {
+    log.warn(`claude runtime NOT available: ${claude?.error ?? 'not found'}`);
+  }
+
+  const ctx: AppContext = {
+    config,
+    db,
+    registry,
+    permissions: new PermissionManager(),
+    notifier: new RunNotifier(),
+    hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
+  };
+
+  startServer(ctx);
+  printConnectInfo(config);
+
+  log.info(`auth token: ${config.token}`);
+  log.info(`  (${config.tokenGenerated ? 'generated and persisted at' : 'loaded from'} ${config.tokenPath})`);
+  log.info(`permission mode: ${config.permissionMode}`);
+}
+
+main().catch((err) => {
+  log.error('fatal', err);
+  process.exit(1);
+});
