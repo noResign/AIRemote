@@ -1,8 +1,19 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { RunRow, SessionRow } from '../db.js';
+import { listActiveRuns } from '../runtimes/engine.js';
 
-function sessionDto(s: SessionRow) {
+/** Map each in-flight run's session id → run id, for the running indicator. */
+function runningRunBySession(ctx: AppContext): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const active of listActiveRuns()) {
+    const row = ctx.db.getRun(active.id);
+    if (row) map.set(row.session_id, row.id);
+  }
+  return map;
+}
+
+function sessionDto(s: SessionRow, runningRunId: string | null = null) {
   return {
     id: s.id,
     runtime: s.runtime,
@@ -10,6 +21,8 @@ function sessionDto(s: SessionRow) {
     title: s.title,
     createdAt: s.created_at,
     lastActiveAt: s.last_active_at,
+    running: runningRunId !== null,
+    runningRunId,
   };
 }
 
@@ -30,7 +43,9 @@ function runDto(r: RunRow) {
 
 export function registerSessionRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/sessions', (_req, res) => {
-    res.json({ sessions: ctx.db.listSessions().map(sessionDto) });
+    const running = runningRunBySession(ctx);
+    const sessions = ctx.db.listSessions().map((s) => sessionDto(s, running.get(s.id) ?? null));
+    res.json({ sessions });
   });
 
   app.get('/api/sessions/:id', (req, res) => {
@@ -39,10 +54,50 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
+    const running = runningRunBySession(ctx);
     res.json({
-      session: sessionDto(s),
+      session: sessionDto(s, running.get(s.id) ?? null),
       messages: ctx.db.listMessages(s.id),
       runs: ctx.db.listRuns(s.id).map(runDto),
     });
+  });
+
+  // Rename a session.
+  app.patch('/api/sessions/:id', (req, res) => {
+    const s = ctx.db.getSession(req.params.id);
+    if (!s) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as { title?: string };
+    const title = typeof body.title === 'string' ? body.title.trim() : '';
+    if (!title) {
+      res.status(400).json({ error: 'title is required', code: 'bad_request' });
+      return;
+    }
+    ctx.db.setSessionTitle(s.id, title.slice(0, 200));
+    ctx.db.audit('rename_session', s.id);
+    const running = runningRunBySession(ctx);
+    const updated = ctx.db.getSession(s.id) as SessionRow;
+    res.json({ ok: true, session: sessionDto(updated, running.get(s.id) ?? null) });
+  });
+
+  // Delete a session, cancelling any in-flight run first so no child process is
+  // left orphaned.
+  app.delete('/api/sessions/:id', (req, res) => {
+    const s = ctx.db.getSession(req.params.id);
+    if (!s) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+    for (const active of listActiveRuns()) {
+      const row = ctx.db.getRun(active.id);
+      if (row && row.session_id === s.id) {
+        active.cancel('session deleted');
+      }
+    }
+    ctx.db.deleteSession(s.id);
+    ctx.db.audit('delete_session', s.id);
+    res.json({ ok: true, id: s.id });
   });
 }

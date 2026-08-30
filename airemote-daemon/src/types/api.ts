@@ -49,6 +49,10 @@ export interface SessionDto {
   title: string | null;
   createdAt: number;
   lastActiveAt: number;
+  /** Whether this session has a run in flight right now. */
+  running: boolean;
+  /** The id of the in-flight run, when `running` is true. */
+  runningRunId: string | null;
 }
 
 export interface RunDto {

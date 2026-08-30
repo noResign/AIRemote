@@ -159,9 +159,22 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET claude_session_id = ? WHERE id = ?`).run(claudeSessionId, id);
   }
 
+  /** Delete a session and all its messages, runs and events. */
+  deleteSession(id: string): void {
+    const runs = this.listRuns(id);
+    for (const run of runs) {
+      this.db.prepare(`DELETE FROM events WHERE run_id = ?`).run(run.id);
+    }
+    this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM sessions WHERE id = ?`).run(id);
+  }
+
   // ---- messages ----
 
   addMessage(sessionId: string, role: 'user' | 'assistant', content: string): void {
+    // Guard against a run that finishes after its session was deleted.
+    if (!this.getSession(sessionId)) return;
     this.db
       .prepare(`INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)`)
       .run(sessionId, role, content, Date.now());

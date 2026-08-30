@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
-import type { NormalizedEvent } from '../types/api.js';
+import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import { startRun } from '../runtimes/engine.js';
 import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
+import { sseHeaders, writeSseFrame } from '../sse.js';
+import { titleFromPrompt } from '../session-title.js';
+import { resolveAllowedCwd } from '../workspace.js';
 
 interface ChatBody {
   sessionId?: string;
@@ -13,6 +16,8 @@ interface ChatBody {
   prompt?: string;
   model?: string;
   runtime?: string;
+  /** Working directory for a NEW session; must be within the allowed dirs. */
+  cwd?: string;
 }
 
 /**
@@ -52,16 +57,34 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
+    // Working directory for a NEW session. Default to the primary workspace;
+    // an explicit `cwd` must be inside the allowed-directory whitelist.
+    let newCwd = ctx.config.workspace;
+    if (typeof body.cwd === 'string' && body.cwd.trim() !== '') {
+      const allowed = resolveAllowedCwd(body.cwd, ctx.config.allowedDirs);
+      if (!allowed) {
+        res.status(400).json({ error: `cwd not allowed: ${body.cwd}`, code: 'cwd_not_allowed' });
+        return;
+      }
+      newCwd = allowed;
+    }
+
     // Import an existing Claude Code session (e.g. started in the desktop TUI)
     // by its claude session id; its cwd is needed for --resume to find it.
     let importedCwd: string | undefined;
+    let importedTitle: string | null | undefined;
     if (!session && body.claudeSessionId) {
       const found = listClaudeSessions().find((s) => s.sessionId === body.claudeSessionId);
       if (!found) {
         res.status(404).json({ error: 'claude session not found', code: 'claude_session_not_found' });
         return;
       }
+      if (!resolveAllowedCwd(found.cwd, ctx.config.allowedDirs)) {
+        res.status(400).json({ error: `claude session cwd not allowed: ${found.cwd}`, code: 'cwd_not_allowed' });
+        return;
+      }
       importedCwd = found.cwd;
+      importedTitle = found.summary || null;
     }
 
     let resumeSessionId: string | undefined;
@@ -70,10 +93,10 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       const id = randomUUID();
       if (body.claudeSessionId && importedCwd) {
         resumeSessionId = body.claudeSessionId;
-        session = ctx.db.createSession({ id, runtime, cwd: importedCwd, claude_session_id: body.claudeSessionId });
+        session = ctx.db.createSession({ id, runtime, cwd: importedCwd, claude_session_id: body.claudeSessionId, title: importedTitle ?? null });
       } else {
         newSessionId = randomUUID();
-        session = ctx.db.createSession({ id, runtime, cwd: ctx.config.workspace, claude_session_id: newSessionId });
+        session = ctx.db.createSession({ id, runtime, cwd: newCwd, claude_session_id: newSessionId, title: titleFromPrompt(prompt) });
       }
     } else if (!session.claude_session_id) {
       newSessionId = randomUUID();
@@ -88,12 +111,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const runId = randomUUID();
     ctx.db.createRun({ id: runId, sessionId: session.id, runtime, model: model ?? null, prompt, status: 'running' });
 
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    });
+    res.writeHead(200, sseHeaders());
     res.write(': connected\n\n');
 
     let seq = 0;
@@ -108,9 +126,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       } catch (err) {
         log.warn('failed to persist event', err);
       }
-      if (res.writableEnded) return;
-      res.write(`id: ${seq}\n`);
-      res.write(`data: ${JSON.stringify({ runId, seq, event: ev })}\n\n`);
+      const frame: SseFrame = { runId, seq, event: ev };
+      writeSseFrame(res, frame);
+      ctx.notifier.broadcast(runId, frame);
     };
 
     send({ type: 'status', label: 'starting', runtime, sessionId: session.id });
@@ -147,10 +165,11 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const cleanup = (): void => clearInterval(heartbeat);
     res.on('close', () => {
       cleanup();
-      // A client that disconnects mid-stream takes the run down with it.
+      // The daemon keeps the run alive so the phone can reconnect and resume
+      // watching via `GET /api/runs/:id/stream`. Stop it explicitly with
+      // `POST /api/runs/:id/cancel`.
       if (!finished) {
-        log.info(`connection closed, cancelling run ${runId}`);
-        active.cancel('client disconnected');
+        log.info(`chat stream closed; run ${runId} keeps running`);
       }
     });
     res.on('finish', cleanup);

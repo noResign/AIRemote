@@ -77,4 +77,24 @@ describe('RunNotifier', () => {
     n.emit('run-1', { type: 'status', label: 'z' });
     expect(got).toEqual(['status']);
   });
+
+  it('broadcasts frames to every attached listener and honors unsubscribe', () => {
+    const n = new RunNotifier();
+    const a: number[] = [];
+    const b: number[] = [];
+
+    const unsubA = n.subscribe('run-1', (frame) => a.push(frame.seq));
+    n.subscribe('run-1', (frame) => b.push(frame.seq));
+
+    n.broadcast('run-1', { runId: 'run-1', seq: 1, event: { type: 'status', label: 'x' } });
+    n.broadcast('run-1', { runId: 'run-1', seq: 2, event: { type: 'status', label: 'y' } });
+    expect(a).toEqual([1, 2]);
+    expect(b).toEqual([1, 2]);
+
+    unsubA();
+    n.broadcast('run-1', { runId: 'run-1', seq: 3, event: { type: 'status', label: 'z' } });
+    expect(a).toEqual([1, 2]);
+    expect(b).toEqual([1, 2, 3]);
+    expect(n.subscriberCount('run-1')).toBe(1);
+  });
 });

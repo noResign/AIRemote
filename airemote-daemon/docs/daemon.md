@@ -85,11 +85,17 @@ daemon 数据根默认 `~/.airemote`（`--data-dir` 可改）；`airemote.sqlite
 | `GET /api/health` | 否 | 存活 + 版本 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力） |
 | `GET /api/agents` | 是 | 已注册运行时列表 |
-| `GET /api/claude-sessions` | 是 | 列出**当前 workspace** 下的 Claude 会话 |
+| `GET /api/claude-sessions` | 是 | 列出**allowedDirs 内**的 Claude 会话（可导入续接） |
+| `GET /api/workspaces` | 是 | 允许的工作目录列表：`{workspaces, default}` |
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流 |
+| `GET /api/runs` | 是 | 当前**运行中**的 run 列表（手机「几个 agent 在跑」切换用） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
-| `GET /api/sessions` | 是 | airemote 会话列表 |
+| `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标，返回 `{runId, events}` |
+| `GET /api/runs/:id/stream` | 是 | 实时流：先回放 `?after=<seq>` 之后的事件，再续传直播（重连订阅） |
+| `GET /api/sessions` | 是 | 会话列表（含 `running`/`runningRunId` 运行指示） |
 | `GET /api/sessions/:id` | 是 | 会话 + 消息 + 运行 |
+| `PATCH /api/sessions/:id` | 是 | 重命名（body `{title}`） |
+| `DELETE /api/sessions/:id` | 是 | 删除会话（先取消进行中的 run，级联删消息/run/事件） |
 | `POST /api/permissions/:id/decision` | 是 | 工具审批决定（allow/deny/allow_all） |
 | `POST /api/internal/permissions/create` | 是 | 内部：hook 注册审批请求 |
 | `GET /api/internal/permissions/:id/status` | 是 | 内部：hook 轮询决定 |
@@ -102,7 +108,14 @@ status | text_delta | thinking_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request
 ```
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime?, cwd? }`。
+`cwd` 仅对**新会话**生效，必须是允许目录（`--workspace` + `--allowed-dir`）本身或其子目录，
+否则返回 400 `cwd_not_allowed`；续接已有会话沿用会话自身的 cwd。
+
+**断线续接**：`/api/chat` 的客户端断开后，run **继续在 daemon 上运行**（不再因断线取消）；
+手机重连后用 `GET /api/runs` 找到运行中的 run，再 `GET /api/runs/:id/stream?after=<seq>` 先回放
+错过的帧、再续上直播。显式停止用 `POST /api/runs/:id/cancel`。事件已按 `(run_id, seq)` 持久化，
+`/events` 与 `/stream` 复用同一套 `SseFrame` 形状。
 
 ## 7. 权限审批
 
@@ -129,7 +142,7 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
   会话 id 就是文件名；`claude --resume <id>` 续接。
 - daemon 自己生成 `--session-id`，续接用 `--resume`，并把 `claude_session_id` 存进
   `sessions` 表。
-- `GET /api/claude-sessions` 枚举**当前 workspace** 下的会话，客户端可「导入」一个
+- `GET /api/claude-sessions` 枚举**允许目录内**的会话，客户端可「导入」一个
   TUI 会话继续（`POST /api/chat` 带 `claudeSessionId`）。
 - 双向互通：手机会话 → 电脑 `claude --resume <id>`；电脑 TUI 会话 → 手机导入继续。
 
@@ -138,7 +151,9 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
 - 认证：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
 - 传输：默认 HTTP 绑 `0.0.0.0`（局域网）；生产建议 `AIREMOTE_TLS_CERT/KEY` 或反代/SSH 隧道。
 - 权限：acceptEdits + Bash 远程审批 + 只读白名单 + 默认拒绝（见 §7）。
-- 工作目录：`--workspace` 即信任边界，agent 能读写它看到的一切。
+- 工作目录：`--workspace`（主目录）+ `--allowed-dir`（可重复，或用 `AIREMOTE_ALLOWED_DIRS`，按 `path.delimiter` 分隔）
+  构成**允许目录白名单**；`/api/chat` 的 `cwd` 必须落在白名单内（目录本身或其子目录），否则 400
+  `cwd_not_allowed`（deny-by-default，见 `workspace.ts`）。
 - 审计：chat / cancel / permission_decision 记入 `audit_log`。
 - CORS：`Access-Control-Allow-Origin: *` 仅为让浏览器网页客户端可用；真正边界是 token。
 

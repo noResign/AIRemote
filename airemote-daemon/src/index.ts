@@ -53,6 +53,7 @@ async function main(): Promise<void> {
     host: cli.host,
     port: cli.port,
     workspace: cli.workspace,
+    allowedDirs: cli.allowedDirs,
     dataDir: cli.dataDir,
     token: cli.token,
     permissionMode: cli.permissionMode,

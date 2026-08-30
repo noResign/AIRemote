@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import { listClaudeSessions } from '../claude-sessions.js';
+import { resolveAllowedCwd } from '../workspace.js';
 
 /**
  * Expose the machine's Claude Code sessions (including ones started in the
@@ -8,8 +9,11 @@ import { listClaudeSessions } from '../claude-sessions.js';
  */
 export function registerClaudeSessionRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/claude-sessions', (_req, res) => {
-    // Only expose the daemon workspace's sessions, not every Claude session on
-    // the machine.
-    res.json({ sessions: listClaudeSessions(undefined, ctx.config.workspace) });
+    // Only expose sessions whose cwd is inside an allowed working directory,
+    // not every Claude session on the machine.
+    const sessions = listClaudeSessions().filter(
+      (s) => resolveAllowedCwd(s.cwd, ctx.config.allowedDirs) !== null,
+    );
+    res.json({ sessions });
   });
 }
