@@ -18,7 +18,7 @@ sealed class NormalizedEvent {
         val model: String? = null,
         val sessionId: String? = null,
         val runtime: String? = null,
-        val ttftMs: Long? = null,
+        val ttftMs: Double? = null,
         val terminal: Boolean? = null,
     ) : NormalizedEvent()
 
@@ -51,7 +51,7 @@ sealed class NormalizedEvent {
     data class Usage(
         val usage: JsonElement? = null,
         val costUsd: Double? = null,
-        val durationMs: Long? = null,
+        val durationMs: Double? = null,
         val stopReason: String? = null,
         val isError: Boolean? = null,
     ) : NormalizedEvent()
@@ -72,35 +72,3 @@ sealed class NormalizedEvent {
         val toolInput: JsonElement? = null,
     ) : NormalizedEvent()
 }
-
-@Serializable
-data class SseFrame(
-    val runId: String,
-    val seq: Long,
-    val event: NormalizedEvent,
-)
-
-/** `GET /api/runs/:id/events` 回放响应。 */
-@Serializable
-data class EventsResponse(
-    val runId: String,
-    val events: List<SseFrame> = emptyList(),
-)
-
-/** `POST /api/chat` 请求体。 */
-@Serializable
-data class ChatRequest(
-    val prompt: String,
-    val sessionId: String? = null,
-    val claudeSessionId: String? = null,
-    val model: String? = null,
-    val runtime: String? = null,
-    val cwd: String? = null,
-)
-
-/** `POST /api/permissions/:id/decision` 请求体。 */
-@Serializable
-data class PermissionDecisionRequest(
-    val decision: String,
-    val reason: String? = null,
-)

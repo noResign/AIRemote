@@ -5,6 +5,7 @@ import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.sse.AiremoteSse
 import com.airemote.airemote.data.sse.ChatStreamEvent
 import com.airemote.airemote.model.event.ChatRequest
+import com.airemote.airemote.model.event.EventsResponse
 import com.airemote.airemote.model.event.PermissionDecisionRequest
 import com.airemote.airemote.model.network.NetworkResult
 import com.airemote.airemote.model.network.safeApiCall
@@ -51,6 +52,11 @@ class ChatRepository(
     suspend fun sessionDetail(id: String): NetworkResult<SessionDetailResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return safeApiCall { api.session(id) }
+    }
+
+    suspend fun runEvents(runId: String): NetworkResult<EventsResponse> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return safeApiCall { api.runEvents(runId) }
     }
 
     suspend fun decidePermission(permissionId: String, decision: String, reason: String? = null): NetworkResult<Unit> {

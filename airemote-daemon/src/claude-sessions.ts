@@ -112,7 +112,9 @@ export function listClaudeSessions(claudeHome?: string, filterCwd?: string): Cla
         cwd,
         summary: meta.summary,
         messageCount: meta.messageCount,
-        lastActiveAt: stat.mtimeMs,
+        // Round to integer ms — sub-ms precision is meaningless for "how long ago"
+        // display/sorting, and keeps the wire type an integer for clients.
+        lastActiveAt: Math.round(stat.mtimeMs),
       });
     }
   }

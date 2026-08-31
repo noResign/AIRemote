@@ -187,6 +187,7 @@ private fun AssistantBlock(message: ChatUiMessage.Assistant) {
         if (message.thinking.isNotBlank()) {
             ThinkingBlock(message.thinking)
         }
+        message.tools.forEach { ToolCardView(it) }
         if (message.text.isNotBlank()) {
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -200,8 +201,6 @@ private fun AssistantBlock(message: ChatUiMessage.Assistant) {
                 )
             }
         }
-        message.tools.forEach { ToolCardView(it) }
-        message.usage?.let { UsageLine(it) }
         if (message.error != null) {
             Text(
                 text = message.error,
@@ -216,6 +215,7 @@ private fun AssistantBlock(message: ChatUiMessage.Assistant) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        message.usage?.let { UsageLine(it) }
     }
 }
 

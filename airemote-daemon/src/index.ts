@@ -11,6 +11,23 @@ import { RunNotifier } from './run-notifier.js';
 import { createRegistry } from './runtimes/registry.js';
 import { startServer } from './server.js';
 
+/**
+ * Load a `.env` file into `process.env` (never overrides an already-set env
+ * var). Defaults to `./.env`; pass `--env-file` or set `AIREMOTE_ENV_FILE` to
+ * override. Missing file is fine; a malformed file only warns.
+ */
+function loadDotEnvFile(envFile?: string): void {
+  const file = envFile ?? process.env.AIREMOTE_ENV_FILE ?? path.join(process.cwd(), '.env');
+  try {
+    process.loadEnvFile(file);
+    log.info(`loaded config from ${file}`);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return;
+    log.warn(`failed to load ${file}: ${(err as Error).message}`);
+  }
+}
+
 function printConnectInfo(config: Config): void {
   const protocol = config.tls ? 'https' : 'http';
   const port = config.port;
@@ -48,6 +65,8 @@ async function main(): Promise<void> {
     process.stdout.write(`airemote ${VERSION}\n`);
     return;
   }
+
+  loadDotEnvFile(cli.envFile);
 
   const config = loadConfig(process.env, {
     host: cli.host,

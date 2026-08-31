@@ -20,6 +20,8 @@ export interface Config {
   tokenPath: string;
   tokenGenerated: boolean;
   permissionMode: string;
+  /** 空闲看门狗：run 多久无事件则自动取消（ms，0 = 禁用）。 */
+  runIdleTimeoutMs: number;
   tls: TlsConfig | null;
 }
 
@@ -51,6 +53,15 @@ function resolvePermissionMode(env: NodeJS.ProcessEnv): string {
   const allowed = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
   if (mode && allowed.has(mode)) return mode;
   return 'acceptEdits';
+}
+
+/** `AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`，默认 900（15 分钟）；0 = 禁用。 */
+function resolveRunIdleTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const raw = env.AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS?.trim();
+  if (!raw) return 15 * 60 * 1000;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) return 15 * 60 * 1000;
+  return seconds * 1000;
 }
 
 /** CLI flag values that take precedence over env vars. */
@@ -121,6 +132,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,
     permissionMode: overrides.permissionMode ?? resolvePermissionMode(env),
+    runIdleTimeoutMs: resolveRunIdleTimeoutMs(env),
     tls: resolveTls(env),
   };
 }

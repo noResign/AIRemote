@@ -88,4 +88,13 @@ describe('createClaudeStreamParser', () => {
       .join('');
     expect(text).toBe('full body');
   });
+
+  it('emits turn_end from the result frame (assistant stop_reason is null in recent Claude)', () => {
+    const events = parse([
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', stop_reason: 'end_turn', usage: {} }),
+    ]);
+    const turns = events.filter((e) => e.type === 'turn_end');
+    expect(turns).toHaveLength(1);
+    expect(turns[0]).toMatchObject({ type: 'turn_end', stopReason: 'end_turn' });
+  });
 });

@@ -11,8 +11,3 @@ data class ClaudeSessionDto(
     val messageCount: Int = 0,
     val lastActiveAt: Long = 0,
 )
-
-@Serializable
-data class ClaudeSessionsResponse(
-    val sessions: List<ClaudeSessionDto> = emptyList(),
-)

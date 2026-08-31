@@ -9,6 +9,7 @@ import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ToolCard
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.event.NormalizedEvent
+import com.airemote.airemote.model.event.SseFrame
 import com.airemote.airemote.model.network.NetworkResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -71,10 +72,7 @@ class ChatViewModel(
                     _sessionTitle.value = r.data.session.title
                     _sessionCwd.value = r.data.session.cwd
                     _sessionRuntime.value = r.data.session.runtime
-                    _messages.value = r.data.messages.map { m ->
-                        if (m.role == "user") ChatUiMessage.User(m.content)
-                        else ChatUiMessage.Assistant(text = m.content, done = true)
-                    }
+                    _messages.value = reconstructHistory(r.data.runs, r.data.session.runningRunId, r.data.messages)
                     if (r.data.session.running && r.data.session.runningRunId != null) {
                         attach(r.data.session.runningRunId)
                     }
@@ -82,6 +80,48 @@ class ChatViewModel(
                 is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
             }
         }
+    }
+
+    /**
+     * 用「run + 逐 run 回放 events」重建完整历史（含思考块 / 工具卡 / 用量），
+     * 而不是只看聚合后的 messages。正在运行的 run 留空、交给 attach() 续流。
+     */
+    private suspend fun reconstructHistory(
+        runs: List<com.airemote.airemote.model.session.RunDto>,
+        runningRunId: String?,
+        messages: List<com.airemote.airemote.model.session.MessageDto>,
+    ): List<ChatUiMessage> {
+        val list = mutableListOf<ChatUiMessage>()
+        for (run in runs) {
+            list += ChatUiMessage.User(run.prompt)
+            if (run.id == runningRunId) {
+                // 运行中：attach() 会追加并续流
+                list += ChatUiMessage.Assistant()
+            } else {
+                when (val ev = repository.runEvents(run.id)) {
+                    is NetworkResult.Success -> list += buildAssistantFromEvents(ev.data.events)
+                    is NetworkResult.Error -> list += ChatUiMessage.Assistant(done = true)
+                }
+            }
+        }
+        // 兜底：没有任何 run（历史遗留数据）时，退回聚合 messages
+        if (list.isEmpty() && messages.isNotEmpty()) {
+            list += messages.map { m ->
+                if (m.role == "user") ChatUiMessage.User(m.content)
+                else ChatUiMessage.Assistant(text = m.content, done = true)
+            }
+        }
+        return list
+    }
+
+    private fun buildAssistantFromEvents(events: List<SseFrame>): ChatUiMessage.Assistant {
+        var a = ChatUiMessage.Assistant()
+        for (frame in events) {
+            val e = frame.event
+            if (e is NormalizedEvent.PermissionRequest) continue // 审批请求是瞬态，不进历史
+            a = updateAssistant(a, e)
+        }
+        return if (a.done) a else a.copy(done = true)
     }
 
     fun send(text: String) {

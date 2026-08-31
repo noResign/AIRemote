@@ -57,6 +57,15 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
+    // Resuming an existing session: its STORED cwd must still be within the
+    // CURRENT allowed-directory whitelist. The daemon may have restarted with a
+    // different/narrower workspace since the session was created, so this is a
+    // fresh security check on every resume, not just at creation.
+    if (session && !resolveAllowedCwd(session.cwd, ctx.config.allowedDirs)) {
+      res.status(400).json({ error: `session cwd not allowed: ${session.cwd}`, code: 'cwd_not_allowed' });
+      return;
+    }
+
     // Working directory for a NEW session. Default to the primary workspace;
     // an explicit `cwd` must be inside the allowed-directory whitelist.
     let newCwd = ctx.config.workspace;
@@ -152,6 +161,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         daemonUrl,
         token: ctx.config.token,
       },
+      idleTimeoutMs: ctx.config.runIdleTimeoutMs,
       onEvent: send,
     });
 

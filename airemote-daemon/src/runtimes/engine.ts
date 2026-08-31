@@ -24,6 +24,8 @@ export interface RunRequest {
   env: NodeJS.ProcessEnv;
   /** Wiring for the PreToolUse permission hook (ignored when unsupported). */
   permissionHook?: { hookPath: string; daemonUrl: string; token: string };
+  /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
+  idleTimeoutMs?: number;
   onEvent: (ev: NormalizedEvent) => void;
 }
 
@@ -56,6 +58,8 @@ export function startRun(req: RunRequest): ActiveRun {
   let cancelReason: string | undefined;
   let stdinClosed = false;
   let stderrTail = '';
+  let lastActivity = Date.now();
+  let watchdog: ReturnType<typeof setInterval> | null = null;
 
   const closeStdin = (): void => {
     if (stdinClosed || !child) return;
@@ -107,6 +111,7 @@ export function startRun(req: RunRequest): ActiveRun {
 
   const args = req.adapter.buildArgs(ctx);
   const parser: StreamParser = req.adapter.createParser((ev) => {
+    lastActivity = Date.now();
     req.onEvent(ev);
     // A clean turn boundary (non tool_use stop_reason) means the runtime is
     // done with this stdin session; close it so the child can exit.
@@ -181,8 +186,26 @@ export function startRun(req: RunRequest): ActiveRun {
     }
   };
 
+  // Idle watchdog: a run that produces no events for `idleTimeoutMs` is almost
+  // certainly stuck (e.g. the child never exited), so cancel it instead of
+  // leaking the process forever.
+  const idleTimeoutMs = req.idleTimeoutMs ?? 0;
+  if (idleTimeoutMs > 0) {
+    const intervalMs = Math.max(1000, Math.min(idleTimeoutMs / 2, 30_000));
+    watchdog = setInterval(() => {
+      if (Date.now() - lastActivity > idleTimeoutMs) {
+        log.warn(`run ${req.id} idle for ${idleTimeoutMs}ms, cancelling`);
+        cancel('idle timeout');
+      }
+    }, intervalMs);
+    watchdog.unref();
+  }
+
   const run: ActiveRun = { id: req.id, promise, cancel, writeUserMessage };
   activeRuns.set(req.id, run);
-  void promise.finally(() => activeRuns.delete(req.id));
+  void promise.finally(() => {
+    activeRuns.delete(req.id);
+    if (watchdog) clearInterval(watchdog);
+  });
   return run;
 }

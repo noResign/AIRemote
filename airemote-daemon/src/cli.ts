@@ -10,6 +10,8 @@ export interface CliOptions {
   dataDir?: string;
   token?: string;
   permissionMode?: string;
+  /** Path to a .env file (default: ./.env when present). */
+  envFile?: string;
   help: boolean;
   version: boolean;
 }
@@ -21,20 +23,21 @@ Usage:
   airemote [options]
 
 Options:
-  --host <host>             Bind address. Default 127.0.0.1 (set 0.0.0.0 for LAN)
+  --host <host>             Bind address. Default 0.0.0.0 (all interfaces; 127.0.0.1 = localhost only)
   --port <port>             Port. Default 4780
   --workspace <path>        Primary working dir (default: current directory)
   --allowed-dir <path>      Extra allowed working dir; repeatable
   --data-dir <path>         Data dir for SQLite + token (default ~/.airemote)
   --token <token>           Bearer auth token (default: env AIREMOTE_TOKEN or generated)
   --permission-mode <mode>  Claude Code permission mode (default acceptEdits)
+  --env-file <path>         Load config from a .env file (default: ./.env if present)
   -h, --help                Show this help
   -v, --version             Show version
 
-Environment variables (flags take precedence):
+Environment variables (flags take precedence; may also be set in a .env file):
   AIREMOTE_HOST, AIREMOTE_PORT, AIREMOTE_WORKSPACE, AIREMOTE_ALLOWED_DIRS,
   AIREMOTE_DATA_DIR, AIREMOTE_TOKEN, AIREMOTE_PERMISSION_MODE,
-  AIREMOTE_TLS_CERT, AIREMOTE_TLS_KEY
+  AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS, AIREMOTE_TLS_CERT, AIREMOTE_TLS_KEY
 `;
 }
 
@@ -54,6 +57,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
       'data-dir': { type: 'string' },
       token: { type: 'string' },
       'permission-mode': { type: 'string' },
+      'env-file': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
@@ -75,6 +79,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     dataDir: typeof values['data-dir'] === 'string' ? values['data-dir'] : undefined,
     token: typeof values.token === 'string' ? values.token : undefined,
     permissionMode: typeof values['permission-mode'] === 'string' ? values['permission-mode'] : undefined,
+    envFile: typeof values['env-file'] === 'string' ? values['env-file'] : undefined,
     help: values.help === true,
     version: values.version === true,
   };

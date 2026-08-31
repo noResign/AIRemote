@@ -218,6 +218,13 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         stopReason,
         ...(isError ? { isError: true } : {}),
       });
+      // `result` is the authoritative "this turn actually finished" signal (the
+      // `assistant` frame's stop_reason is null in recent Claude versions).
+      // Emit turn_end so the engine closes stdin and the child exits; otherwise
+      // the run hangs with stdin open and the client never sees a terminal event.
+      if (stopReason && stopReason !== 'tool_use') {
+        onEvent({ type: 'turn_end', stopReason });
+      }
       if (isError) {
         onEvent({
           type: 'error',

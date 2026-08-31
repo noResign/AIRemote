@@ -9,8 +9,3 @@ data class AgentDto(
     val name: String = "",
     val bin: String = "",
 )
-
-@Serializable
-data class AgentsResponse(
-    val agents: List<AgentDto> = emptyList(),
-)
