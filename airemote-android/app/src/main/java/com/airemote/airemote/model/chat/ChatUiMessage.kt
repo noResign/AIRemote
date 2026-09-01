@@ -5,9 +5,7 @@ sealed interface ChatUiMessage {
     data class User(val text: String) : ChatUiMessage
 
     data class Assistant(
-        val thinking: String = "",
-        val text: String = "",
-        val tools: List<ToolCard> = emptyList(),
+        val blocks: List<ContentBlock> = emptyList(),
         val usage: UsageInfo? = null,
         val error: String? = null,
         val done: Boolean = false,

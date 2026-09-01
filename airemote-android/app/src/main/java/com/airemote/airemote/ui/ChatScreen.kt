@@ -42,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,13 +51,15 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.model.chat.ChatUiMessage
-import com.airemote.airemote.model.chat.ToolCard
+import com.airemote.airemote.model.chat.ContentBlock
+import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.event.NormalizedEvent
 import com.airemote.airemote.viewmodel.ChatViewModel
@@ -77,9 +80,11 @@ fun ChatScreen(
     val title by viewModel.sessionTitle.collectAsState()
     val cwd by viewModel.sessionCwd.collectAsState()
     val runtime by viewModel.sessionRuntime.collectAsState()
+    val todos by viewModel.todos.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     var input by remember { mutableStateOf("") }
+    var todoExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(sessionId) { viewModel.load(sessionId) }
     LaunchedEffect(error) {
@@ -115,16 +120,26 @@ fun ChatScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            InputBar(
-                input = input,
-                streaming = streaming,
-                onInputChange = { input = it },
-                onSend = {
-                    viewModel.send(input)
-                    input = ""
-                },
-                onStop = viewModel::stop,
-            )
+            Column {
+                if (todos.isNotEmpty()) {
+                    TodoListPanel(
+                        todos = todos,
+                        running = streaming,
+                        expanded = todoExpanded,
+                        onToggle = { todoExpanded = !todoExpanded },
+                    )
+                }
+                InputBar(
+                    input = input,
+                    streaming = streaming,
+                    onInputChange = { input = it },
+                    onSend = {
+                        viewModel.send(input)
+                        input = ""
+                    },
+                    onStop = viewModel::stop,
+                )
+            }
         },
     ) { innerPadding ->
         MessageList(
@@ -144,18 +159,55 @@ fun ChatScreen(
 @Composable
 private fun MessageList(messages: List<ChatUiMessage>, modifier: Modifier = Modifier) {
     val listState = rememberLazyListState()
-    val lastTextLen = (messages.lastOrNull() as? ChatUiMessage.Assistant)?.text?.length ?: 0
-    LaunchedEffect(messages.size, lastTextLen) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    // 流式更新时只在底部跟随，否则会把用户的上滑动作抢回到底部
+    var autoScroll by remember { mutableStateOf(true) }
+
+    // reverseLayout 下 index 0 是底部（最新消息）；scrollOffset == 0 表示没往上滚。
+    // 相比「最后一个 item 是否可见」，这个判定对超过一屏的长消息也准确。
+    val atBottom by remember {
+        derivedStateOf {
+            listState.layoutInfo.totalItemsCount == 0 ||
+                (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0)
+        }
+    }
+
+    // 新消息（user + assistant 一起追加）→ 跳到底并恢复跟随
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.scrollToItem(0)
+            autoScroll = true
+        }
+    }
+
+    // 跟随状态跟随「是否在底部」：上滑即暂停，回到底部即恢复
+    LaunchedEffect(atBottom) {
+        autoScroll = atBottom
+    }
+
+    val lastContentLen = (messages.lastOrNull() as? ChatUiMessage.Assistant)?.blocks?.sumOf { block ->
+        when (block) {
+            is ContentBlock.Text -> block.text.length
+            is ContentBlock.Thinking -> block.text.length
+            is ContentBlock.ToolUse -> (block.result?.length ?: 0) + 1
+        }
+    } ?: 0
+    LaunchedEffect(lastContentLen) {
+        if (autoScroll && messages.isNotEmpty()) {
+            listState.scrollToItem(0)
+        }
     }
     LazyColumn(
         state = listState,
+        reverseLayout = true,
         modifier = modifier,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(messages) { message ->
-            when (message) {
+        items(
+            count = messages.size,
+            key = { index -> messages.size - 1 - index },
+        ) { index ->
+            when (val message = messages[messages.size - 1 - index]) {
                 is ChatUiMessage.User -> UserBubble(message.text)
                 is ChatUiMessage.Assistant -> AssistantBlock(message)
             }
@@ -184,21 +236,11 @@ private fun UserBubble(text: String) {
 @Composable
 private fun AssistantBlock(message: ChatUiMessage.Assistant) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (message.thinking.isNotBlank()) {
-            ThinkingBlock(message.thinking)
-        }
-        message.tools.forEach { ToolCardView(it) }
-        if (message.text.isNotBlank()) {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.widthIn(max = 320.dp),
-            ) {
-                Text(
-                    text = message.text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                )
+        message.blocks.forEach { block ->
+            when (block) {
+                is ContentBlock.Thinking -> ThinkingBlock(block.text)
+                is ContentBlock.Text -> TextBlock(block.text)
+                is ContentBlock.ToolUse -> ToolCardView(block)
             }
         }
         if (message.error != null) {
@@ -208,7 +250,7 @@ private fun AssistantBlock(message: ChatUiMessage.Assistant) {
                 color = MaterialTheme.colorScheme.error,
             )
         }
-        if (message.done && message.text.isBlank() && message.tools.isEmpty() && message.error == null) {
+        if (message.done && message.blocks.isEmpty() && message.error == null) {
             Text(
                 text = "（无回复）",
                 style = MaterialTheme.typography.bodySmall,
@@ -216,6 +258,21 @@ private fun AssistantBlock(message: ChatUiMessage.Assistant) {
             )
         }
         message.usage?.let { UsageLine(it) }
+    }
+}
+
+@Composable
+private fun TextBlock(text: String) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.widthIn(max = 320.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        )
     }
 }
 
@@ -246,7 +303,7 @@ private fun ThinkingBlock(thinking: String) {
 }
 
 @Composable
-private fun ToolCardView(card: ToolCard) {
+private fun ToolCardView(card: ContentBlock.ToolUse) {
     var expanded by remember { mutableStateOf(false) }
     Surface(
         shape = RoundedCornerShape(12.dp),
@@ -284,6 +341,78 @@ private fun ToolCardView(card: ToolCard) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TodoListPanel(todos: List<TodoItem>, running: Boolean, expanded: Boolean, onToggle: () -> Unit) {
+    val completed = todos.count { it.status == "completed" }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggle)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = "任务列表",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = "$completed/${todos.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (expanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    todos.forEach { item -> TodoRow(item, running) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodoRow(item: TodoItem, running: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        when (item.status) {
+            "completed" -> Text("✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+            "in_progress" -> if (running) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            } else {
+                Text("●", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+            }
+            else -> Text("○", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = item.content,
+            style = when (item.status) {
+                "completed" -> MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textDecoration = TextDecoration.LineThrough,
+                )
+                "in_progress" -> MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                )
+                else -> MaterialTheme.typography.bodyMedium
+            },
+        )
     }
 }
 

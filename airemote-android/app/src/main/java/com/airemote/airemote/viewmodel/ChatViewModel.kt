@@ -6,8 +6,10 @@ import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.repository.ChatRepository
 import com.airemote.airemote.data.sse.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
-import com.airemote.airemote.model.chat.ToolCard
+import com.airemote.airemote.model.chat.ContentBlock
+import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
+import com.airemote.airemote.model.chat.parseTodos
 import com.airemote.airemote.model.event.NormalizedEvent
 import com.airemote.airemote.model.event.SseFrame
 import com.airemote.airemote.model.network.NetworkResult
@@ -26,6 +28,9 @@ class ChatViewModel(
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
     val messages = _messages.asStateFlow()
+
+    private val _todos = MutableStateFlow<List<TodoItem>>(emptyList())
+    val todos = _todos.asStateFlow()
 
     private val _streaming = MutableStateFlow(false)
     val streaming = _streaming.asStateFlow()
@@ -108,7 +113,7 @@ class ChatViewModel(
         if (list.isEmpty() && messages.isNotEmpty()) {
             list += messages.map { m ->
                 if (m.role == "user") ChatUiMessage.User(m.content)
-                else ChatUiMessage.Assistant(text = m.content, done = true)
+                else ChatUiMessage.Assistant(blocks = listOf(ContentBlock.Text(m.content)), done = true)
             }
         }
         return list
@@ -119,6 +124,10 @@ class ChatViewModel(
         for (frame in events) {
             val e = frame.event
             if (e is NormalizedEvent.PermissionRequest) continue // 审批请求是瞬态，不进历史
+            if (e is NormalizedEvent.ToolUse && e.name == "TodoWrite") {
+                _todos.value = parseTodos(e.input)
+                continue
+            }
             a = updateAssistant(a, e)
         }
         return if (a.done) a else a.copy(done = true)
@@ -196,6 +205,10 @@ class ChatViewModel(
     }
 
     private fun applyEvent(e: NormalizedEvent) {
+        if (e is NormalizedEvent.ToolUse && e.name == "TodoWrite") {
+            _todos.value = parseTodos(e.input)
+            return
+        }
         _messages.update { list ->
             val idx = list.indexOfLast { it is ChatUiMessage.Assistant }
             if (idx < 0) {
@@ -210,21 +223,43 @@ class ChatViewModel(
 
     private fun updateAssistant(a: ChatUiMessage.Assistant, e: NormalizedEvent): ChatUiMessage.Assistant = when (e) {
         is NormalizedEvent.Status -> if (e.terminal == true) a.copy(done = true) else a
-        is NormalizedEvent.TextDelta -> a.copy(text = a.text + e.delta)
-        is NormalizedEvent.ThinkingDelta -> a.copy(thinking = a.thinking + e.delta)
+        is NormalizedEvent.TextDelta -> a.copy(blocks = appendText(a.blocks, e.delta))
+        is NormalizedEvent.ThinkingDelta -> a.copy(blocks = appendThinking(a.blocks, e.delta))
         is NormalizedEvent.ThinkingStart -> a
         is NormalizedEvent.ToolUse -> a.copy(
-            tools = a.tools + ToolCard(id = e.id, name = e.name, input = e.input, running = true)
+            blocks = a.blocks + ContentBlock.ToolUse(id = e.id, name = e.name, input = e.input, running = true)
         )
         is NormalizedEvent.ToolResult -> a.copy(
-            tools = a.tools.map { t ->
-                if (t.id == e.toolUseId) t.copy(result = e.content, isError = e.isError == true, running = false) else t
+            blocks = a.blocks.map { b ->
+                if (b is ContentBlock.ToolUse && b.id == e.toolUseId) {
+                    b.copy(result = e.content, isError = e.isError == true, running = false)
+                } else {
+                    b
+                }
             }
         )
         is NormalizedEvent.Usage -> a.copy(usage = parseUsage(e))
         is NormalizedEvent.TurnEnd -> a
         is NormalizedEvent.Error -> a.copy(error = e.message, done = e.terminal == true)
         is NormalizedEvent.PermissionRequest -> a
+    }
+
+    private fun appendText(blocks: List<ContentBlock>, delta: String): List<ContentBlock> {
+        val last = blocks.lastOrNull()
+        return if (last is ContentBlock.Text) {
+            blocks.dropLast(1) + last.copy(text = last.text + delta)
+        } else {
+            blocks + ContentBlock.Text(delta)
+        }
+    }
+
+    private fun appendThinking(blocks: List<ContentBlock>, delta: String): List<ContentBlock> {
+        val last = blocks.lastOrNull()
+        return if (last is ContentBlock.Thinking) {
+            blocks.dropLast(1) + last.copy(text = last.text + delta)
+        } else {
+            blocks + ContentBlock.Thinking(delta)
+        }
     }
 
     private fun parseUsage(u: NormalizedEvent.Usage): UsageInfo? {
