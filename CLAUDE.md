@@ -101,5 +101,6 @@ AIRemote/
   `fix`/`refactor`。
 - **scope**：可选，标注受影响子项目：`daemon` / `android` / `ios` / `docs`；跨端或全局改动
   省略 scope。
-- **subject**：中文，简洁说明「做了什么」，不加句号、不以大写开头；冒号后空一格；多个功能使用 & 连接
+- **subject**：中文，简洁说明「做了什么」，如果改动设计多个角度修改，仅描述主要1～2个修改，以&连接；不加句号、不以大写开头；冒号后空一格；
   （`feat: xxx`，不是 `feat:xxx & xxx`）。
+- **push**：目前仅一人开发，无需git pull，直接使用git push推送远端
