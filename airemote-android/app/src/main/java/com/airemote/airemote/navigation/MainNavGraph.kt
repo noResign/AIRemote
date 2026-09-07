@@ -6,15 +6,14 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.airemote.airemote.ui.ChatScreen
-import com.airemote.airemote.ui.SessionListScreen
-import com.airemote.airemote.ui.SettingsScreen
+import com.airemote.airemote.ui.MainScreen
 
 fun NavGraphBuilder.mainNavGraph(navController: NavController) {
     composable(AppRoutes.MAIN) {
-        SessionListScreen(
+        MainScreen(
             onOpenSession = { id -> navController.navigateToConversation(id) },
             onNewSession = { navController.navigateToConversation(null) },
-            onSettings = { navController.navigateToSettings() },
+            onReconnect = { navController.navigateToConnect() },
         )
     }
 
@@ -32,13 +31,6 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
         ChatScreen(
             sessionId = sessionId,
             onBack = { navController.popBackStack() },
-        )
-    }
-
-    composable(AppRoutes.SETTING) {
-        SettingsScreen(
-            onBack = { navController.popBackStack() },
-            onReconnect = { navController.navigateToConnect() },
         )
     }
 }

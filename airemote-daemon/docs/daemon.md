@@ -105,7 +105,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 | 方法 & 路径 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /api/health` | 否 | 存活 + 版本 |
+| `GET /api/health` | 否 | 存活 + 版本 + workspace 根目录 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
 | `GET /api/claude-sessions` | 是 | 列出 **workspace 内** 的 Claude 会话（可导入续接） |

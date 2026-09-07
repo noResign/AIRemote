@@ -79,6 +79,7 @@ AIRemote/
 - **持久化**：MMKV（`SettingsStore`）。
 - **UI**：以 `docs/ui_design.md` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
   新增 agent 只加一行不改布局。
+- **注意**：用户没有主动提出帮忙运行android项目，再更改后请不要主动使用.gradlew命令运行，用户自己运行测试
 
 ## 关键设计决策（速览）
 

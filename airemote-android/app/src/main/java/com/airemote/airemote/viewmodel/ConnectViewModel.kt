@@ -65,6 +65,7 @@ class ConnectViewModel(
                 is NetworkResult.Success -> {
                     settings.baseUrl = url
                     settings.token = tk
+                    settings.workspace = result.data.workspace
                     _uiState.value = ConnectUiState.Success(result.data, url)
                 }
                 is NetworkResult.Error -> {

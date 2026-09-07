@@ -36,8 +36,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.ui.theme.Brand
 import com.airemote.airemote.viewmodel.ConnectUiState
 import com.airemote.airemote.viewmodel.ConnectViewModel
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Color
 
 @Composable
 fun ConnectScreen(
@@ -57,12 +65,35 @@ fun ConnectScreen(
                 .padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(text = "连接 daemon", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                text = "填写 daemon 地址与访问 token，点击「测试连接」验证能否连通。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .background(Brand.Gradient, RoundedCornerShape(22.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.SmartToy,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "airemote",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "远程指挥你电脑上的编码 agent",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             OutlinedTextField(
                 value = baseUrl,

@@ -8,4 +8,5 @@ data class ConnectResponse(
     val service: String,
     val version: String,
     val sessionCount: Int,
+    val workspace: String? = null,
 )

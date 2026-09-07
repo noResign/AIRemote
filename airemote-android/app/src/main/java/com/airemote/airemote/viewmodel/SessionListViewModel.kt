@@ -4,14 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.repository.SessionRepository
 import com.airemote.airemote.model.network.NetworkResult
-import com.airemote.airemote.model.session.SessionDto
+import com.airemote.airemote.model.session.WorkspaceGroup
+import com.airemote.airemote.model.session.groupByCwd
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 sealed class SessionListUiState {
     object Loading : SessionListUiState()
-    data class Content(val sessions: List<SessionDto>) : SessionListUiState()
+    data class Content(val groups: List<WorkspaceGroup>) : SessionListUiState()
     data class Error(val message: String) : SessionListUiState()
 }
 
@@ -54,7 +55,7 @@ class SessionListViewModel(
         _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
     }) {
         when (val r = repository.listSessions()) {
-            is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(r.data)
+            is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(groupByCwd(r.data))
             is NetworkResult.Error -> onError(r.code, r.message)
         }
     }
@@ -66,7 +67,8 @@ class SessionListViewModel(
                     // Optimistically drop it from the current list, then re-sync.
                     val current = _uiState.value
                     if (current is SessionListUiState.Content) {
-                        _uiState.value = SessionListUiState.Content(current.sessions.filterNot { it.id == id })
+                        val remaining = current.groups.flatMap { it.sessions }.filterNot { it.id == id }
+                        _uiState.value = SessionListUiState.Content(groupByCwd(remaining))
                     }
                     refresh()
                 }

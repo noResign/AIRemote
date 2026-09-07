@@ -25,6 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -46,6 +49,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
@@ -62,7 +66,10 @@ import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.event.NormalizedEvent
+import com.airemote.airemote.ui.theme.CodeBody
+import com.airemote.airemote.ui.theme.LocalSemanticColors
 import com.airemote.airemote.viewmodel.ChatViewModel
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -83,6 +90,7 @@ fun ChatScreen(
     val todos by viewModel.todos.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
 
@@ -138,6 +146,7 @@ fun ChatScreen(
                         input = ""
                     },
                     onStop = viewModel::stop,
+                    onMic = { scope.launch { snackbarHostState.showSnackbar("语音输入即将上线") } },
                 )
             }
         },
@@ -285,17 +294,18 @@ private fun ThinkingBlock(thinking: String) {
         modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
+            val thinkingColor = LocalSemanticColors.current.thinking
             Text(
                 text = if (expanded) "▾ 思考中（点击收起）" else "▸ 思考中（点击展开）",
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = thinkingColor,
             )
             if (expanded) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = thinking,
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = CodeBody,
+                    color = thinkingColor,
                 )
             }
         }
@@ -315,8 +325,18 @@ private fun ToolCardView(card: ContentBlock.ToolUse) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
                     card.running -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-                    card.isError -> Text("✗", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                    else -> Text("✓", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+                    card.isError -> Icon(
+                        Icons.Rounded.Close,
+                        contentDescription = "失败",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    else -> Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = "完成",
+                        tint = LocalSemanticColors.current.success,
+                        modifier = Modifier.size(16.dp),
+                    )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -426,7 +446,7 @@ private fun CodeBlock(text: String) {
         Box(modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)) {
             Text(
                 text = text,
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                style = CodeBody,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
@@ -460,12 +480,16 @@ private fun InputBar(
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    onMic: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surface) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            IconButton(onClick = onMic, enabled = !streaming) {
+                Icon(Icons.Rounded.Mic, contentDescription = "语音输入")
+            }
             OutlinedTextField(
                 value = input,
                 onValueChange = onInputChange,

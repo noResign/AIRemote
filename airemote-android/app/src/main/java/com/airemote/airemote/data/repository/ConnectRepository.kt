@@ -38,6 +38,7 @@ class ConnectRepository {
                 service = healthData.service ?: "airemote",
                 version = healthData.version ?: "unknown",
                 sessionCount = sessionsData.sessions.size,
+                workspace = healthData.workspace,
             )
         )
     }

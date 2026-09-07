@@ -569,7 +569,7 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 
 | 端点 | 方法 | 鉴权 | 返回/说明 |
 |---|---|---|---|
-| `/api/health` | GET | 否 | `{ok, service, version}` |
+| `/api/health` | GET | 否 | `{ok, service, version, workspace}` |
 | `/api/sessions` | GET | 是 | `{sessions:[{id, runtime, cwd, title, createdAt, lastActiveAt, running, runningRunId}]}` |
 | `/api/sessions/:id` | GET | 是 | `{session, messages, runs}` |
 | `/api/sessions/:id` | PATCH | 是 | 重命名，body `{title}` → `{ok, session}` |

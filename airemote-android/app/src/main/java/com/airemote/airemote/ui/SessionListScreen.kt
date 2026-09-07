@@ -1,13 +1,9 @@
 package com.airemote.airemote.ui
 
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,8 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,7 +33,6 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -44,32 +41,34 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.PendingNewSession
+import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.model.session.SessionDto
+import com.airemote.airemote.model.session.WorkspaceGroup
+import com.airemote.airemote.ui.component.AgentBadge
+import com.airemote.airemote.ui.component.RunningIndicator
+import com.airemote.airemote.ui.theme.CodeBody
 import com.airemote.airemote.util.relativeTime
 import com.airemote.airemote.viewmodel.SessionListUiState
 import com.airemote.airemote.viewmodel.SessionListViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SessionListScreen(
     onOpenSession: (String) -> Unit,
     onNewSession: () -> Unit,
-    onSettings: () -> Unit,
     viewModel: SessionListViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -91,20 +90,11 @@ fun SessionListScreen(
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("会话") },
-                actions = {
-                    IconButton(onClick = onSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
-                    }
-                },
-            )
-        },
+        topBar = { TopAppBar(title = { Text("会话") }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showNewSession = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "新建会话")
+                Icon(Icons.Rounded.Add, contentDescription = "新建会话")
             }
         },
     ) { innerPadding ->
@@ -124,7 +114,7 @@ fun SessionListScreen(
                     }
                 }
                 is SessionListUiState.Content -> {
-                    if (state.sessions.isEmpty()) {
+                    if (state.groups.isEmpty()) {
                         Column(
                             modifier = Modifier.align(Alignment.Center),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -134,25 +124,11 @@ fun SessionListScreen(
                             OutlinedButton(onClick = { showNewSession = true }) { Text("新建会话") }
                         }
                     } else {
-                        val groups = remember(state.sessions) { groupByCwd(state.sessions) }
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            groups.forEach { group ->
-                                item(key = "cwd-${group.cwd}") {
-                                    WorkspaceHeader(group.cwd)
-                                }
-                                items(group.sessions, key = { it.id }) { session ->
-                                    SessionCard(
-                                        session = session,
-                                        onClick = { onOpenSession(session.id) },
-                                        onLongClick = { pendingDelete = session },
-                                    )
-                                }
-                            }
-                        }
+                        SessionGroupedList(
+                            groups = state.groups,
+                            onOpenSession = onOpenSession,
+                            onLongClick = { pendingDelete = it },
+                        )
                     }
                 }
             }
@@ -190,6 +166,100 @@ fun SessionListScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
+private fun SessionGroupedList(
+    groups: List<WorkspaceGroup>,
+    onOpenSession: (String) -> Unit,
+    onLongClick: (SessionDto) -> Unit,
+) {
+    val collapsed = remember { mutableStateMapOf<String, Boolean>() }
+    val currentWorkspace = SettingsStore.workspace
+
+    // 默认只展开「当前 workspace」，其余分组折叠；用户手动操作后尊重其选择。
+    LaunchedEffect(groups, currentWorkspace) {
+        if (currentWorkspace.isNullOrBlank()) return@LaunchedEffect
+        groups.forEach { group ->
+            if (group.cwd != currentWorkspace && !collapsed.containsKey(group.cwd)) {
+                collapsed[group.cwd] = true
+            }
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        groups.forEach { group ->
+            val isCollapsed = collapsed[group.cwd] ?: false
+            stickyHeader(key = "cwd-${group.cwd}") {
+                WorkspaceHeader(
+                    group = group,
+                    collapsed = isCollapsed,
+                    onToggle = { collapsed[group.cwd] = !isCollapsed },
+                )
+            }
+            if (!isCollapsed) {
+                items(group.sessions, key = { it.id }) { session ->
+                    SessionCard(
+                        session = session,
+                        onClick = { onOpenSession(session.id) },
+                        onLongClick = { onLongClick(session) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceHeader(
+    group: WorkspaceGroup,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .clickable(onClick = onToggle)
+            .padding(top = 12.dp, bottom = 4.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Folder,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = group.cwd,
+            style = CodeBody.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "${group.sessions.size}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Icon(
+            imageVector = if (collapsed) Icons.Rounded.ExpandMore else Icons.Rounded.ExpandLess,
+            contentDescription = if (collapsed) "展开" else "收起",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
 private fun SessionCard(
     session: SessionDto,
     onClick: () -> Unit,
@@ -208,10 +278,13 @@ private fun SessionCard(
         border = border,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (session.running) {
-                    RunningDot()
+                    RunningIndicator()
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
@@ -228,68 +301,7 @@ private fun SessionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            RuntimeBadge(runtime = session.runtime)
+            AgentBadge(runtimeId = session.runtime)
         }
     }
-}
-
-@Composable
-private fun RuntimeBadge(runtime: String) {
-    val color = when (runtime) {
-        "claude" -> Color(0xFFD97757)
-        else -> Color(0xFF8B949E)
-    }
-    val label = when (runtime) {
-        "claude" -> "Claude Code"
-        else -> runtime.ifBlank { "agent" }
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-            .padding(horizontal = 8.dp, vertical = 3.dp),
-    ) {
-        Box(modifier = Modifier.size(7.dp).background(color, CircleShape))
-        Spacer(modifier = Modifier.width(5.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-@Composable
-private fun RunningDot() {
-    val transition = rememberInfiniteTransition(label = "running")
-    val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
-        label = "pulse",
-    )
-    Box(
-        modifier = Modifier
-            .size(9.dp)
-            .alpha(alpha)
-            .background(MaterialTheme.colorScheme.primary, CircleShape),
-    )
-}
-
-private data class WorkspaceGroup(val cwd: String, val sessions: List<SessionDto>)
-
-private fun groupByCwd(sessions: List<SessionDto>): List<WorkspaceGroup> {
-    return sessions
-        .groupBy { it.cwd.ifBlank { "默认工作目录" } }
-        .map { (cwd, list) -> WorkspaceGroup(cwd, list.sortedByDescending { it.lastActiveAt }) }
-        .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
-}
-
-@Composable
-private fun WorkspaceHeader(cwd: String) {
-    Text(
-        text = cwd,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        fontFamily = FontFamily.Monospace,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(top = 8.dp),
-    )
 }
