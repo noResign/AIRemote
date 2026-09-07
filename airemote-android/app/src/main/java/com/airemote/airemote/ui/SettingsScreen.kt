@@ -78,14 +78,6 @@ fun SettingsScreen(
                 }
                 is SettingsUiState.Ready -> {
                     InfoRow("daemon 版本", state.version)
-                    Text("允许的工作目录", style = MaterialTheme.typography.labelLarge)
-                    state.workspaces.forEach { ws ->
-                        Text(
-                            ws,
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
             }
 

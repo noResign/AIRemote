@@ -33,10 +33,29 @@ class SessionListViewModel(
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = SessionListUiState.Loading
-            when (val r = repository.listSessions()) {
-                is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(r.data)
-                is NetworkResult.Error -> _uiState.value = SessionListUiState.Error(friendlyMessage(r.code, r.message))
-            }
+            fetch()
+        }
+    }
+
+    /** Re-fetch without flashing the Loading spinner; keeps current list visible on failure. */
+    fun refreshSilently() {
+        viewModelScope.launch {
+            fetch(onError = { code, message ->
+                if (_uiState.value !is SessionListUiState.Content) {
+                    _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
+                } else {
+                    _message.value = friendlyMessage(code, message)
+                }
+            })
+        }
+    }
+
+    private suspend fun fetch(onError: (Int, String) -> Unit = { code, message ->
+        _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
+    }) {
+        when (val r = repository.listSessions()) {
+            is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(r.data)
+            is NetworkResult.Error -> onError(r.code, r.message)
         }
     }
 

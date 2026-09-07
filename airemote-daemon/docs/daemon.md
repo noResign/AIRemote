@@ -8,10 +8,10 @@
 `airemote-daemon` 是一个跑在 macOS/Linux 本机的守护进程：它 `spawn` 本机已安装的编码
 agent CLI（目前 Claude Code，架构上预留多 agent），以无头方式执行，把输出解析成统一的
 流式事件，通过 HTTP/SSE 推给远程客户端（Android/iOS/网页），并支持会话续接、断线重连、
-取消、工具审批、多工作目录、多 agent 并发。
+取消、工具审批、多 agent 并发。
 
-核心定位：**「远程操纵本机 agent」**。因此安全边界（认证、权限审批、工作目录白名单、默认
-拒绝）是一等公民，而不是事后补丁。
+核心定位：**「远程操纵本机 agent」**。因此安全边界（认证、权限审批、工作目录、默认拒绝）
+是一等公民，而不是事后补丁。
 
 **关键心智模型**：手机只是遥控器，任务在电脑上执行。**手机断连不影响任务**——daemon 继续
 跑，重连后能续上。
@@ -41,7 +41,7 @@ agent CLI（目前 Claude Code，架构上预留多 agent），以无头方式�
 
 ```
 用户发消息 → POST /api/chat
-  → 校验 cwd / 解析会话 → 创建 run → spawn agent
+  → 解析会话 → 创建 run → spawn agent（cwd = workspace）
   → agent stdout → createParser → NormalizedEvent → 持久化(events) + SSE 推送 + fan-out
   → agent exit → 发 terminal status → res.end()
 ```
@@ -72,14 +72,14 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 |---|---|
 | `index.ts` | 入口：加载 .env → 解析 CLI → loadConfig → 建 Db/registry → 探测 claude → startServer |
 | `cli.ts` | `util.parseArgs` 解析 `airemote` 命令行，`--help`/`--version` |
-| `config.ts` | env + CLI 合并（CLI 优先）；token 持久化；workspace/allowedDirs/超时等默认值 |
+| `config.ts` | env + CLI 合并（CLI 优先）；token 持久化；workspace/超时等默认值 |
 | `server.ts` | Express 组合根：CORS → JSON → 鉴权门 → 各路由注册 |
-| `routes/*.ts` | HTTP/SSE 边界（health/agent/chat/claude-sessions/runs/sessions/permissions/workspaces） |
+| `routes/*.ts` | HTTP/SSE 边界（health/agent/chat/claude-sessions/runs/sessions/permissions） |
 | `runtimes/engine.ts` | 通用 spawn 生命周期（见 §3） |
 | `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + auto-allow 规则 |
 | `run-notifier.ts` | `RunNotifier`：runId → 该 run 的多个 SSE 订阅者（emitter + listeners） |
 | `command-safety.ts` | Bash 只读命令白名单（只读自动放行，其余询问） |
-| `workspace.ts` | `resolveAllowedCwd`：目录白名单判定（目录本身或其子目录） |
+| `workspace.ts` | `resolveWorkspaceCwd`：判定 cwd 是否在 workspace 内（目录本身或其子目录） |
 | `permission-hook.ts` | PreToolUse hook 脚本（被 claude 调用，转发审批到 daemon） |
 | `claude-sessions.ts` | 枚举 `~/.claude/projects/` 下的 Claude 会话 |
 | `sse.ts` | SSE 帧写入 + `isTerminalEvent` 判断（chat 与 stream 复用） |
@@ -108,8 +108,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/health` | 否 | 存活 + 版本 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
-| `GET /api/claude-sessions` | 是 | 列出 **allowedDirs 内** 的 Claude 会话（可导入续接） |
-| `GET /api/workspaces` | 是 | 允许的工作目录白名单 `{workspaces, default}` |
+| `GET /api/claude-sessions` | 是 | 列出 **workspace 内** 的 Claude 会话（可导入续接） |
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流 |
 | `GET /api/runs` | 是 | 当前**运行中**的 run 列表（切换多 agent 用） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
@@ -130,10 +129,10 @@ status | text_delta | thinking_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request
 ```
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime?, cwd? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime? }`。
 
-- `cwd` 仅对**新会话**生效，必须是允许目录本身或其子目录，否则 400 `cwd_not_allowed`。
-- 续接已有会话沿用会话自身存下来的 `cwd`，并**每次续接都重新校验**是否仍在当前白名单内。
+- 新会话固定用 `--workspace` 作为 cwd；续接已有会话沿用会话存下来的 `cwd`，并**每次续接都
+  重新校验**是否仍在当前 workspace 内，否则 400 `cwd_not_allowed`。
 
 **断线续接**：`/api/chat` 客户端断开后，run **继续在 daemon 上运行**（不因断线取消）；重连
 用 `GET /api/runs` 找运行中的 run，再 `GET /api/runs/:id/stream?after=<seq>` 回放 + 续直播；
@@ -164,7 +163,7 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
   会话 id 就是文件名；`claude --resume <id>` 续接。
 - daemon 自己生成 `--session-id`，续接用 `--resume`，并把 `claude_session_id` 存进
   `sessions` 表。
-- `GET /api/claude-sessions` 枚举**允许目录内**的会话，客户端可「导入」一个 TUI 会话继续
+- `GET /api/claude-sessions` 枚举**workspace 内**的会话，客户端可「导入」一个 TUI 会话继续
   （`POST /api/chat` 带 `claudeSessionId`）。
 - 双向互通：手机会话 → 电脑 `claude --resume <id>`；电脑 TUI 会话 → 手机导入继续。
 
@@ -173,26 +172,25 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
 - **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；生产建议 `AIREMOTE_TLS_CERT/KEY` 或反代/SSH 隧道。
 - **权限**：acceptEdits + Bash 远程审批 + 只读白名单 + 默认拒绝（见 §7）。
-- **工作目录白名单**：`--workspace`（主）+ `--allowed-dir`（可重复）/ `AIREMOTE_ALLOWED_DIRS`
-  构成 `allowedDirs`；`/api/chat` 的 `cwd`、续接会话的存量 cwd、导入 Claude 会话的 cwd 都要
-  落在白名单内（目录本身或其子目录），否则 400 `cwd_not_allowed`。
+- **工作目录**：单一 `--workspace` 根目录；新会话的 cwd、续接会话的存量 cwd、导入 Claude 会话
+  的 cwd 都要落在 workspace 内（目录本身或其子目录），否则 400 `cwd_not_allowed`。
 - **防御性超时**：run 空闲看门狗（`AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`，默认 900 秒、0=禁用）。
 - **审计**：chat / cancel / permission_decision / rename_session / delete_session 记入 `audit_log`。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
 
-### ⚠️ 重要边界：`allowedDirs` 不是沙箱
+### ⚠️ 重要边界：`workspace` 不是沙箱
 
-`allowedDirs` 只决定 **Claude 进程从哪个目录启动（spawn cwd）**，**不是文件系统沙箱**。
-Claude 启动后，访问别的目录由「工具权限」决定，与白名单无关：
+`workspace` 只决定 **Claude 进程从哪个目录启动（spawn cwd）**，**不是文件系统沙箱**。
+Claude 启动后，访问别的目录由「工具权限」决定，与 workspace 无关：
 
 | 工具 | 行为 |
 |---|---|
-| Read / Write / Edit | acceptEdits 下**直接放行**，可读写任意路径（含白名单外） |
+| Read / Write / Edit | acceptEdits 下**直接放行**，可读写任意路径（含 workspace 外） |
 | Bash 只读（`cat`/`ls`/…） | 自动放行，不看目录 |
 | Bash 有副作用 | 弹审批（审批的是命令本身，不专门按目录拦截） |
 
 要做到文件级物理隔离，需要 OS 层沙箱（bwrap / firejail / 容器 / sandbox-exec），纯靠 Claude
-Code CLI 做不到。`allowedDirs` 的准确语义是「**允许从哪些目录启动**」，不是「只能碰哪些目录」。
+Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**」，不是「只能碰哪些目录」。
 
 ## 10. 配置参数参考
 
@@ -205,8 +203,7 @@ Code CLI 做不到。`allowedDirs` 的准确语义是「**允许从哪些目录�
 |---|---|---|
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
-| `--workspace <path>` | 当前目录 | 主工作目录，恒为白名单第一位 |
-| `--allowed-dir <path>` | 无 | 追加允许目录，**可重复** |
+| `--workspace <path>` | 当前目录 | 工作空间根目录（agent 只在其下、含子目录，干活） |
 | `--data-dir <path>` | `~/.airemote` | 数据根（SQLite + token） |
 | `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
 | `--permission-mode <mode>` | `acceptEdits` | 权限模式（见下） |
@@ -220,8 +217,7 @@ Code CLI 做不到。`allowedDirs` 的准确语义是「**允许从哪些目录�
 |---|---|---|
 | `AIREMOTE_HOST` | `0.0.0.0` | 监听地址 |
 | `AIREMOTE_PORT` | `4780` | 端口 |
-| `AIREMOTE_WORKSPACE` | 当前目录 | 主工作目录 |
-| `AIREMOTE_ALLOWED_DIRS` | 无 | 追加允许目录（`path.delimiter` 分隔，Linux/macOS 为 `:`） |
+| `AIREMOTE_WORKSPACE` | 当前目录 | 工作空间根目录 |
 | `AIREMOTE_DATA_DIR` | `~/.airemote` | 数据根 |
 | `AIREMOTE_TOKEN` | 自动生成 | 鉴权密钥 |
 | `AIREMOTE_PERMISSION_MODE` | `acceptEdits` | 权限模式 |
@@ -254,7 +250,6 @@ Code CLI 做不到。`allowedDirs` 的准确语义是「**允许从哪些目录�
 AIREMOTE_HOST=0.0.0.0
 AIREMOTE_PORT=4780
 AIREMOTE_WORKSPACE=/home/renbin/OpenProject/AIRemote
-AIREMOTE_ALLOWED_DIRS=/home/renbin/code/foo:/home/renbin/code/bar
 AIREMOTE_PERMISSION_MODE=acceptEdits
 AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS=900
 # AIREMOTE_TOKEN=
@@ -323,6 +318,6 @@ airemote
 - 只读 Bash 白名单是内置默认，可考虑做成配置文件（`.airemote/policy.json`）可增减。
 - auto-allow（「允许全部 Bash」）当前是 **run 级**（一次对话内），不是 session 级。
 - 权限审批依赖 Claude Code 的 PreToolUse hook 格式，需随 CLI 版本演进同步探测/适配。
-- **`allowedDirs` 不是沙箱**（见 §9）——文件级隔离需 OS 层沙箱。
+- **`workspace` 不是沙箱**（见 §9）——文件级隔离需 OS 层沙箱。
 - 会话列表无「最后一条消息预览」字段（客户端暂用标题/时间/运行态）。
 - Android 客户端已实现 M1；iOS 预留。传输契约（`types/api.ts`）已冻结，两端据此接入。

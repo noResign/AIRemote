@@ -7,13 +7,13 @@
 
 **AIRemote** 是一个「远程操纵本机编码 agent」的项目：电脑上跑一个 daemon，用它 spawn 本机
 编码 agent（当前 Claude Code），把输出解析成统一流式事件，通过 HTTP/SSE 推给远程客户端
-（Android / iOS），并支持会话续接、断线重连、取消、工具审批、多工作目录、多 agent 并发。
+（Android / iOS），并支持会话续接、断线重连、取消、工具审批、多 agent 并发。
 
 运行时被抽象成可插拔的 `RuntimeAdapter`，未来可加 Codex / OpenCode / DeepSeek Harness 等。
 客户端**多 runtime 可扩展**：事件流是 runtime 无关的，UI 只对「agent 身份」做可配置映射。
 
 > 安全提醒：远程驱动一个带 shell 权限的 agent 本质等于远程代码执行。认证、权限审批、
-> 工作目录白名单、默认拒绝是核心设计目标，不是附加项。
+> 工作目录、默认拒绝是核心设计目标，不是附加项。
 
 ## 目录结构
 
@@ -62,7 +62,7 @@ AIRemote/
   `src/runtimes/registry.ts` 注册一行；路由/引擎/持久化/传输不得改。
 - **路由归属**：daemon 域端点放 `src/routes/<domain>.ts`，只有进程级元数据（health）留在
   `server.ts`。
-- **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录白名单、
+- **安全边界**：认证、`--permission-mode`、PreToolUse hook、只读白名单、工作目录、
   默认拒绝都属安全边界，改动必须保持 deny-by-default。
 - **Claude Code API 不稳**：CLI flag 随版本变，能力必须先 `--help` 探测再传参
   （`runtimes/claude/detect.ts`），不要假设某 flag 恒存在。
@@ -84,11 +84,22 @@ AIRemote/
 
 - **权限审批**：`acceptEdits` 放行 Read/Write/Edit；PreToolUse hook 只拦 `Bash`；Bash 内再分
   「只读白名单自动放行」与「有副作用才询问」，默认拒绝、超时自动拒绝。
-- **多工作目录**：`--workspace`（主）+ `--allowed-dir`（可重复）/ `AIREMOTE_ALLOWED_DIRS`
-  构成白名单；`/api/chat` 的 `cwd` 必须落在白名单内，否则 400。
+- **工作空间**：单一 `--workspace` 根目录，agent 固定在其下（含子目录）干活。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
   `POST /api/runs/:id/cancel`。
 - **会话**：`--session-id`/`--resume` 管理 Claude 会话，`claude_session_id` 持久化；
-  `GET /api/claude-sessions` 枚举白名单内会话，实现 TUI↔远程双向续接。
+  `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔远程双向续接。
 - **token**：持久化在 `<data-dir>/token`，启动复用（删文件即轮换）。
+
+## git提交规范
+
+遵循 [Conventional Commits]，格式 `<type>(<scope>): <subject>`，type 全小写英文。
+
+- **type**：`feat` 新功能、`fix` 修复 bug、`refactor` 重构（不改行为）、`docs` 文档、`chore`
+  杂务（依赖/构建/脚本）、`test` 测试、`perf` 性能。不用 `modify`——改动不是「新功能」就归
+  `fix`/`refactor`。
+- **scope**：可选，标注受影响子项目：`daemon` / `android` / `ios` / `docs`；跨端或全局改动
+  省略 scope。
+- **subject**：中文，简洁说明「做了什么」，不加句号、不以大写开头；冒号后空一格；多个功能使用 & 连接
+  （`feat: xxx`，不是 `feat:xxx & xxx`）。

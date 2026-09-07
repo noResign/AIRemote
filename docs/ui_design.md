@@ -201,6 +201,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | **Runtime 身份** | 徽章 / 图标 / 主题色 | 每个 agent 一套可扩展身份，见 5.2 |
 | **权限模式徽章** | — | 显示 daemon 级权限模式，危险模式用 error 色 |
 | **运行中指示器** | running / idle | 会话列表 & 聊天页的脉冲/转圈 |
+| **工作目录分组头** | 展开 / 折叠 | 会话列表按 cwd 分组的段头，见 6.2 |
 | **空态插画** | — | 各列表空态 |
 | **连接状态胶囊** | connected / connecting / offline / reconnecting | 全局 |
 | **Usage 计量条** | — | token 数 + 成本，消息末尾 |
@@ -275,15 +276,20 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 
 ### 6.2 ② 会话列表（Conversation List）🟢
 
-**目的**：查看所有历史会话、当前哪个在运行、进入会话。
+**目的**：查看所有历史会话（按工作目录分组）、当前哪个在运行、进入会话。
 
 **关键元素**：
 1. 顶栏：标题「会话」+ 全局连接状态胶囊（connected/offline）。
-2. 会话列表（LazyColumn），每条卡片：
-   - 标题（`title`，新建会话时自动取首句；无标题显示默认名"未命名会话"）
-   - Agent 徽章 + 工作目录（次文字，单行省略）
-   - 相对时间（`lastActiveAt`）
-   - 🟢 **运行中指示**（`running=true` 时：左侧脉冲圆点 + 卡片描边 primary，点击可直接进该会话）
+2. 会话列表（LazyColumn），**按工作目录（`cwd`）分组**：
+   - **工作目录分组头**（段头）：`folder` 图标 + 目录绝对路径（等宽、单行省略）+ 该目录会话数徽章
+     + 折叠箭头；**默认展开、可点击折叠**；滚动时**吸顶**（sticky）；组间按「组内最近活跃时间」
+     倒序（最近活跃的工作目录排最前）；**只显示有会话的工作目录，空目录不出现**。
+   - **会话卡片**（组内按 `lastActiveAt` 倒序）：
+     - 标题（`title`，新建会话时自动取首句；无标题显示默认名"未命名会话"）
+     - Agent 徽章
+     - 相对时间（`lastActiveAt`）
+     - 🟢 **运行中指示**（`running=true` 时：左侧脉冲圆点 + 卡片描边 primary，点击可直接进该会话）
+   - 工作目录已上移到分组头，**卡片内不再重复显示 `cwd`**。
 3. 空态：插画 + "还没有会话" + 「新建会话」按钮。
 4. FAB「+」→ 新建会话。
 
@@ -358,22 +364,21 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 
 ### 6.4 ④ 新建/续接会话（New Conversation，底部 Sheet）🟢
 
-**目的**：开始一个新对话（可指定工作目录），或续接电脑上已有的 Claude 会话。
+**目的**：开始一个新对话，或续接电脑上已有的 Claude 会话。
 
 **关键元素**（Sheet 内，分两段）：
 1. 标题「新建会话」+ 关闭。
 2. **方式 A · 新建空会话**：
-   - 会话标题输入框（可空，留空用默认）。
    - Agent 选择（单选，来自 `GET /api/agents`，如 `Claude Code`）。
-   - 🟢 **工作目录选择**（单选，来自 `GET /api/workspaces`，默认选中 `default` 项）。
 3. **方式 B · 续接本机 Claude 会话**（电脑 TUI 里开过的会话）：
    - 会话列表（来自 `GET /api/claude-sessions`，每项显示摘要 `summary` + 工作目录 + 相对时间）。
 4. 主按钮「创建/开始」。
 
 **交互**：选择即高亮；创建成功后自动进入该会话并收起 Sheet。两种方式互斥（单选切换）。
-新会话在 `POST /api/chat` 里带 `cwd`（方式 A）或 `claudeSessionId`（方式 B）。
+新会话在 `POST /api/chat` 里带 `runtime`（方式 A）或 `claudeSessionId`（方式 B）；工作目录
+固定为 daemon 的 `--workspace`。
 
-> 权限模式仍是 daemon 级全局配置（在设置页展示，只读），**不能按会话选择**；工作目录现在可**按会话选择**。
+> 权限模式、工作目录都是 daemon 级全局配置（在设置页展示，只读），**不能按会话选择**。
 
 ---
 
@@ -402,7 +407,7 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 **分组**：
 1. **连接**：服务器地址、token（查看/修改）。
 2. **默认偏好**：默认模型、默认 agent（🟡 需后端暴露模型列表）。
-3. **信息（只读）**：daemon 版本号（`GET /api/health` 的 `version`）、允许的工作目录白名单（`GET /api/workspaces`）、当前权限模式。
+3. **信息（只读）**：daemon 版本号（`GET /api/health` 的 `version`）、当前权限模式。
 4. **关于**：App 版本、开源许可。
 
 ---
@@ -521,9 +526,8 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | 可用 agent 列表（`Claude Code`…） | `GET /api/agents` |
 | 会话列表（标题/runtime/工作目录/时间） | `GET /api/sessions` |
 | 单个会话的消息历史 + runs | `GET /api/sessions/:id` |
-| 允许的工作目录（新建会话选择器） | `GET /api/workspaces` |
 | 续接本机 Claude 会话列表 | `GET /api/claude-sessions` |
-| 流式事件（状态/文本/思考/工具/用量/审批/结束） | SSE：`POST /api/chat`（body `{sessionId?, claudeSessionId?, prompt, model?, runtime?, cwd?}`） |
+| 流式事件（状态/文本/思考/工具/用量/审批/结束） | SSE：`POST /api/chat`（body `{sessionId?, claudeSessionId?, prompt, model?, runtime?}`） |
 | 停止运行中的任务 | `POST /api/runs/:id/cancel` |
 | 命令审批决策（允许/拒绝/允许全部） | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
 | 文件列表 / 文件内容 | 🟡 `GET /api/files`、`GET /api/files/:path`（**待后端实现**） |
@@ -537,7 +541,7 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 
 **M1（首批可用）**：
 - ① 连接页、② 会话列表、③ 聊天详情、④ 新建/续接会话、⑦ 设置、Ⓟ 权限审批。
-- 覆盖：连接、列会话（含运行指示）、建会话（含选工作目录 + 选 agent）、会话重命名/删除、发消息、流式回复、思考块、工具卡片、用量、**命令审批**、停止任务、断线重连。
+- 覆盖：连接、列会话（含运行指示）、建会话（选 agent）、会话重命名/删除、发消息、流式回复、思考块、工具卡片、用量、**命令审批**、停止任务、断线重连。
 
 **M2（增强）**：
 - ⑤ 文件浏览 + ⑥ 文件查看器、扫码连接、消息搜索、多端观看（同一会话多设备同看）。
@@ -570,8 +574,7 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | `/api/sessions/:id` | GET | 是 | `{session, messages, runs}` |
 | `/api/sessions/:id` | PATCH | 是 | 重命名，body `{title}` → `{ok, session}` |
 | `/api/sessions/:id` | DELETE | 是 | 删除会话 → `{ok, id}` |
-| `/api/chat` | POST | 是 | SSE 流，帧 `{runId, seq, event}`；body `{sessionId?, claudeSessionId?, prompt, model?, runtime?, cwd?}` |
-| `/api/workspaces` | GET | 是 | `{workspaces:[...], default}`（允许的工作目录白名单） |
+| `/api/chat` | POST | 是 | SSE 流，帧 `{runId, seq, event}`；body `{sessionId?, claudeSessionId?, prompt, model?, runtime?}` |
 | `/api/runs` | GET | 是 | `{runs:[{id, sessionId, runtime, model, status, prompt, startedAt}]}`（当前运行中的 run） |
 | `/api/runs/:id/cancel` | POST | 是 | `{ok, id}` |
 | `/api/runs/:id/events` | GET | 是 | `{runId, events:[{runId, seq, event}]}`；`?after=<seq>` 续传游标（一次性回放） |
@@ -613,7 +616,6 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | 文件浏览 / 文件内容 | ⑤⑥ 文件页 | 🟡 未实现 |
 | 模型列表 | 设置页默认模型 | 🟡 `GET /api/agent` 可返回 models，需确认 |
 | 扫码连接（二维码） | 连接页扫码 | 🟡 未实现 |
-| 按会话选择工作目录 | 新建会话 Sheet | 🟢 已实现（`POST /api/chat` 带 `cwd`，白名单来自 `GET /api/workspaces`） |
 | 按会话选择权限模式 | — | ⛔ daemon 级全局配置，非会话级 |
 | 语音输入（ASR 转文字） | 聊天输入区麦克风 | 🟡 未实现，需决策客户端系统 ASR / daemon 服务端 ASR |
 
@@ -627,6 +629,6 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | agent / runtime | 编码 CLI（当前为 Claude Code，未来可加 codex 等） |
 | 会话（session / conversation） | 一次持续的对话，绑定 runtime/工作目录 |
 | run | 一次「发消息 → 跑完」的执行单元；一个会话可包含多次 run |
-| 工作区（workspace） | agent 干活的目录；daemon 有主工作区 + 允许目录白名单（`--allowed-dir`），会话可绑定不同目录 |
+| 工作区（workspace） | agent 干活的**唯一**根目录（daemon 级 `--workspace`，会话固定在其下） |
 | 权限模式（permission mode） | daemon 级全局配置，控制 agent 能做什么（改文件/只读/任意命令） |
 | token | 连接鉴权密钥（64 位 hex），**不是** LLM 计费的 token |

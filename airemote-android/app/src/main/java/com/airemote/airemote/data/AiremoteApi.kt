@@ -11,7 +11,6 @@ import com.airemote.airemote.model.event.PermissionDecisionRequest
 import com.airemote.airemote.model.session.RunsResponse
 import com.airemote.airemote.model.session.SessionDetailResponse
 import com.airemote.airemote.model.session.SessionsResponse
-import com.airemote.airemote.model.workspace.WorkspacesResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -36,9 +35,6 @@ interface AiremoteApi {
 
     @DELETE("api/sessions/{id}")
     suspend fun deleteSession(@Path("id") id: String): OkResponse
-
-    @GET("api/workspaces")
-    suspend fun workspaces(): WorkspacesResponse
 
     @GET("api/agents")
     suspend fun agents(): AgentsResponse

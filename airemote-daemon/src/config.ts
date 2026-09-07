@@ -12,10 +12,8 @@ export interface Config {
   host: string;
   port: number;
   dataDir: string;
-  /** Primary/default working directory (also the first allowed dir). */
+  /** 唯一的工作空间根目录，agent 只在其下（含子目录）干活。 */
   workspace: string;
-  /** Working directories an agent may run in (absolute, deduped). */
-  allowedDirs: string[];
   token: string;
   tokenPath: string;
   tokenGenerated: boolean;
@@ -70,35 +68,8 @@ export interface ConfigOverrides {
   port?: number;
   dataDir?: string;
   workspace?: string;
-  /** Extra allowed working directories (appended after `workspace`). */
-  allowedDirs?: string[];
   token?: string;
   permissionMode?: string;
-}
-
-/** Build the allowed-directory whitelist: primary `workspace` + extras, resolved + deduped. */
-function resolveAllowedDirs(
-  env: NodeJS.ProcessEnv,
-  overrides: ConfigOverrides,
-  workspace: string,
-): string[] {
-  const raw: string[] = [workspace];
-  if (overrides.allowedDirs) raw.push(...overrides.allowedDirs);
-  const envDirs = env.AIREMOTE_ALLOWED_DIRS?.trim();
-  if (envDirs) {
-    raw.push(...envDirs.split(path.delimiter).map((s) => s.trim()).filter(Boolean));
-  }
-
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const dir of raw) {
-    const resolved = path.resolve(dir);
-    if (!seen.has(resolved)) {
-      seen.add(resolved);
-      out.push(resolved);
-    }
-  }
-  return out;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: ConfigOverrides = {}): Config {
@@ -120,14 +91,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     throw new Error(`invalid port: ${port}`);
   }
 
-  const allowedDirs = resolveAllowedDirs(env, overrides, workspace);
-
   return {
     host,
     port,
     dataDir,
     workspace,
-    allowedDirs,
     token,
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,

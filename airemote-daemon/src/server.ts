@@ -12,7 +12,6 @@ import { registerClaudeSessionRoutes } from './routes/claude-sessions.js';
 import { registerPermissionRoutes } from './routes/permissions.js';
 import { registerRunRoutes } from './routes/runs.js';
 import { registerSessionRoutes } from './routes/sessions.js';
-import { registerWorkspaceRoutes } from './routes/workspaces.js';
 
 export function createApp(ctx: AppContext): Express {
   const app = express();
@@ -31,7 +30,6 @@ export function createApp(ctx: AppContext): Express {
   registerRunRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
-  registerWorkspaceRoutes(app, ctx);
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'not found', code: 'not_found' });

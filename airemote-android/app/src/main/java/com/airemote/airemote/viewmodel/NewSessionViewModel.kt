@@ -13,8 +13,6 @@ import kotlinx.coroutines.launch
 sealed class NewSessionUiState {
     object Loading : NewSessionUiState()
     data class Ready(
-        val workspaces: List<String>,
-        val defaultWorkspace: String,
         val agents: List<AgentDto>,
         val claudeSessions: List<ClaudeSessionDto>,
     ) : NewSessionUiState()
@@ -27,9 +25,6 @@ class NewSessionViewModel(
 
     private val _uiState = MutableStateFlow<NewSessionUiState>(NewSessionUiState.Loading)
     val uiState = _uiState.asStateFlow()
-
-    private val _selectedWorkspace = MutableStateFlow<String?>(null)
-    val selectedWorkspace = _selectedWorkspace.asStateFlow()
 
     private val _selectedAgent = MutableStateFlow<String?>(null)
     val selectedAgent = _selectedAgent.asStateFlow()
@@ -44,23 +39,17 @@ class NewSessionViewModel(
     fun load() {
         viewModelScope.launch {
             _uiState.value = NewSessionUiState.Loading
-            val workspaces = repository.workspaces()
             val agents = repository.agents()
             val claudeSessions = repository.claudeSessions()
 
             when {
-                workspaces is NetworkResult.Error -> _uiState.value = NewSessionUiState.Error(friendly(workspaces.code, workspaces.message))
                 agents is NetworkResult.Error -> _uiState.value = NewSessionUiState.Error(friendly(agents.code, agents.message))
                 claudeSessions is NetworkResult.Error -> _uiState.value = NewSessionUiState.Error(friendly(claudeSessions.code, claudeSessions.message))
                 else -> {
-                    val ws = (workspaces as NetworkResult.Success).data
                     val ag = (agents as NetworkResult.Success).data
                     val cs = (claudeSessions as NetworkResult.Success).data
-                    if (_selectedWorkspace.value == null) _selectedWorkspace.value = ws.default
                     if (_selectedAgent.value == null) _selectedAgent.value = ag.agents.firstOrNull()?.id
                     _uiState.value = NewSessionUiState.Ready(
-                        workspaces = ws.workspaces,
-                        defaultWorkspace = ws.default,
                         agents = ag.agents,
                         claudeSessions = cs.sessions,
                     )
@@ -69,18 +58,12 @@ class NewSessionViewModel(
         }
     }
 
-    fun selectWorkspace(ws: String) {
-        _selectedWorkspace.value = ws
-        _selectedClaudeSession.value = null
-    }
-
     fun selectAgent(id: String) {
         _selectedAgent.value = id
     }
 
     fun selectClaudeSession(id: String) {
         _selectedClaudeSession.value = id
-        _selectedWorkspace.value = null
     }
 
     private fun friendly(code: Int, message: String): String = when (code) {

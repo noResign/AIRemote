@@ -10,5 +10,4 @@ data class ChatRequest(
     val claudeSessionId: String? = null,
     val model: String? = null,
     val runtime: String? = null,
-    val cwd: String? = null,
 )

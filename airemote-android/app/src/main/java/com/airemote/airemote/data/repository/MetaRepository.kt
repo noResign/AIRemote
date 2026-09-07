@@ -8,9 +8,8 @@ import com.airemote.airemote.model.claude.ClaudeSessionsResponse
 import com.airemote.airemote.model.connect.HealthResponse
 import com.airemote.airemote.model.network.NetworkResult
 import com.airemote.airemote.model.network.safeApiCall
-import com.airemote.airemote.model.workspace.WorkspacesResponse
 
-/** Daemon 元数据（工作目录 / agents / 本机 Claude 会话 / 版本）。 */
+/** Daemon 元数据（agents / 本机 Claude 会话 / 版本）。 */
 class MetaRepository(
     private val settings: SettingsStore = SettingsStore,
 ) {
@@ -19,11 +18,6 @@ class MetaRepository(
         val url = settings.baseUrl ?: return null
         val token = settings.token ?: return null
         return AiremoteClient.create(url, token)
-    }
-
-    suspend fun workspaces(): NetworkResult<WorkspacesResponse> {
-        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.workspaces() }
     }
 
     suspend fun agents(): NetworkResult<AgentsResponse> {

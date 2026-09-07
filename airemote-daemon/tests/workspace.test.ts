@@ -1,32 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { resolveAllowedCwd } from '../src/workspace';
+import { resolveWorkspaceCwd } from '../src/workspace';
 
-describe('resolveAllowedCwd', () => {
-  const allowed = ['/home/user/projects', '/opt/work'];
+describe('resolveWorkspaceCwd', () => {
+  const root = '/home/user/projects';
 
-  it('allows a root directory itself', () => {
-    expect(resolveAllowedCwd('/home/user/projects', allowed)).toBe('/home/user/projects');
-    expect(resolveAllowedCwd('/opt/work', allowed)).toBe('/opt/work');
+  it('allows the workspace root itself', () => {
+    expect(resolveWorkspaceCwd(root, root)).toBe(root);
   });
 
-  it('allows descendants of an allowed root', () => {
-    expect(resolveAllowedCwd('/home/user/projects/app', allowed)).toBe('/home/user/projects/app');
-    expect(resolveAllowedCwd('/home/user/projects/a/b/c', allowed)).toBe('/home/user/projects/a/b/c');
+  it('allows descendants of the workspace root', () => {
+    expect(resolveWorkspaceCwd('/home/user/projects/app', root)).toBe('/home/user/projects/app');
+    expect(resolveWorkspaceCwd('/home/user/projects/a/b/c', root)).toBe('/home/user/projects/a/b/c');
   });
 
-  it('rejects escaping above a root via ..', () => {
-    expect(resolveAllowedCwd('/home/user/projects/../../etc', allowed)).toBeNull();
+  it('rejects escaping above the root via ..', () => {
+    expect(resolveWorkspaceCwd('/home/user/projects/../../etc', root)).toBeNull();
   });
 
   it('rejects a sibling directory', () => {
-    expect(resolveAllowedCwd('/home/user/other', allowed)).toBeNull();
+    expect(resolveWorkspaceCwd('/home/user/other', root)).toBeNull();
   });
 
   it('rejects a prefix-matched sibling (projects-other vs projects)', () => {
-    expect(resolveAllowedCwd('/home/user/projects-other', allowed)).toBeNull();
+    expect(resolveWorkspaceCwd('/home/user/projects-other', root)).toBeNull();
   });
 
   it('rejects the filesystem root', () => {
-    expect(resolveAllowedCwd('/', allowed)).toBeNull();
+    expect(resolveWorkspaceCwd('/', root)).toBeNull();
   });
 });

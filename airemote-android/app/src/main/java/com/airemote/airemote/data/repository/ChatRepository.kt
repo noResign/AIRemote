@@ -24,7 +24,6 @@ class ChatRepository(
     fun chatStream(
         sessionId: String?,
         prompt: String,
-        cwd: String? = null,
         claudeSessionId: String? = null,
         runtime: String? = null,
     ): Flow<ChatStreamEvent> {
@@ -36,7 +35,6 @@ class ChatRepository(
             ChatRequest(
                 prompt = prompt,
                 sessionId = sessionId,
-                cwd = cwd,
                 claudeSessionId = claudeSessionId,
                 runtime = runtime,
             ),

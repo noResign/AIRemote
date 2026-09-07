@@ -6,7 +6,6 @@ export interface CliOptions {
   host?: string;
   port?: number;
   workspace?: string;
-  allowedDirs?: string[];
   dataDir?: string;
   token?: string;
   permissionMode?: string;
@@ -25,8 +24,7 @@ Usage:
 Options:
   --host <host>             Bind address. Default 0.0.0.0 (all interfaces; 127.0.0.1 = localhost only)
   --port <port>             Port. Default 4780
-  --workspace <path>        Primary working dir (default: current directory)
-  --allowed-dir <path>      Extra allowed working dir; repeatable
+  --workspace <path>        Working dir root (default: current directory)
   --data-dir <path>         Data dir for SQLite + token (default ~/.airemote)
   --token <token>           Bearer auth token (default: env AIREMOTE_TOKEN or generated)
   --permission-mode <mode>  Claude Code permission mode (default acceptEdits)
@@ -35,9 +33,9 @@ Options:
   -v, --version             Show version
 
 Environment variables (flags take precedence; may also be set in a .env file):
-  AIREMOTE_HOST, AIREMOTE_PORT, AIREMOTE_WORKSPACE, AIREMOTE_ALLOWED_DIRS,
-  AIREMOTE_DATA_DIR, AIREMOTE_TOKEN, AIREMOTE_PERMISSION_MODE,
-  AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS, AIREMOTE_TLS_CERT, AIREMOTE_TLS_KEY
+  AIREMOTE_HOST, AIREMOTE_PORT, AIREMOTE_WORKSPACE, AIREMOTE_DATA_DIR,
+  AIREMOTE_TOKEN, AIREMOTE_PERMISSION_MODE, AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS,
+  AIREMOTE_TLS_CERT, AIREMOTE_TLS_KEY
 `;
 }
 
@@ -53,7 +51,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
       host: { type: 'string' },
       port: { type: 'string' },
       workspace: { type: 'string' },
-      'allowed-dir': { type: 'string', multiple: true },
       'data-dir': { type: 'string' },
       token: { type: 'string' },
       'permission-mode': { type: 'string' },
@@ -75,7 +72,6 @@ export function parseCliArgs(argv: string[]): CliOptions {
     host: typeof values.host === 'string' ? values.host : undefined,
     port,
     workspace: typeof values.workspace === 'string' ? values.workspace : undefined,
-    allowedDirs: Array.isArray(values['allowed-dir']) ? values['allowed-dir'] : undefined,
     dataDir: typeof values['data-dir'] === 'string' ? values['data-dir'] : undefined,
     token: typeof values.token === 'string' ? values.token : undefined,
     permissionMode: typeof values['permission-mode'] === 'string' ? values['permission-mode'] : undefined,

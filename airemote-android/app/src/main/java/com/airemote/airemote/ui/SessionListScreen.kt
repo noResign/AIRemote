@@ -53,8 +53,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.model.session.SessionDto
@@ -75,6 +77,11 @@ fun SessionListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<SessionDto?>(null) }
     var showNewSession by remember { mutableStateOf(false) }
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshSilently()
+        onPauseOrDispose { }
+    }
 
     LaunchedEffect(message) {
         message?.let {
@@ -127,17 +134,23 @@ fun SessionListScreen(
                             OutlinedButton(onClick = { showNewSession = true }) { Text("新建会话") }
                         }
                     } else {
+                        val groups = remember(state.sessions) { groupByCwd(state.sessions) }
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            items(state.sessions, key = { it.id }) { session ->
-                                SessionCard(
-                                    session = session,
-                                    onClick = { onOpenSession(session.id) },
-                                    onLongClick = { pendingDelete = session },
-                                )
+                            groups.forEach { group ->
+                                item(key = "cwd-${group.cwd}") {
+                                    WorkspaceHeader(group.cwd)
+                                }
+                                items(group.sessions, key = { it.id }) { session ->
+                                    SessionCard(
+                                        session = session,
+                                        onClick = { onOpenSession(session.id) },
+                                        onLongClick = { pendingDelete = session },
+                                    )
+                                }
                             }
                         }
                     }
@@ -167,7 +180,7 @@ fun SessionListScreen(
         NewSessionSheet(
             onDismiss = { showNewSession = false },
             onCreate = { config ->
-                PendingNewSession.set(config.cwd, config.claudeSessionId, config.runtime)
+                PendingNewSession.set(config.claudeSessionId, config.runtime)
                 showNewSession = false
                 onNewSession()
             },
@@ -215,18 +228,7 @@ private fun SessionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RuntimeBadge(runtime = session.runtime)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = session.cwd,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            RuntimeBadge(runtime = session.runtime)
         }
     }
 }
@@ -267,5 +269,27 @@ private fun RunningDot() {
             .size(9.dp)
             .alpha(alpha)
             .background(MaterialTheme.colorScheme.primary, CircleShape),
+    )
+}
+
+private data class WorkspaceGroup(val cwd: String, val sessions: List<SessionDto>)
+
+private fun groupByCwd(sessions: List<SessionDto>): List<WorkspaceGroup> {
+    return sessions
+        .groupBy { it.cwd.ifBlank { "默认工作目录" } }
+        .map { (cwd, list) -> WorkspaceGroup(cwd, list.sortedByDescending { it.lastActiveAt }) }
+        .sortedByDescending { group -> group.sessions.maxOf { it.lastActiveAt } }
+}
+
+@Composable
+private fun WorkspaceHeader(cwd: String) {
+    Text(
+        text = cwd,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 8.dp),
     )
 }

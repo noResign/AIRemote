@@ -7,7 +7,7 @@ import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
-import { resolveAllowedCwd } from '../workspace.js';
+import { resolveWorkspaceCwd } from '../workspace.js';
 
 interface ChatBody {
   sessionId?: string;
@@ -16,8 +16,6 @@ interface ChatBody {
   prompt?: string;
   model?: string;
   runtime?: string;
-  /** Working directory for a NEW session; must be within the allowed dirs. */
-  cwd?: string;
 }
 
 /**
@@ -58,24 +56,12 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     }
 
     // Resuming an existing session: its STORED cwd must still be within the
-    // CURRENT allowed-directory whitelist. The daemon may have restarted with a
-    // different/narrower workspace since the session was created, so this is a
-    // fresh security check on every resume, not just at creation.
-    if (session && !resolveAllowedCwd(session.cwd, ctx.config.allowedDirs)) {
+    // CURRENT workspace root. The daemon may have restarted with a different
+    // workspace since the session was created, so this is a fresh check on every
+    // resume, not just at creation.
+    if (session && !resolveWorkspaceCwd(session.cwd, ctx.config.workspace)) {
       res.status(400).json({ error: `session cwd not allowed: ${session.cwd}`, code: 'cwd_not_allowed' });
       return;
-    }
-
-    // Working directory for a NEW session. Default to the primary workspace;
-    // an explicit `cwd` must be inside the allowed-directory whitelist.
-    let newCwd = ctx.config.workspace;
-    if (typeof body.cwd === 'string' && body.cwd.trim() !== '') {
-      const allowed = resolveAllowedCwd(body.cwd, ctx.config.allowedDirs);
-      if (!allowed) {
-        res.status(400).json({ error: `cwd not allowed: ${body.cwd}`, code: 'cwd_not_allowed' });
-        return;
-      }
-      newCwd = allowed;
     }
 
     // Import an existing Claude Code session (e.g. started in the desktop TUI)
@@ -88,7 +74,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         res.status(404).json({ error: 'claude session not found', code: 'claude_session_not_found' });
         return;
       }
-      if (!resolveAllowedCwd(found.cwd, ctx.config.allowedDirs)) {
+      if (!resolveWorkspaceCwd(found.cwd, ctx.config.workspace)) {
         res.status(400).json({ error: `claude session cwd not allowed: ${found.cwd}`, code: 'cwd_not_allowed' });
         return;
       }
@@ -105,7 +91,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         session = ctx.db.createSession({ id, runtime, cwd: importedCwd, claude_session_id: body.claudeSessionId, title: importedTitle ?? null });
       } else {
         newSessionId = randomUUID();
-        session = ctx.db.createSession({ id, runtime, cwd: newCwd, claude_session_id: newSessionId, title: titleFromPrompt(prompt) });
+        session = ctx.db.createSession({ id, runtime, cwd: ctx.config.workspace, claude_session_id: newSessionId, title: titleFromPrompt(prompt) });
       }
     } else if (!session.claude_session_id) {
       newSessionId = randomUUID();

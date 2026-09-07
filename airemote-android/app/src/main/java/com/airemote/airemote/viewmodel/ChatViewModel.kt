@@ -56,8 +56,7 @@ class ChatViewModel(
     private var sessionId: String? = null
     private var streamJob: Job? = null
 
-    // 新建会话时由 Sheet 传入的工作目录 / 续接的 Claude 会话 / runtime
-    private var initialCwd: String? = null
+    // 新建会话时由 Sheet 传入的续接 Claude 会话 / runtime
     private var initialClaudeSessionId: String? = null
     private var initialRuntime: String? = null
 
@@ -65,7 +64,6 @@ class ChatViewModel(
         this.sessionId = sessionId
         if (sessionId == null) {
             PendingNewSession.take()?.let {
-                initialCwd = it.cwd
                 initialClaudeSessionId = it.claudeSessionId
                 initialRuntime = it.runtime
             }
@@ -141,8 +139,7 @@ class ChatViewModel(
         }
         _messages.update { it + ChatUiMessage.User(prompt) + ChatUiMessage.Assistant() }
         _error.value = null
-        start(repository.chatStream(sessionId, prompt, initialCwd, initialClaudeSessionId, initialRuntime))
-        initialCwd = null
+        start(repository.chatStream(sessionId, prompt, initialClaudeSessionId, initialRuntime))
         initialClaudeSessionId = null
         initialRuntime = null
     }

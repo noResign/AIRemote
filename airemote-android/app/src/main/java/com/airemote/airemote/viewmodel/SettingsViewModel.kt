@@ -10,7 +10,7 @@ import kotlinx.coroutines.launch
 
 sealed class SettingsUiState {
     object Loading : SettingsUiState()
-    data class Ready(val version: String, val workspaces: List<String>) : SettingsUiState()
+    data class Ready(val version: String) : SettingsUiState()
     data class Error(val message: String) : SettingsUiState()
 }
 
@@ -28,19 +28,11 @@ class SettingsViewModel(
     fun load() {
         viewModelScope.launch {
             _uiState.value = SettingsUiState.Loading
-            val health = repository.health()
-            val workspaces = repository.workspaces()
-            when {
-                health is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(health.code, health.message))
-                workspaces is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(workspaces.code, workspaces.message))
-                else -> {
-                    val h = (health as NetworkResult.Success).data
-                    val w = (workspaces as NetworkResult.Success).data
-                    _uiState.value = SettingsUiState.Ready(
-                        version = h.version ?: "unknown",
-                        workspaces = w.workspaces,
-                    )
-                }
+            when (val health = repository.health()) {
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(health.code, health.message))
+                is NetworkResult.Success -> _uiState.value = SettingsUiState.Ready(
+                    version = health.data.version ?: "unknown",
+                )
             }
         }
     }
