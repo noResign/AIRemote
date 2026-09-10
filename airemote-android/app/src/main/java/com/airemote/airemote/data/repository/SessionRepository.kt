@@ -1,11 +1,11 @@
 package com.airemote.airemote.data.repository
 
-import com.airemote.airemote.data.AiremoteApi
-import com.airemote.airemote.data.AiremoteClient
+import com.airemote.network.airemote.AiremoteApi
+import com.airemote.network.airemote.AiremoteClient
 import com.airemote.airemote.data.local.SettingsStore
-import com.airemote.airemote.model.network.NetworkResult
-import com.airemote.airemote.model.network.safeApiCall
-import com.airemote.airemote.model.session.SessionDto
+import com.airemote.network.http.NetworkResult
+import com.airemote.network.http.safeApiCall
+import com.airemote.network.airemote.dto.SessionDto
 
 class SessionRepository(
     private val settings: SettingsStore = SettingsStore,

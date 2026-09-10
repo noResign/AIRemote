@@ -1,0 +1,19 @@
+package com.airemote.network.airemote
+
+import com.airemote.network.airemote.dto.SseFrame
+
+/**
+ * airemote 聊天流的**业务层**事件（在通用 [com.airemote.network.sse.SseSource] 之上）。
+ *
+ * 换成别的 AI 接入时，照着写一份类似的「域适配层」即可，通用 SSE 层不用动。
+ */
+sealed interface ChatStreamEvent {
+    /** 一帧归一化事件（`{runId, seq, event}`）。 */
+    data class Frame(val frame: SseFrame) : ChatStreamEvent
+
+    /** 连接/协议失败（已翻译成人可读文案）。 */
+    data class Failed(val message: String) : ChatStreamEvent
+
+    /** 服务端正常结束流。 */
+    data object Closed : ChatStreamEvent
+}

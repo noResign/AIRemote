@@ -4,15 +4,17 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.repository.ChatRepository
-import com.airemote.airemote.data.sse.ChatStreamEvent
+import com.airemote.network.airemote.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.chat.parseTodos
-import com.airemote.airemote.model.event.NormalizedEvent
-import com.airemote.airemote.model.event.SseFrame
-import com.airemote.airemote.model.network.NetworkResult
+import com.airemote.network.airemote.dto.NormalizedEvent
+import com.airemote.network.airemote.dto.SseFrame
+import com.airemote.network.airemote.dto.MessageDto
+import com.airemote.network.airemote.dto.RunDto
+import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -72,12 +74,15 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = repository.sessionDetail(sessionId)) {
                 is NetworkResult.Success -> {
-                    _sessionTitle.value = r.data.session.title
-                    _sessionCwd.value = r.data.session.cwd
-                    _sessionRuntime.value = r.data.session.runtime
-                    _messages.value = reconstructHistory(r.data.runs, r.data.session.runningRunId, r.data.messages)
-                    if (r.data.session.running && r.data.session.runningRunId != null) {
-                        attach(r.data.session.runningRunId)
+                    val session = r.data.session
+                    _sessionTitle.value = session.title
+                    _sessionCwd.value = session.cwd
+                    _sessionRuntime.value = session.runtime
+                    // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
+                    val runningRunId = session.runningRunId
+                    _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
+                    if (session.running && runningRunId != null) {
+                        attach(runningRunId)
                     }
                 }
                 is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
@@ -90,9 +95,9 @@ class ChatViewModel(
      * 而不是只看聚合后的 messages。正在运行的 run 留空、交给 attach() 续流。
      */
     private suspend fun reconstructHistory(
-        runs: List<com.airemote.airemote.model.session.RunDto>,
+        runs: List<RunDto>,
         runningRunId: String?,
-        messages: List<com.airemote.airemote.model.session.MessageDto>,
+        messages: List<MessageDto>,
     ): List<ChatUiMessage> {
         val list = mutableListOf<ChatUiMessage>()
         for (run in runs) {

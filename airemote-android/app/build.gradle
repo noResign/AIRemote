@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.kotlin.serialization)
+    // 不再需要 kotlin-serialization 插件：本模块已无 @Serializable 类，协议 DTO 都在 :lib-network
 }
 
 android {
@@ -40,6 +40,10 @@ android {
 }
 
 dependencies {
+    // 全部网络能力（Retrofit/OkHttp/coroutines/kotlinx-serialization 依赖 + 协议 DTO + API + SSE）
+    // 都由 :lib-network 以 api 暴露，本模块直接用，不重复声明
+    implementation project(':lib-network')
+
     implementation libs.androidx.core.ktx
     implementation libs.androidx.lifecycle.runtime.ktx
     implementation libs.androidx.lifecycle.runtime.compose
@@ -47,11 +51,6 @@ dependencies {
     implementation platform(libs.androidx.compose.bom)
 
     implementation libs.androidx.navigation.compose
-    implementation libs.retrofit
-    implementation libs.retrofit.converter.kotlinx.serialization
-    implementation libs.okhttp
-    implementation libs.okhttp.sse
-    implementation libs.kotlinx.serialization.json
     implementation libs.mmkv
 
     implementation libs.androidx.compose.ui

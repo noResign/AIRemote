@@ -5,7 +5,7 @@ import com.airemote.airemote.base.BaseViewModel
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.repository.ConnectRepository
 import com.airemote.airemote.model.connect.ConnectResponse
-import com.airemote.airemote.model.network.NetworkResult
+import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch

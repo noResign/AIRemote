@@ -1,5 +1,7 @@
 package com.airemote.airemote.model.session
 
+import com.airemote.network.airemote.dto.SessionDto
+
 /** 会话列表按工作目录（cwd）分组的结果（docs/ui_design.md §6.2）。 */
 data class WorkspaceGroup(
     val cwd: String,

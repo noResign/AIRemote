@@ -65,7 +65,7 @@ import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
-import com.airemote.airemote.model.event.NormalizedEvent
+import com.airemote.network.airemote.dto.NormalizedEvent
 import com.airemote.airemote.ui.theme.CodeBody
 import com.airemote.airemote.ui.theme.LocalSemanticColors
 import com.airemote.airemote.viewmodel.ChatViewModel

@@ -1,13 +1,13 @@
 package com.airemote.airemote.data.repository
 
-import com.airemote.airemote.data.AiremoteApi
-import com.airemote.airemote.data.AiremoteClient
+import com.airemote.network.airemote.AiremoteApi
+import com.airemote.network.airemote.AiremoteClient
 import com.airemote.airemote.data.local.SettingsStore
-import com.airemote.airemote.model.agent.AgentsResponse
-import com.airemote.airemote.model.claude.ClaudeSessionsResponse
-import com.airemote.airemote.model.connect.HealthResponse
-import com.airemote.airemote.model.network.NetworkResult
-import com.airemote.airemote.model.network.safeApiCall
+import com.airemote.network.airemote.dto.AgentsResponse
+import com.airemote.network.airemote.dto.ClaudeSessionsResponse
+import com.airemote.network.airemote.dto.HealthResponse
+import com.airemote.network.http.NetworkResult
+import com.airemote.network.http.safeApiCall
 
 /** Daemon 元数据（agents / 本机 Claude 会话 / 版本）。 */
 class MetaRepository(

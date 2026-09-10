@@ -3,7 +3,7 @@ package com.airemote.airemote.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.repository.SessionRepository
-import com.airemote.airemote.model.network.NetworkResult
+import com.airemote.network.http.NetworkResult
 import com.airemote.airemote.model.session.WorkspaceGroup
 import com.airemote.airemote.model.session.groupByCwd
 import kotlinx.coroutines.flow.MutableStateFlow

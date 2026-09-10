@@ -3,7 +3,7 @@ package com.airemote.airemote.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.repository.MetaRepository
-import com.airemote.airemote.model.network.NetworkResult
+import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch

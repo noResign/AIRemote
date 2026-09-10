@@ -1,20 +1,21 @@
 package com.airemote.airemote.data.repository
 
-import com.airemote.airemote.data.AiremoteClient
+import com.airemote.network.airemote.AiremoteClient
 import com.airemote.airemote.data.local.SettingsStore
-import com.airemote.airemote.data.sse.AiremoteSse
-import com.airemote.airemote.data.sse.ChatStreamEvent
-import com.airemote.airemote.model.event.ChatRequest
-import com.airemote.airemote.model.event.EventsResponse
-import com.airemote.airemote.model.event.PermissionDecisionRequest
-import com.airemote.airemote.model.network.NetworkResult
-import com.airemote.airemote.model.network.safeApiCall
-import com.airemote.airemote.model.session.SessionDetailResponse
+import com.airemote.network.airemote.AiremoteStream
+import com.airemote.network.airemote.ChatStreamEvent
+import com.airemote.network.airemote.dto.ChatRequest
+import com.airemote.network.airemote.dto.EventsResponse
+import com.airemote.network.airemote.dto.PermissionDecisionRequest
+import com.airemote.network.http.NetworkResult
+import com.airemote.network.http.safeApiCall
+import com.airemote.network.airemote.dto.SessionDetailResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
 class ChatRepository(
     private val settings: SettingsStore = SettingsStore,
+    private val stream: AiremoteStream = AiremoteStream.default,
 ) {
 
     private fun api() = settings.baseUrl?.let { url ->
@@ -29,7 +30,7 @@ class ChatRepository(
     ): Flow<ChatStreamEvent> {
         val url = settings.baseUrl ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
         val token = settings.token ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
-        return AiremoteSse.chat(
+        return stream.chat(
             url,
             token,
             ChatRequest(
@@ -44,7 +45,7 @@ class ChatRepository(
     fun runStream(runId: String, after: Long? = null): Flow<ChatStreamEvent> {
         val url = settings.baseUrl ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
         val token = settings.token ?: return flowOf(ChatStreamEvent.Failed("未配置连接"))
-        return AiremoteSse.streamRun(url, token, runId, after)
+        return stream.streamRun(url, token, runId, after)
     }
 
     suspend fun sessionDetail(id: String): NetworkResult<SessionDetailResponse> {

@@ -1,9 +1,9 @@
 package com.airemote.airemote.data.repository
 
-import com.airemote.airemote.data.AiremoteClient
+import com.airemote.network.airemote.AiremoteClient
 import com.airemote.airemote.model.connect.ConnectResponse
-import com.airemote.airemote.model.network.NetworkResult
-import com.airemote.airemote.model.network.safeApiCall
+import com.airemote.network.http.NetworkResult
+import com.airemote.network.http.safeApiCall
 
 class ConnectRepository {
 

@@ -28,6 +28,8 @@ AIRemote/
 │  ├─ tests/              Vitest 单测
 │  └─ docs/daemon.md      daemon 技术方案（架构/协议/权限/数据模型/端点表）
 ├─ airemote-android/      Android 客户端（Kotlin + Compose，M1 已实现）
+│  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
+│  └─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
 └─ airemote-ios/          iOS 客户端（预留，原生 SwiftUI）
 ```
 
@@ -40,7 +42,7 @@ AIRemote/
 - **daemon**：Node `~24`（ESM）、TypeScript（strict）、运行时依赖仅 `express`、存储用
   `node:sqlite`（零原生依赖）、测试 Vitest、dev 用 `tsx`。
 - **Android**：Kotlin、Jetpack Compose + Material 3、Retrofit + kotlinx-serialization、
-  OkHttp-SSE、MMKV、Navigation Compose、MVVM。
+  OkHttp（SSE 手写解析）、MMKV、Navigation Compose、MVVM；多模块（`:app` 业务 + `:lib-network` 通用网络层）。
 - **iOS**：预留，原生 SwiftUI，与 Android 共用 `docs/ui_design.md` 一套规范。
 
 
@@ -48,9 +50,12 @@ AIRemote/
 
 ### 通用
 
-- **命名（文件）**：一个文件一个**顶层公开类型**，文件名与该类型同名（`AgentDto` →
-  `AgentDto.kt`、`NormalizedEvent` → `NormalizedEvent.kt`）；sealed 的**嵌套子类**、
-  该类型的**配套顶层函数**随父类型放同一文件，不单独拆。文件夹按领域分组（`model/agent/`）。
+- **命名（文件）**：一个文件一个**顶层公开类型**，文件名与该类型同名（`SseSource` →
+  `SseSource.kt`、`NormalizedEvent` → `NormalizedEvent.kt`）；sealed 的**嵌套子类**、
+  该类型的**配套顶层函数**随父类型放同一文件，不单独拆。文件夹按领域分组（`sse/`、`llm/`）。
+- **例外：wire DTO 按域合并**。同一份协议的传输模型不搞「一类型一文件」，而是按业务域收成几个
+  `<域>Dtos.kt`（`AgentDto` + `AgentsResponse` 同放 `AgentDtos.kt`），统一进 `<协议>/dto/` 包，
+  **不再**在 `dto/` 下按域建子目录。理由：一个实体和它的列表包装永远同生共死，拆开只是噪音。
 - **传输契约**：改 `types/api.ts` 前先想清对 Android/iOS 两端的影响；Android 侧 DTO 与之一一
   对齐（字段名/类型/多态判别）。
 - **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `airemote-daemon/docs/daemon.md`；
@@ -73,10 +78,25 @@ AIRemote/
 
 ### Android
 
-- **分层**：`data`（网络 API/仓库/SSE）、`model`（DTO/领域模型）、`viewmodel`、`ui`、
-  `navigation`，严格 MVVM，UI 层不碰网络。
-- **网络**：Retrofit + 鉴权拦截器；SSE 用 OkHttp-SSE 包成 `Flow`。
-- **持久化**：MMKV（`SettingsStore`）。
+- **模块**：`:app`（业务）+ `:lib-network`（网络底座，包名 `com.airemote.network`）。
+  **网络相关的东西全在 `:lib-network`**：okhttp / retrofit / coroutines / kotlinx-serialization
+  依赖、wire DTO、Retrofit 接口与客户端工厂、SSE 传输、网络错误包装。`app` 不自己声明这些依赖，
+  直接用 `:lib-network` 的类型（依赖以 `api` 暴露）。`:lib-network` 不引用任何 `android.*`，
+  也不放业务编排、UI、MMKV。
+- **`:lib-network` 内部分层（依赖单向向下，不引 okhttp-sse）**：
+  1. `sse/` 通用 SSE 传输——`SseSource` 接口 + `OkHttpSseSource`（裸 OkHttp 长连接）+ 纯逻辑
+     `SseParser`（可单测），不含业务语义；
+  2. `http/` REST 结果包装——`NetworkResult` + `safeApiCall`；
+  3. `llm/` 大模型供应商抽象——`LlmProvider`（`Flow` 流式 + 非流式）、`OpenAiCompatLlmProvider`
+     （OpenAI 兼容协议）、`RoutingLlmProvider` + `ModelResolver`（按 model 路由，依赖倒置）；
+  4. `airemote/` daemon 协议层——`AiremoteApi`（Retrofit）、`AiremoteClient`（工厂）、
+     `AiremoteStream` + `ChatStreamEvent`、`dto/`（5 个按域分的 `<域>Dtos.kt`，与 `types/api.ts`
+     一一对齐）。
+- **分层（`:app`）**：`data/repository`（业务编排，直接调 `:lib-network`）、`data/local`（MMKV 设置）、
+  `model`（页面模型）、`viewmodel`、`ui`、`navigation`，严格 MVVM，UI 层不碰网络。
+- **传输契约**：改 `types/api.ts` 时同步改 `:lib-network` 的 `airemote/dto/`（字段名/类型/多态判别
+  一一对齐）；跨 module 的 DTO 属性不能智能转换，先用局部变量接再判空。
+- **持久化**：MMKV（`SettingsStore`，留在 `:app`）。
 - **UI**：以 `docs/ui_design.md` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
   新增 agent 只加一行不改布局。
 - **注意**：用户没有主动提出帮忙运行android项目，再更改后请不要主动使用.gradlew命令运行，用户自己运行测试

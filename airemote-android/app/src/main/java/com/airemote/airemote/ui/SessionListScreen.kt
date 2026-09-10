@@ -55,7 +55,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.local.SettingsStore
-import com.airemote.airemote.model.session.SessionDto
+import com.airemote.network.airemote.dto.SessionDto
 import com.airemote.airemote.model.session.WorkspaceGroup
 import com.airemote.airemote.ui.component.AgentBadge
 import com.airemote.airemote.ui.component.RunningIndicator
