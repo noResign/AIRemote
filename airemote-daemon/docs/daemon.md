@@ -126,7 +126,7 @@ SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`eve
 
 ```
 status | text_delta | thinking_delta | thinking_start | tool_use
-tool_result | usage | turn_end | error | permission_request
+tool_result | usage | turn_end | error | permission_request | question
 ```
 
 `POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime? }`。

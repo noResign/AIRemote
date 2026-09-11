@@ -6,6 +6,22 @@ import kotlinx.serialization.json.JsonElement
 
 /** airemote daemon wire 模型——归一化事件流与相关请求。与 `airemote-daemon/src/types/api.ts` 对齐。 */
 
+/** `AskUserQuestion` 工具的一个选项。 */
+@Serializable
+data class QuestionOptionDto(
+    val label: String,
+    val description: String? = null,
+)
+
+/** `AskUserQuestion` 工具里的单个问题。 */
+@Serializable
+data class QuestionDto(
+    val question: String,
+    val header: String? = null,
+    val multiSelect: Boolean = false,
+    val options: List<QuestionOptionDto> = emptyList(),
+)
+
 /**
  * 后端归一化事件流（runtime 无关）。SSE 的 `data` 里是 `{runId, seq, event}`，
  * `event` 就是本 sealed class，以 `type` 字段作为多态判别。
@@ -72,6 +88,13 @@ sealed class NormalizedEvent {
         val permissionId: String,
         val toolName: String,
         val toolInput: JsonElement? = null,
+    ) : NormalizedEvent()
+
+    @Serializable
+    @SerialName("question")
+    data class Question(
+        val toolUseId: String,
+        val questions: List<QuestionDto> = emptyList(),
     ) : NormalizedEvent()
 }
 

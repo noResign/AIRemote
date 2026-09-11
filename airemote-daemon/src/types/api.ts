@@ -9,6 +9,18 @@
  * its stream parser, so the transport never needs to know runtime-specific
  * wire formats.
  */
+export interface QuestionOption {
+  label: string;
+  description?: string;
+}
+
+export interface QuestionDto {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: QuestionOption[];
+}
+
 export type NormalizedEvent =
   | {
       type: 'status';
@@ -34,7 +46,8 @@ export type NormalizedEvent =
     }
   | { type: 'turn_end'; stopReason: string }
   | { type: 'error'; code?: string; message: string; terminal?: boolean }
-  | { type: 'permission_request'; permissionId: string; toolName: string; toolInput: unknown };
+  | { type: 'permission_request'; permissionId: string; toolName: string; toolInput: unknown }
+  | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
 
 export interface ApiError {
   error: string;

@@ -1,5 +1,6 @@
 package com.airemote.airemote.model.chat
 
+import com.airemote.network.airemote.dto.QuestionDto
 import kotlinx.serialization.json.JsonElement
 
 /** 助手消息里的一段有序内容块，按 Claude 实际返回的顺序排列。 */
@@ -15,5 +16,11 @@ sealed interface ContentBlock {
         val result: String? = null,
         val isError: Boolean = false,
         val running: Boolean = true,
+    ) : ContentBlock
+
+    data class Question(
+        val toolUseId: String,
+        val questions: List<QuestionDto>,
+        val answered: Boolean = false,
     ) : ContentBlock
 }

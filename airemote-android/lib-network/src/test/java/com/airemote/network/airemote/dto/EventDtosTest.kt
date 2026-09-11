@@ -41,6 +41,8 @@ class EventDtosTest {
             """{"type":"error","message":"boom"}""" to NormalizedEvent.Error::class,
             """{"type":"permission_request","permissionId":"p1","toolName":"Bash"}"""
                 to NormalizedEvent.PermissionRequest::class,
+            """{"type":"question","toolUseId":"q1","questions":[{"question":"What?","header":"H","multiSelect":false,"options":[{"label":"A","description":"d"}]}]}"""
+                to NormalizedEvent.Question::class,
         )
 
         for ((payload, expected) in cases) {

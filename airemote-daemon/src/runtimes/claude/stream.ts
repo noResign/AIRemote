@@ -1,4 +1,4 @@
-import type { NormalizedEvent } from '../../types/api.js';
+import type { NormalizedEvent, QuestionDto } from '../../types/api.js';
 import type { StreamParser } from '../types.js';
 
 type EventSink = (ev: NormalizedEvent) => void;
@@ -60,6 +60,16 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
   const blockKey = (index: unknown): string => `${currentMessageId ?? 'anon'}:${String(index)}`;
 
   function emitToolUse(id: unknown, name: unknown, input: unknown): void {
+    // AskUserQuestion 是「需要用户回答」的特殊工具，不能当普通工具卡展示；归一化成
+    // 独立的 question 事件，让客户端渲染成问答卡。headless 下 Claude 会立即自动拒绝它，
+    // 客户端选完答案后作为续接消息发回，而不是回填 tool_result。
+    if (String(name) === 'AskUserQuestion') {
+      const questions = isRecord(input) && Array.isArray(input.questions)
+        ? (input.questions as unknown[])
+        : [];
+      onEvent({ type: 'question', toolUseId: String(id), questions: questions as QuestionDto[] });
+      return;
+    }
     onEvent({ type: 'tool_use', id: String(id), name: String(name), input });
   }
 
@@ -112,6 +122,12 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         const key = blockKey(ev.index);
         const state = blocks.get(key);
         if (state && state.type === 'tool_use' && typeof state.id === 'string') {
+          // Claude 的 --include-partial-messages 输出里，assistant 完整消息可能
+          // 先于 content_block_stop 到达；若已通过 assistant 分支 emit 过则跳过。
+          if (streamedToolUseIds.has(state.id)) {
+            blocks.delete(key);
+            return;
+          }
           if (state.input.trim()) {
             try {
               emitToolUse(state.id, state.name, JSON.parse(state.input));
@@ -169,6 +185,8 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         if (block.type === 'tool_use') {
           if (typeof block.id === 'string' && streamedToolUseIds.has(block.id)) continue;
           emitToolUse(block.id, block.name, block.input ?? null);
+          // 记录已 emit，避免 content_block_stop 稍后到达时重复 emit
+          if (typeof block.id === 'string') streamedToolUseIds.add(block.id);
         } else if (!textAlready && block.type === 'text' && typeof block.text === 'string' && block.text !== '') {
           onEvent({ type: 'text_delta', delta: block.text });
         } else if (

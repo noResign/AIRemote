@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -36,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -47,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +69,7 @@ import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.network.airemote.dto.NormalizedEvent
+import com.airemote.network.airemote.dto.QuestionDto
 import com.airemote.airemote.ui.theme.CodeBody
 import com.airemote.airemote.ui.theme.LocalSemanticColors
 import com.airemote.airemote.viewmodel.ChatViewModel
@@ -153,6 +157,8 @@ fun ChatScreen(
     ) { innerPadding ->
         MessageList(
             messages = messages,
+            streaming = streaming,
+            onAnswer = viewModel::answerQuestion,
             modifier = Modifier.fillMaxSize().padding(innerPadding),
         )
     }
@@ -166,7 +172,12 @@ fun ChatScreen(
 }
 
 @Composable
-private fun MessageList(messages: List<ChatUiMessage>, modifier: Modifier = Modifier) {
+private fun MessageList(
+    messages: List<ChatUiMessage>,
+    streaming: Boolean,
+    onAnswer: (String, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val listState = rememberLazyListState()
     // 流式更新时只在底部跟随，否则会把用户的上滑动作抢回到底部
     var autoScroll by remember { mutableStateOf(true) }
@@ -198,6 +209,7 @@ private fun MessageList(messages: List<ChatUiMessage>, modifier: Modifier = Modi
             is ContentBlock.Text -> block.text.length
             is ContentBlock.Thinking -> block.text.length
             is ContentBlock.ToolUse -> (block.result?.length ?: 0) + 1
+            is ContentBlock.Question -> 1
         }
     } ?: 0
     LaunchedEffect(lastContentLen) {
@@ -218,7 +230,7 @@ private fun MessageList(messages: List<ChatUiMessage>, modifier: Modifier = Modi
         ) { index ->
             when (val message = messages[messages.size - 1 - index]) {
                 is ChatUiMessage.User -> UserBubble(message.text)
-                is ChatUiMessage.Assistant -> AssistantBlock(message)
+                is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
             }
         }
     }
@@ -243,13 +255,18 @@ private fun UserBubble(text: String) {
 }
 
 @Composable
-private fun AssistantBlock(message: ChatUiMessage.Assistant) {
+private fun AssistantBlock(
+    message: ChatUiMessage.Assistant,
+    streaming: Boolean,
+    onAnswer: (String, String) -> Unit,
+) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         message.blocks.forEach { block ->
             when (block) {
                 is ContentBlock.Thinking -> ThinkingBlock(block.text)
                 is ContentBlock.Text -> TextBlock(block.text)
                 is ContentBlock.ToolUse -> ToolCardView(block)
+                is ContentBlock.Question -> QuestionCard(block, streaming, onAnswer)
             }
         }
         if (message.error != null) {
@@ -363,6 +380,144 @@ private fun ToolCardView(card: ContentBlock.ToolUse) {
         }
     }
 }
+
+@Composable
+private fun QuestionCard(
+    block: ContentBlock.Question,
+    streaming: Boolean,
+    onAnswer: (String, String) -> Unit,
+) {
+    // 每个问题的选中状态：问题下标 → 已选 label 集合（流式中也能预选，本地状态）
+    val selections = remember(block.toolUseId) { mutableStateMapOf<Int, Set<String>>() }
+
+    fun selected(i: Int): Set<String> = selections[i] ?: emptySet()
+
+    val allAnswered = block.questions.indices.all { i -> selected(i).isNotEmpty() }
+
+    // 全部选完 + 流结束 + 未发送 → 自动把答案一次性发出去
+    LaunchedEffect(streaming, allAnswered, block.answered) {
+        if (!streaming && allAnswered && !block.answered) {
+            onAnswer(block.toolUseId, buildAnswerText(block.questions, selections))
+        }
+    }
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            block.questions.forEachIndexed { i, q ->
+                QuestionItem(
+                    question = q,
+                    selected = selected(i),
+                    enabled = !block.answered,
+                    onToggle = { label ->
+                        val cur = selected(i)
+                        selections[i] = if (q.multiSelect) {
+                            if (label in cur) cur - label else cur + label
+                        } else {
+                            setOf(label)
+                        }
+                    },
+                )
+            }
+            if (block.answered) {
+                Text(
+                    text = "已发送答案",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (block.questions.size > 1 && !allAnswered) {
+                Text(
+                    text = "还有问题未选择",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestionItem(
+    question: QuestionDto,
+    selected: Set<String>,
+    enabled: Boolean,
+    onToggle: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        val header = question.header
+        if (!header.isNullOrBlank()) {
+            Text(
+                text = header,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Text(
+            text = question.question,
+            style = MaterialTheme.typography.titleSmall,
+        )
+        question.options.forEach { opt ->
+            OptionRow(
+                label = opt.label,
+                description = opt.description,
+                checked = opt.label in selected,
+                multiSelect = question.multiSelect,
+                enabled = enabled,
+                onClick = { onToggle(opt.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun OptionRow(
+    label: String,
+    description: String?,
+    checked: Boolean,
+    multiSelect: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        if (multiSelect) {
+            Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
+        } else {
+            RadioButton(selected = checked, onClick = null, enabled = enabled)
+        }
+        OptionLabel(label, description)
+    }
+}
+
+@Composable
+private fun OptionLabel(label: String, description: String?) {
+    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        if (!description.isNullOrBlank()) {
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private fun buildAnswerText(questions: List<QuestionDto>, selections: Map<Int, Set<String>>): String =
+    questions.mapIndexed { i, q ->
+        "关于「${q.question}」，我的选择是：${(selections[i] ?: emptySet()).joinToString("、")}"
+    }.joinToString("\n")
 
 @Composable
 private fun TodoListPanel(todos: List<TodoItem>, running: Boolean, expanded: Boolean, onToggle: () -> Unit) {

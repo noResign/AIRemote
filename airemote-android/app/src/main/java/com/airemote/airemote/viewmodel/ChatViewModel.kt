@@ -244,6 +244,9 @@ class ChatViewModel(
         is NormalizedEvent.TurnEnd -> a
         is NormalizedEvent.Error -> a.copy(error = e.message, done = e.terminal == true)
         is NormalizedEvent.PermissionRequest -> a
+        is NormalizedEvent.Question -> a.copy(
+            blocks = a.blocks + ContentBlock.Question(toolUseId = e.toolUseId, questions = e.questions)
+        )
     }
 
     private fun appendText(blocks: List<ContentBlock>, delta: String): List<ContentBlock> {
@@ -270,6 +273,21 @@ class ChatViewModel(
         val output = (obj?.get("output_tokens") as? JsonPrimitive)?.content?.toLongOrNull()
         if (input == null && output == null && u.costUsd == null) return null
         return UsageInfo(inputTokens = input, outputTokens = output, costUsd = u.costUsd)
+    }
+
+    fun answerQuestion(toolUseId: String, answerText: String) {
+        if (_streaming.value || answerText.isBlank()) return
+        _messages.update { list ->
+            list.map { m ->
+                if (m is ChatUiMessage.Assistant) {
+                    m.copy(blocks = m.blocks.map { b ->
+                        if (b is ContentBlock.Question && b.toolUseId == toolUseId) b.copy(answered = true)
+                        else b
+                    })
+                } else m
+            }
+        }
+        send(answerText)
     }
 
     fun decidePermission(decision: String, reason: String? = null) {
