@@ -1,30 +1,38 @@
 package com.airemote.airemote.ui.chat
 
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun MessageList(
@@ -34,31 +42,37 @@ internal fun MessageList(
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    // 流式更新时只在底部跟随，否则会把用户的上滑动作抢回到底部
-    var autoScroll by remember { mutableStateOf(true) }
+    val scope = rememberCoroutineScope()
+    // 末尾占位 item 的 index，用来「滚到底」（滚到它 = 最后一条消息底部贴屏幕底）
+    val bottomIndex = messages.size
 
-    // reverseLayout 下 index 0 是底部（最新消息）；scrollOffset == 0 表示没往上滚。
-    // 相比「最后一个 item 是否可见」，这个判定对超过一屏的长消息也准确。
-    val atBottom by remember {
-        derivedStateOf {
-            listState.layoutInfo.totalItemsCount == 0 ||
-                (listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0)
+    // 跟随状态：true = 在底部跟随，false = 用户上滑离开底部后停止
+    var followBottom by remember { mutableStateOf(true) }
+    // 是否显示「回到底部」按钮（用户离开底部后显示）
+    var showJumpToBottom by remember { mutableStateOf(false) }
+
+    // 只在用户拖动结束（DragInteraction.Stop）时更新状态；跟随动画不产生 DragInteraction。
+    // 用 canScrollForward 精确判断在不在最底；差几像素没到底时，靠「回到底部」按钮兜底。
+    LaunchedEffect(Unit) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is DragInteraction.Stop) {
+                val atBottom = !listState.canScrollForward
+                followBottom = atBottom
+                showJumpToBottom = !atBottom
+            }
         }
     }
 
     // 新消息（user + assistant 一起追加）→ 跳到底并恢复跟随
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
-            listState.scrollToItem(0)
-            autoScroll = true
+            listState.scrollToItem(bottomIndex)
+            followBottom = true
+            showJumpToBottom = false
         }
     }
 
-    // 跟随状态跟随「是否在底部」：上滑即暂停，回到底部即恢复
-    LaunchedEffect(atBottom) {
-        autoScroll = atBottom
-    }
-
+    // 流式内容增长 → 跟随状态下平滑滚到底
     val lastContentLen = (messages.lastOrNull() as? ChatUiMessage.Assistant)?.blocks?.sumOf { block ->
         when (block) {
             is ContentBlock.Text -> block.text.length
@@ -68,24 +82,44 @@ internal fun MessageList(
         }
     } ?: 0
     LaunchedEffect(lastContentLen) {
-        if (autoScroll && messages.isNotEmpty()) {
-            listState.scrollToItem(0)
+        if (followBottom && messages.isNotEmpty()) {
+            listState.animateScrollToItem(bottomIndex)
         }
     }
-    LazyColumn(
-        state = listState,
-        reverseLayout = true,
-        modifier = modifier,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        items(
-            count = messages.size,
-            key = { index -> messages.size - 1 - index },
-        ) { index ->
-            when (val message = messages[messages.size - 1 - index]) {
-                is ChatUiMessage.User -> UserBubble(message.text)
-                is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
+
+    Box(modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            reverseLayout = false,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(
+                count = messages.size,
+                key = { index -> index },
+            ) { index ->
+                when (val message = messages[index]) {
+                    is ChatUiMessage.User -> UserBubble(message.text)
+                    is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
+                }
+            }
+            item(key = "bottom-spacer") {
+                Spacer(Modifier.height(1.dp))
+            }
+        }
+        if (showJumpToBottom) {
+            SmallFloatingActionButton(
+                onClick = {
+                    followBottom = true
+                    showJumpToBottom = false
+                    scope.launch { listState.scrollToItem(bottomIndex) }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "回到底部")
             }
         }
     }
