@@ -130,3 +130,31 @@ export interface PermissionDto {
   createdAt: number;
   decidedAt: number | null;
 }
+
+export type ChangeStatus = 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'conflicted';
+
+export interface ChangedFileDto {
+  path: string;
+  oldPath: string | null;
+  status: ChangeStatus;
+  staged: boolean;
+  binary: boolean;
+  isDirectory: boolean;
+}
+
+export interface ChangesResponse {
+  workspaceId: string;
+  workspacePath: string;
+  isGitRepo: boolean;
+  gitRoot: string | null;
+  files: ChangedFileDto[];
+}
+
+export interface DiffResponse {
+  path: string;
+  oldPath: string | null;
+  status: ChangeStatus;
+  binary: boolean;
+  truncated: boolean;
+  patch: string;
+}

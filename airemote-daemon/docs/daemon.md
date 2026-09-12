@@ -116,6 +116,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
 | `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止） |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
+| `GET /api/changes` | 是 | 当前 Workspace 的 Git 未提交改动，`?workspaceId=` |
+| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&path=<relative>` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
 | `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
@@ -137,6 +139,10 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/internal/permissions/:id/status` | 是 | 内部：hook 轮询决定 |
 
 会话 DTO 含 `workspaceId`、`permissionMode`；Run DTO 含 `workspaceId`（见 `types/api.ts`）。
+
+**改动文件（Files Tab）**：`/api/changes` 基于 `git status --porcelain=v1 -z -- .` 返回当前
+Workspace 内的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回
+单文件 patch。非 Git Workspace 返回 `isGitRepo=false`。详见 `docs/files_tab_design.md`。
 
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 

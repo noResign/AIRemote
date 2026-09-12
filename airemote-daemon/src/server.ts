@@ -8,6 +8,7 @@ import { corsMiddleware } from './cors.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerChatRoutes } from './routes/chat.js';
+import { registerChangesRoutes } from './routes/changes.js';
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js';
 import { registerConfigRoutes } from './routes/config.js';
 import { registerFsRoutes } from './routes/fs.js';
@@ -29,6 +30,7 @@ export function createApp(ctx: AppContext): Express {
   // Everything else under /api requires a bearer token.
   app.use('/api', requireAuth(ctx.config.token));
   registerAgentRoutes(app, ctx);
+  registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
   registerFsRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);
