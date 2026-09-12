@@ -37,6 +37,7 @@ fun MainScreen(
     onOpenSession: (String) -> Unit,
     onNewSession: () -> Unit,
     onReconnect: () -> Unit,
+    onManageWorkspaces: () -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
 
@@ -61,7 +62,7 @@ fun MainScreen(
                     onNewSession = onNewSession,
                 )
                 MainTab.Files -> FilesScreen()
-                MainTab.Settings -> SettingsScreen(onReconnect = onReconnect)
+                MainTab.Settings -> SettingsScreen(onReconnect = onReconnect, onManageWorkspaces = onManageWorkspaces)
             }
         }
     }

@@ -68,4 +68,26 @@ class WorkspaceRepository(
             is NetworkResult.Error -> r
         }
     }
+
+    suspend fun updateWorkspace(
+        workspaceId: String,
+        name: String? = null,
+        enabled: Boolean? = null,
+    ): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall {
+            api.updateWorkspace(workspaceId, UpdateWorkspaceRequest(name = name, enabled = enabled))
+        }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun deleteWorkspace(workspaceId: String): NetworkResult<Unit> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.deleteWorkspace(workspaceId) }) {
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
 }

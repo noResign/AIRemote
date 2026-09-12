@@ -40,11 +40,11 @@ import com.airemote.airemote.viewmodel.SettingsViewModel
 @Composable
 fun SettingsScreen(
     onReconnect: () -> Unit,
+    onManageWorkspaces: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
-    val directoryPicker by viewModel.directoryPicker.collectAsState()
     val baseUrl = SettingsStore.baseUrl ?: ""
     val token = SettingsStore.token ?: ""
 
@@ -75,56 +75,17 @@ fun SettingsScreen(
                     OutlinedButton(onClick = viewModel::load) { Text("重试") }
                 }
                 is SettingsUiState.Ready -> {
-                    SectionTitle("当前工作区")
-                    state.workspaces.forEach { workspace ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.selectWorkspace(workspace.id) }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = selectedWorkspaceId == workspace.id,
-                                onClick = { viewModel.selectWorkspace(workspace.id) },
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    workspace.name.ifBlank { workspace.path },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                )
-                                Text(
-                                    workspace.path,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            if (workspace.isDefault) {
-                                Text(
-                                    "默认",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                        }
-                    }
-                    if (state.workspaces.isNotEmpty()) {
-                        TextButton(
-                            onClick = { viewModel.setDefaultWorkspace(selectedWorkspaceId ?: state.workspaces.first().id) },
-                        ) { Text("把当前选中设为默认工作区") }
-                    }
-                    OutlinedButton(
-                        onClick = viewModel::openDirectoryPicker,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("新增工作区（目录选择）") }
-                    Text(
-                        "切换工作区只影响新建会话；已有会话仍使用创建时的工作目录。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    SectionTitle("工作区")
+                    val currentWorkspace = state.workspaces.find { it.id == selectedWorkspaceId }
+                    InfoRow(
+                        "当前工作区",
+                        currentWorkspace?.path ?: "未选择",
+                        monospace = true,
                     )
+                    OutlinedButton(
+                        onClick = onManageWorkspaces,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("管理工作区") }
 
                     SectionTitle("新会话默认权限")
                     listOf(
@@ -165,19 +126,10 @@ fun SettingsScreen(
         }
     }
 
-    directoryPicker?.let { state ->
-        DirectoryPickerDialog(
-            state = state,
-            onDismiss = viewModel::closeDirectoryPicker,
-            onBrowse = { viewModel.loadDirectories(it) },
-            onToggleHidden = viewModel::toggleDirectoryHidden,
-            onSelect = viewModel::createWorkspaceFromCurrentDirectory,
-        )
-    }
 }
 
 @Composable
-private fun DirectoryPickerDialog(
+internal fun DirectoryPickerDialog(
     state: DirectoryPickerUiState,
     onDismiss: () -> Unit,
     onBrowse: (String) -> Unit,

@@ -6,6 +6,7 @@ object AppRoutes {
 
     const val CONNECT = "connect"
     const val MAIN = "main"
+    const val WORKSPACES = "workspaces"
 
     /** 聊天详情；`sessionId` 为空 = 新会话。 */
     const val CONVERSATION = "conversation?sessionId={sessionId}"
@@ -29,4 +30,8 @@ fun NavController.navigateToConnect() {
         // 清掉 MAIN 及其之上的返回栈，回到连接门禁
         popUpTo(AppRoutes.MAIN) { inclusive = true }
     }
+}
+
+fun NavController.navigateToWorkspaces() {
+    navigate(AppRoutes.WORKSPACES)
 }

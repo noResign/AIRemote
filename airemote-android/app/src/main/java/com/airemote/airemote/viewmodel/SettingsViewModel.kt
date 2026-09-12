@@ -117,6 +117,38 @@ class SettingsViewModel(
         }
     }
 
+    fun renameWorkspace(workspaceId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            when (val r = workspaceRepository.updateWorkspace(workspaceId, name = trimmed)) {
+                is NetworkResult.Success -> load()
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+            }
+        }
+    }
+
+    fun setWorkspaceEnabled(workspaceId: String, enabled: Boolean) {
+        viewModelScope.launch {
+            when (val r = workspaceRepository.updateWorkspace(workspaceId, enabled = enabled)) {
+                is NetworkResult.Success -> load()
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+            }
+        }
+    }
+
+    fun deleteWorkspace(workspaceId: String) {
+        viewModelScope.launch {
+            when (val r = workspaceRepository.deleteWorkspace(workspaceId)) {
+                is NetworkResult.Success -> {
+                    if (WorkspaceSelection.current() == workspaceId) WorkspaceSelection.select(null)
+                    load()
+                }
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+            }
+        }
+    }
+
     fun openDirectoryPicker() {
         loadDirectories(null, false)
     }

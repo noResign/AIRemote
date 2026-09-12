@@ -7,6 +7,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.airemote.airemote.ui.ChatScreen
 import com.airemote.airemote.ui.MainScreen
+import com.airemote.airemote.ui.WorkspaceManagementScreen
 
 fun NavGraphBuilder.mainNavGraph(navController: NavController) {
     composable(AppRoutes.MAIN) {
@@ -14,7 +15,12 @@ fun NavGraphBuilder.mainNavGraph(navController: NavController) {
             onOpenSession = { id -> navController.navigateToConversation(id) },
             onNewSession = { navController.navigateToConversation(null) },
             onReconnect = { navController.navigateToConnect() },
+            onManageWorkspaces = { navController.navigateToWorkspaces() },
         )
+    }
+
+    composable(AppRoutes.WORKSPACES) {
+        WorkspaceManagementScreen(onBack = { navController.popBackStack() })
     }
 
     composable(
