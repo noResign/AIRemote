@@ -539,12 +539,21 @@
   .change-stat { font-size: 10.5px; font-family: "SF Mono", ui-monospace, monospace; white-space: nowrap; }
   .change-stat b { color: var(--success); }
   .change-stat i { color: var(--error); font-style: normal; }
-  .diff-body { flex: 1; overflow: auto; padding: 8px 0 24px; background: var(--surface); }
-  .diff-hunk { padding: 8px 14px; margin: 6px 0; color: var(--primary-deep); background: var(--primary-subtle); font-size: 11.5px; white-space: pre; }
-  .diff-line { padding: 2px 14px; font-size: 11.5px; line-height: 1.65; white-space: pre; color: var(--text-secondary); }
-  .diff-line.add { color: var(--success); background: color-mix(in srgb, var(--success) 9%, transparent); }
-  .diff-line.del { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
-  .diff-line.ctx { color: var(--text-secondary); }
+  .diff-body { flex: 1; overflow: auto; padding: 8px 0 24px; background: #1E1E1E; color: #D4D4D4; }
+  .diff-hunk { padding: 7px 14px; margin: 4px 0; color: #569CD6; background: #2D2D30; font-size: 11.5px; white-space: pre; }
+  .diff-line { padding: 2px 14px; font-size: 11.5px; line-height: 1.65; white-space: pre; color: #D4D4D4; }
+  .diff-line.add { color: #89D185; background: rgba(137,209,133,.08); }
+  .diff-line.del { color: #F48771; background: rgba(244,135,113,.08); }
+  .diff-line.ctx { color: #D4D4D4; }
+  .diff-toolbar { display:flex; justify-content:flex-end; padding: 6px 12px 2px; }
+  .diff-toggle { font-size: 11px; color: #569CD6; border: 1px solid #3C3C3C; border-radius: 6px; padding: 3px 8px; }
+  .split-row { display: grid; grid-template-columns: 30px minmax(0,1fr) 1px 30px minmax(0,1fr); min-width: 720px; align-items: start; font-size: 11.5px; line-height: 1.55; }
+  .split-line-no { color: #858585; text-align: right; padding: 1px 6px 1px 2px; border-right: 1px solid #2D2D30; }
+  .split-divider { background: #3C3C3C; align-self: stretch; }
+  .split-code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 1px 6px; color: #D4D4D4; }
+  .split-code.add { color: #89D185; background: rgba(137,209,133,.08); }
+  .split-code.del { color: #F48771; background: rgba(244,135,113,.08); }
+  .split-row.expanded .split-code { white-space: normal; overflow: visible; text-overflow: clip; }
 
 </style>
 </head>
@@ -986,14 +995,44 @@
           <h2 class="mono" style="font-size:14px">src/auth/token.ts</h2>
           <span class="change-badge m">M</span>
         </div>
+        <div class="diff-toolbar"><span class="diff-toggle">统一</span></div>
         <div class="diff-body mono">
           <div class="diff-hunk">@@ -12,6 +12,8 @@ export interface TokenPair {</div>
-          <div class="diff-line ctx">  accessToken: string</div>
-          <div class="diff-line ctx">  refreshToken: string</div>
-          <div class="diff-line del">-  expiresIn: number</div>
-          <div class="diff-line add">+  expiresAt: number</div>
-          <div class="diff-line add">+  refreshExpiresAt: number</div>
-          <div class="diff-line ctx">}</div>
+          <div class="split-row">
+            <span class="split-line-no">12</span>
+            <span class="split-code">  accessToken: string</span>
+            <span class="split-divider"></span>
+            <span class="split-line-no">12</span>
+            <span class="split-code">  accessToken: string</span>
+          </div>
+          <div class="split-row">
+            <span class="split-line-no">13</span>
+            <span class="split-code">  refreshToken: string</span>
+            <span class="split-divider"></span>
+            <span class="split-line-no">13</span>
+            <span class="split-code">  refreshToken: string</span>
+          </div>
+          <div class="split-row">
+            <span class="split-line-no">14</span>
+            <span class="split-code del">-  expiresIn: number</span>
+            <span class="split-divider"></span>
+            <span class="split-line-no">14</span>
+            <span class="split-code add">+  expiresAt: number</span>
+          </div>
+          <div class="split-row expanded">
+            <span class="split-line-no"></span>
+            <span class="split-code"></span>
+            <span class="split-divider"></span>
+            <span class="split-line-no">15</span>
+            <span class="split-code add">+  refreshExpiresAt: number</span>
+          </div>
+          <div class="split-row">
+            <span class="split-line-no">15</span>
+            <span class="split-code">}</span>
+            <span class="split-divider"></span>
+            <span class="split-line-no">16</span>
+            <span class="split-code">}</span>
+          </div>
         </div>
       </section>
 
