@@ -61,9 +61,13 @@ export interface ApiError {
   message?: string;
 }
 
+export type ProductPermissionMode = 'ask' | 'acceptEdits' | 'bypass';
+
 export interface SessionDto {
   id: string;
   runtime: string;
+  workspaceId: string | null;
+  permissionMode: ProductPermissionMode;
   cwd: string;
   title: string | null;
   createdAt: number;
@@ -74,9 +78,26 @@ export interface SessionDto {
   runningRunId: string | null;
 }
 
+export interface WorkspaceDto {
+  id: string;
+  name: string;
+  path: string;
+  isDefault: boolean;
+  enabled: boolean;
+  sessionCount: number;
+  createdAt: number;
+  lastUsedAt: number;
+}
+
+export interface PermissionGrantDto {
+  toolName: string;
+  createdAt: number;
+}
+
 export interface RunDto {
   id: string;
   sessionId: string;
+  workspaceId: string | null;
   runtime: string;
   model: string | null;
   status: string;
@@ -101,6 +122,7 @@ export type PermissionStatus = 'pending' | 'allowed' | 'denied' | 'timed_out';
 export interface PermissionDto {
   id: string;
   runId: string;
+  sessionId: string;
   toolName: string;
   toolInput: unknown;
   status: PermissionStatus;

@@ -8,6 +8,7 @@ function toDto(p: PermissionRequest): PermissionDto {
   return {
     id: p.id,
     runId: p.runId,
+    sessionId: p.sessionId,
     toolName: p.toolName,
     toolInput: p.toolInput,
     status: p.status,
@@ -39,9 +40,13 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
         res.status(404).json({ error: 'permission not found', code: 'permission_not_found' });
         return;
       }
-      ctx.permissions.allowAll(p.runId, p.toolName);
-      ctx.permissions.decide(id, 'allow', `allow all ${p.toolName}`);
-      ctx.db.audit('permission_decision', JSON.stringify({ id, decision: 'allow_all', toolName: p.toolName }));
+      if (p.status !== 'pending') {
+        res.status(409).json({ error: 'permission already resolved', code: 'permission_resolved' });
+        return;
+      }
+      ctx.db.addPermissionGrant(p.sessionId, p.toolName);
+      ctx.permissions.allowAll(p.sessionId, p.toolName);
+      ctx.db.audit('permission_decision', JSON.stringify({ id, decision: 'allow_all', toolName: p.toolName, sessionId: p.sessionId }));
       res.json({ ok: true, permission: toDto(p) });
       return;
     }
@@ -68,9 +73,10 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'runId and toolName are required', code: 'bad_request' });
       return;
     }
-    const p = ctx.permissions.create(runId, toolName, body.toolInput ?? null);
-    if (ctx.permissions.isAutoAllowed(runId, toolName)) {
-      // Already auto-allowed: resolve immediately, don't bother the client.
+    const sessionId = ctx.db.getRun(runId)?.session_id ?? runId;
+    const p = ctx.permissions.create(runId, sessionId, toolName, body.toolInput ?? null);
+    if (ctx.db.hasPermissionGrant(sessionId, toolName)) {
+      // Already granted for this session: resolve immediately, don't bother the client.
       ctx.permissions.decide(p.id, 'allow', 'auto-allowed');
       res.json({ id: p.id });
       return;
@@ -89,8 +95,9 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       }
     }
     // Broadcast to the owning run's SSE stream (no-op if it is already gone —
-    // the MCP server will then time out and deny).
-    ctx.notifier.emit(runId, {
+    // the MCP server will then time out and deny). Remember whether clients saw
+    // this pending request: only then does a later resolution need to be pushed.
+    p.announced = ctx.notifier.emit(runId, {
       type: 'permission_request',
       permissionId: p.id,
       toolName: p.toolName,

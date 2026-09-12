@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.PendingNewSession
+import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.network.airemote.dto.SessionDto
 import com.airemote.airemote.model.session.WorkspaceGroup
@@ -73,6 +74,7 @@ fun SessionListScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val message by viewModel.message.collectAsState()
+    val workspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingDelete by remember { mutableStateOf<SessionDto?>(null) }
     var showNewSession by remember { mutableStateOf(false) }
@@ -90,7 +92,24 @@ fun SessionListScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("会话") }) },
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text("会话")
+                        workspacePath?.let {
+                            Text(
+                                it,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showNewSession = true }) {
@@ -156,7 +175,12 @@ fun SessionListScreen(
         NewSessionSheet(
             onDismiss = { showNewSession = false },
             onCreate = { config ->
-                PendingNewSession.set(config.claudeSessionId, config.runtime)
+                PendingNewSession.set(
+                    claudeSessionId = config.claudeSessionId,
+                    runtime = config.runtime,
+                    workspaceId = config.workspaceId,
+                    permissionMode = config.permissionMode,
+                )
                 showNewSession = false
                 onNewSession()
             },

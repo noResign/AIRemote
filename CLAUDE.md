@@ -103,9 +103,11 @@ AIRemote/
 
 ## 关键设计决策（速览）
 
-- **权限审批**：`acceptEdits` 放行 Read/Write/Edit；PreToolUse hook 只拦 `Bash`；Bash 内再分
-  「只读白名单自动放行」与「有副作用才询问」，默认拒绝、超时自动拒绝。
-- **工作空间**：单一 `--workspace` 根目录，agent 固定在其下（含子目录）干活。
+- **权限审批**：每个 Session 独立模式 `ask` / `acceptEdits` / `bypass`；`ask` 下 Bash/Write/Edit
+  经 PreToolUse hook 远程审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
+  持久化 grant，默认拒绝、超时自动拒绝。
+- **工作空间**：daemon 启动把 `--workspace` 注册为第一个 Workspace；手机可新增/切换 Workspace。
+  Session 绑定 `workspace_id + cwd`，cwd 必须位于所属 Workspace 内。
 - **多 agent 并发 + 断线续传**：run 与连接解耦；`/api/chat` 客户端断开后 run 继续跑，
   事件按 `(run_id, seq)` 持久化，`GET /api/runs/:id/stream?after=` 回放+续直播，显式停止用
   `POST /api/runs/:id/cancel`。

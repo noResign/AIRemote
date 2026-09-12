@@ -76,10 +76,10 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `server.ts` | Express 组合根：CORS → JSON → 鉴权门 → 各路由注册 |
 | `routes/*.ts` | HTTP/SSE 边界（health/agent/chat/claude-sessions/runs/sessions/permissions） |
 | `runtimes/engine.ts` | 通用 spawn 生命周期（见 §3） |
-| `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + auto-allow 规则 |
+| `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + 同 Session allow-all 结算 |
 | `run-notifier.ts` | `RunNotifier`：runId → 该 run 的多个 SSE 订阅者（emitter + listeners） |
 | `command-safety.ts` | Bash 只读命令白名单（只读自动放行，其余询问） |
-| `workspace.ts` | `resolveWorkspaceCwd`：判定 cwd 是否在 workspace 内（目录本身或其子目录） |
+| `workspace.ts` / `workspace-service.ts` | Workspace 路径校验/包含关系；目录选择器复用 |
 | `permission-hook.ts` | PreToolUse hook 脚本（被 claude 调用，转发审批到 daemon） |
 | `claude-sessions.ts` | 枚举 `~/.claude/projects/` 下的 Claude 会话 |
 | `sse.ts` | SSE 帧写入 + `isTerminalEvent` 判断（chat 与 stream 复用） |
@@ -92,7 +92,10 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 | 表 | 内容 |
 |---|---|
-| `sessions` | 会话：`id`、`runtime`、`claude_session_id`、`cwd`、`title`、时间戳 |
+| `sessions` | 会话：`id`、`runtime`、`claude_session_id`、`workspace_id`、`permission_mode`、`cwd`、`title`、时间戳 |
+| `workspaces` | 工作区根目录：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
+| `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`、`created_at` |
+| `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
 | `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error` |
 | `events` | 归一化事件流，键 `(run_id, seq)`，用于断线重连回放 |
@@ -105,22 +108,35 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 | 方法 & 路径 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /api/health` | 否 | 存活 + 版本 + workspace 根目录 |
+| `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 |
+| `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置 |
+| `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
+| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount） |
+| `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录 + 防嵌套 |
+| `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
+| `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止） |
+| `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
-| `GET /api/claude-sessions` | 是 | 列出 **workspace 内** 的 Claude 会话（可导入续接） |
+| `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流 |
-| `GET /api/runs` | 是 | 当前**运行中**的 run 列表（切换多 agent 用） |
+| `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
 | `GET /api/runs/:id/stream` | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播（重连订阅） |
-| `GET /api/sessions` | 是 | 会话列表（含 `running`/`runningRunId`） |
+| `GET /api/sessions` | 是 | 会话列表（`?workspaceId=` 过滤；含 `running`/`runningRunId`） |
 | `GET /api/sessions/:id` | 是 | 会话 + 消息 + 运行 |
 | `PATCH /api/sessions/:id` | 是 | 重命名（body `{title}`） |
 | `DELETE /api/sessions/:id` | 是 | 删除会话（先取消进行中的 run，级联删） |
+| `GET /api/sessions/:id/permissions` | 是 | Session 权限模式 + 已授权工具 |
+| `PATCH /api/sessions/:id/permissions` | 是 | 修改 Session 权限模式（仅对后续 Run 生效） |
+| `DELETE /api/sessions/:id/permissions/grants/:toolName` | 是 | 撤销单个工具授权 |
+| `DELETE /api/sessions/:id/permissions/grants` | 是 | 撤销全部工具授权 |
 | `POST /api/permissions/:id/decision` | 是 | 工具审批决定（allow/deny/allow_all） |
 | `POST /api/internal/permissions/create` | 是 | 内部：hook 注册审批请求 |
 | `GET /api/internal/permissions/:id/status` | 是 | 内部：hook 轮询决定 |
+
+会话 DTO 含 `workspaceId`、`permissionMode`；Run DTO 含 `workspaceId`（见 `types/api.ts`）。
 
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 
@@ -129,10 +145,11 @@ status | text_delta | thinking_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request | question
 ```
 
-`POST /api/chat` 请求体：`{ prompt, sessionId?, claudeSessionId?, model?, runtime? }`。
+`POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode? }`。
 
-- 新会话固定用 `--workspace` 作为 cwd；续接已有会话沿用会话存下来的 `cwd`，并**每次续接都
-  重新校验**是否仍在当前 workspace 内，否则 400 `cwd_not_allowed`。
+- 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
+- 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
+- `permissionMode` 是 Session 级配置，切换后只影响后续 Run。
 
 **断线续接**：`/api/chat` 客户端断开后，run **继续在 daemon 上运行**（不因断线取消）；重连
 用 `GET /api/runs` 找运行中的 run，再 `GET /api/runs/:id/stream?after=<seq>` 回放 + 续直播；
@@ -140,27 +157,55 @@ tool_result | usage | turn_end | error | permission_request | question
 
 ## 7. 权限审批
 
-`--permission-mode acceptEdits` 默认自动放行 Read/Write/Edit；通过 `--settings` 注入
-**PreToolUse hook**（`matcher: "Bash"`），只对 Bash 做远程审批：
+每个 Session 有自己的权限模式：
+
+| 模式 | Write/Edit | Bash 只读 | Bash 有副作用 |
+|---|---|---|---|
+| `ask` | 询问 | 自动 | 询问 |
+| `acceptEdits` | 自动 | 自动 | 询问 |
+| `bypass` | 自动 | 自动 | 自动，不注入 hook |
+
+模式到 Claude Code `--permission-mode` 的映射：
+
+```text
+ask          -> default
+acceptEdits  -> acceptEdits
+bypass       -> bypassPermissions
+```
+
+`ask` 模式下 PreToolUse hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit`；
+`acceptEdits` 只匹配 `Bash`；`bypass` 不注入 hook。
 
 ```
-claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissions/create
+claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permissions/create
   → daemon 广播 permission_request（SSE）→ 客户端决定 → POST .../decision
   → hook 轮询 status → permissionDecision allow/deny → claude 放行/阻止
 ```
 
 审批策略（`routes/permissions.ts` + `command-safety.ts`）：
 
-1. **auto-allow**（用户点过「允许全部 Bash」）→ 直接放行，不再广播；
+1. **Session grant**（用户点过「允许全部 Bash」）→ 直接放行，不再广播；
 2. **只读 Bash 白名单**（`ls`/`cat`/`grep`/`node --version`/`git status`…，且不含 shell
    元字符 `| > & ; $()` 等）→ 自动放行；
-3. 其余（写入/删除/未知）→ 广播给客户端，弹「允许 / 拒绝 / 允许全部 Bash」；
-4. **超时（120 秒）或断线 → 默认拒绝**（deny-by-default）。
+3. 其余（修改/写入/删除/未知）→ 广播给客户端，弹「允许 / 拒绝 / 允许全部」；
+4. **超时或断线 → 默认拒绝**（deny-by-default）。
+
+规则：
+
+- `allow_all` 写入 `session_permission_grants`，作用域为 **当前 Session + 同一个 toolName**；
+- 「允许全部」会把当前已 pending 的同 Session + 同工具请求一并放行，并广播最终状态；
+- grant 持久化到 SQLite，daemon 重启/App 重连后仍有效；
+- 用户可在 Session 权限设置中撤销单条或全部；
+- 切换权限模式不会清空已有 grant；切到 `bypass` 时 grant 暂时不生效，切回后继续生效；
+- 权限模式只影响后续 Run，当前 Run 已经在使用的 hook/模式不会热切换。
+
+- **超时三层对齐**：审批决策窗口由 `AIREMOTE_PERMISSION_TIMEOUT_SECONDS` 统一控制（默认 120 秒），
+  daemon 定时器、hook 轮询兜底、Claude hook 的 `timeout` 都从它推导。
+- **审批解决广播**：被审批的请求如果已经广播给客户端，之后无论用户决策、`allow-all`、超时还是
+  run 清理导致状态变化，daemon 都会向该 run 的 SSE 推送一条同 `permissionId` 的状态帧。
 
 审批状态会**写回 `events` 表**：`permission_request` 事件携带 `status` 字段（`pending` /
-`allowed` / `denied` / `timed_out`）。决策或超时后，daemon 按 `permissionId` 定位对应事件行、
-用 `json_set` 更新其 `status`（`db.updateEventPermissionStatus`）。这样客户端断线重连、回放
-`GET /api/runs/:id/stream` 时能跳过已决请求，只对仍 `pending` 的弹审批框。
+`allowed` / `denied` / `timed_out`）。
 
 ## 8. 会话与跨端续接
 
@@ -176,9 +221,11 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
 
 - **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；生产建议 `AIREMOTE_TLS_CERT/KEY` 或反代/SSH 隧道。
-- **权限**：acceptEdits + Bash 远程审批 + 只读白名单 + 默认拒绝（见 §7）。
-- **工作目录**：单一 `--workspace` 根目录；新会话的 cwd、续接会话的存量 cwd、导入 Claude 会话
-  的 cwd 都要落在 workspace 内（目录本身或其子目录），否则 400 `cwd_not_allowed`。
+- **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见 §7）。
+- **工作目录**：daemon 启动时把 `--workspace` 注册为第一个 Workspace；手机可新增/切换 Workspace。
+  每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
+  否则 400 `cwd_not_allowed`。
+- **Workspace 嵌套**：不注册嵌套 Workspace；`/api/workspaces` 新增时会拒绝父子包含关系。
 - **防御性超时**：run 空闲看门狗（`AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`，默认 900 秒、0=禁用）。
 - **审计**：chat / cancel / permission_decision / rename_session / delete_session 记入 `audit_log`。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
@@ -208,10 +255,10 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 |---|---|---|
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
-| `--workspace <path>` | 当前目录 | 工作空间根目录（agent 只在其下、含子目录，干活） |
+| `--workspace <path>` | 当前目录 | 初始 Workspace 根目录（首次启动注册为默认 Workspace） |
 | `--data-dir <path>` | `~/.airemote` | 数据根（SQLite + token） |
 | `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
-| `--permission-mode <mode>` | `acceptEdits` | 权限模式（见下） |
+| `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
 | `--env-file <path>` | `./.env` | `.env` 文件路径 |
 | `-h, --help` | — | 帮助 |
 | `-v, --version` | — | 版本 |
@@ -222,23 +269,33 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 |---|---|---|
 | `AIREMOTE_HOST` | `0.0.0.0` | 监听地址 |
 | `AIREMOTE_PORT` | `4780` | 端口 |
-| `AIREMOTE_WORKSPACE` | 当前目录 | 工作空间根目录 |
+| `AIREMOTE_WORKSPACE` | 当前目录 | 初始 Workspace 根目录（首次启动注册为默认 Workspace） |
 | `AIREMOTE_DATA_DIR` | `~/.airemote` | 数据根 |
 | `AIREMOTE_TOKEN` | 自动生成 | 鉴权密钥 |
-| `AIREMOTE_PERMISSION_MODE` | `acceptEdits` | 权限模式 |
+| `AIREMOTE_PERMISSION_MODE` | `default` | 新 Session 默认权限模式的 seed；`default` 对应产品模式 `ask` |
+| `AIREMOTE_PERMISSION_TIMEOUT_SECONDS` | `120` | 工具审批决策窗口（秒，超时自动拒绝；`0`/非法值回退 `120`） |
 | `AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS` | `900` | 空闲看门狗（无事件多少秒自动取消；`0` = 禁用） |
 | `AIREMOTE_TLS_CERT` | 无 | TLS 证书路径（与 KEY 同设才启用 TLS） |
 | `AIREMOTE_TLS_KEY` | 无 | TLS 私钥路径 |
 | `AIREMOTE_ENV_FILE` | `./.env` | `.env` 路径（等价 `--env-file`） |
 
-### 10.3 权限模式（`--permission-mode`）
+### 10.3 权限模式
 
-| 值 | 含义 |
-|---|---|
-| `default` | 只读保守（不自动改文件） |
-| `acceptEdits` | **默认**。允许读/写/编辑文件，仅 Bash 走远程审批 |
-| `plan` | 计划模式（只规划不动手） |
-| `bypassPermissions` | 完全放开（⚠️ 危险，远程使用强烈不建议） |
+产品模式的来源：
+
+```text
+--permission-mode / AIREMOTE_PERMISSION_MODE (seed)
+  -> settings.default_permission_mode
+  -> 新 Session 的 permission_mode
+  -> Claude Code --permission-mode
+```
+
+| 产品模式 | Claude 参数 | 含义 |
+|---|---|---|
+| `ask` | `default` | **默认**。Write/Edit/Bash 修改类操作询问；只读 Bash 自动放行 |
+| `acceptEdits` | `acceptEdits` | 自动接受文件编辑；Bash 等命令仍询问 |
+| `bypass` | `bypassPermissions` | 完全放开（⚠️ 危险，需用户在手机上明确切换） |
+
 
 ### 10.4 token 解析顺序
 
@@ -255,7 +312,7 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 AIREMOTE_HOST=0.0.0.0
 AIREMOTE_PORT=4780
 AIREMOTE_WORKSPACE=/home/renbin/OpenProject/AIRemote
-AIREMOTE_PERMISSION_MODE=acceptEdits
+AIREMOTE_PERMISSION_MODE=default
 AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS=900
 # AIREMOTE_TOKEN=
 # AIREMOTE_TLS_CERT=/path/cert.pem
@@ -321,7 +378,7 @@ airemote
 ## 13. 已知限制 / 后续
 
 - 只读 Bash 白名单是内置默认，可考虑做成配置文件（`.airemote/policy.json`）可增减。
-- auto-allow（「允许全部 Bash」）当前是 **run 级**（一次对话内），不是 session 级。
+- 权限模式与「允许全部」均为 **Session 级**；切换 Workspace 或新建 Session 不会继承旧 Session 的 grant。
 - 权限审批依赖 Claude Code 的 PreToolUse hook 格式，需随 CLI 版本演进同步探测/适配。
 - **`workspace` 不是沙箱**（见 §9）——文件级隔离需 OS 层沙箱。
 - 会话列表无「最后一条消息预览」字段（客户端暂用标题/时间/运行态）。

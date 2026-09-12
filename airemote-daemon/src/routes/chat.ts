@@ -7,15 +7,19 @@ import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
-import { resolveWorkspaceCwd } from '../workspace.js';
+import { getDefaultPermissionMode, isProductPermissionMode, toClaudePermissionMode, type ProductPermissionMode } from '../permission-mode.js';
+import { resolveWorkspaceForRequest, workspaceContains } from '../workspace-service.js';
 
 interface ChatBody {
   sessionId?: string;
+  workspaceId?: string;
   /** Resume an existing Claude Code session (e.g. one started in the desktop TUI). */
   claudeSessionId?: string;
   prompt?: string;
   model?: string;
   runtime?: string;
+  /** Product permission mode: ask | acceptEdits | bypass. Only used for new sessions. */
+  permissionMode?: string;
 }
 
 /**
@@ -33,6 +37,10 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
 
     if (!prompt) {
       res.status(400).json({ error: 'prompt is required', code: 'prompt_required' });
+      return;
+    }
+    if (body.permissionMode !== undefined && !isProductPermissionMode(body.permissionMode)) {
+      res.status(400).json({ error: 'permissionMode must be ask, acceptEdits or bypass', code: 'bad_request' });
       return;
     }
 
@@ -55,14 +63,28 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
-    // Resuming an existing session: its STORED cwd must still be within the
-    // CURRENT workspace root. The daemon may have restarted with a different
-    // workspace since the session was created, so this is a fresh check on every
-    // resume, not just at creation.
-    if (session && !resolveWorkspaceCwd(session.cwd, ctx.config.workspace)) {
+    // Existing sessions keep their own workspace; new sessions use the
+    // requested workspace or the daemon default.
+    const requestedWorkspaceId =
+      typeof body.workspaceId === 'string' && body.workspaceId.trim() ? body.workspaceId.trim() : undefined;
+    const workspace = resolveWorkspaceForRequest(ctx.db, session?.workspace_id ?? requestedWorkspaceId);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+
+    // Resuming an existing session: cwd must still be inside its workspace.
+    if (session && !workspaceContains(workspace.path, session.cwd)) {
       res.status(400).json({ error: `session cwd not allowed: ${session.cwd}`, code: 'cwd_not_allowed' });
       return;
     }
+
+    const defaultPermissionMode = getDefaultPermissionMode(ctx.db, ctx.config);
+    const sessionPermissionMode: ProductPermissionMode = session && isProductPermissionMode(session.permission_mode)
+      ? session.permission_mode
+      : isProductPermissionMode(body.permissionMode)
+        ? body.permissionMode
+        : defaultPermissionMode;
 
     // Import an existing Claude Code session (e.g. started in the desktop TUI)
     // by its claude session id; its cwd is needed for --resume to find it.
@@ -74,7 +96,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
         res.status(404).json({ error: 'claude session not found', code: 'claude_session_not_found' });
         return;
       }
-      if (!resolveWorkspaceCwd(found.cwd, ctx.config.workspace)) {
+      if (!workspaceContains(workspace.path, found.cwd)) {
         res.status(400).json({ error: `claude session cwd not allowed: ${found.cwd}`, code: 'cwd_not_allowed' });
         return;
       }
@@ -88,10 +110,26 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       const id = randomUUID();
       if (body.claudeSessionId && importedCwd) {
         resumeSessionId = body.claudeSessionId;
-        session = ctx.db.createSession({ id, runtime, cwd: importedCwd, claude_session_id: body.claudeSessionId, title: importedTitle ?? null });
+        session = ctx.db.createSession({
+          id,
+          runtime,
+          workspaceId: workspace.id,
+          permissionMode: sessionPermissionMode,
+          cwd: importedCwd,
+          claude_session_id: body.claudeSessionId,
+          title: importedTitle ?? null,
+        });
       } else {
         newSessionId = randomUUID();
-        session = ctx.db.createSession({ id, runtime, cwd: ctx.config.workspace, claude_session_id: newSessionId, title: titleFromPrompt(prompt) });
+        session = ctx.db.createSession({
+          id,
+          runtime,
+          workspaceId: workspace.id,
+          permissionMode: sessionPermissionMode,
+          cwd: workspace.path,
+          claude_session_id: newSessionId,
+          title: titleFromPrompt(prompt),
+        });
       }
     } else if (!session.claude_session_id) {
       newSessionId = randomUUID();
@@ -99,6 +137,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     } else {
       resumeSessionId = session.claude_session_id;
     }
+    ctx.db.touchWorkspace(workspace.id);
 
     ctx.db.addMessage(session.id, 'user', prompt);
     ctx.db.audit('chat', JSON.stringify({ sessionId: session.id, runtime, model: model ?? null }));
@@ -139,14 +178,18 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       model,
       resumeSessionId,
       newSessionId,
-      permissionMode: ctx.config.permissionMode,
+      permissionMode: toClaudePermissionMode(sessionPermissionMode),
       capabilities: detection.capabilities,
       env: process.env,
-      permissionHook: {
-        hookPath: ctx.hookPath,
-        daemonUrl,
-        token: ctx.config.token,
-      },
+      permissionHook: sessionPermissionMode === 'bypass'
+        ? undefined
+        : {
+            hookPath: ctx.hookPath,
+            daemonUrl,
+            token: ctx.config.token,
+            timeoutMs: ctx.config.permissionTimeoutMs,
+            matcher: sessionPermissionMode === 'ask' ? 'Bash|Write|Edit|MultiEdit|NotebookEdit' : 'Bash',
+          },
       idleTimeoutMs: ctx.config.runIdleTimeoutMs,
       onEvent: send,
     });

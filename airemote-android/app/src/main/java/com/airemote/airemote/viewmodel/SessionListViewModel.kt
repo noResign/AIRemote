@@ -2,6 +2,7 @@ package com.airemote.airemote.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.SessionRepository
 import com.airemote.network.http.NetworkResult
 import com.airemote.airemote.model.session.WorkspaceGroup
@@ -28,37 +29,47 @@ class SessionListViewModel(
     val message = _message.asStateFlow()
 
     init {
-        refresh()
+        viewModelScope.launch {
+            WorkspaceSelection.selectedId.collect { workspaceId ->
+                _uiState.value = SessionListUiState.Loading
+                fetch(workspaceId)
+            }
+        }
     }
 
     fun refresh() {
         viewModelScope.launch {
             _uiState.value = SessionListUiState.Loading
-            fetch()
+            fetch(WorkspaceSelection.current())
         }
     }
 
     /** Re-fetch without flashing the Loading spinner; keeps current list visible on failure. */
     fun refreshSilently() {
         viewModelScope.launch {
-            fetch(onError = { code, message ->
-                if (_uiState.value !is SessionListUiState.Content) {
-                    _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
-                } else {
-                    _message.value = friendlyMessage(code, message)
-                }
-            })
+            fetchFor(
+                WorkspaceSelection.current(),
+                onError = { code, message ->
+                    if (_uiState.value !is SessionListUiState.Content) {
+                        _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
+                    } else {
+                        _message.value = friendlyMessage(code, message)
+                    }
+                },
+            )
         }
     }
 
-    private suspend fun fetch(onError: (Int, String) -> Unit = { code, message ->
+    private suspend fun fetch(workspaceId: String?, onError: (Int, String) -> Unit = { code, message ->
         _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
     }) {
-        when (val r = repository.listSessions()) {
+        when (val r = repository.listSessions(workspaceId)) {
             is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(groupByCwd(r.data))
             is NetworkResult.Error -> onError(r.code, r.message)
         }
     }
+
+    private suspend fun fetchFor(workspaceId: String?, onError: (Int, String) -> Unit) = fetch(workspaceId, onError)
 
     fun delete(id: String) {
         viewModelScope.launch {

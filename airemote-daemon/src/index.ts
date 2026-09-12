@@ -7,6 +7,7 @@ import type { AppContext } from './context.js';
 import { log } from './log.js';
 import { listLocalAddresses } from './network.js';
 import { PermissionManager } from './permissions.js';
+import { fromLegacyPermissionMode } from './permission-mode.js';
 import { RunNotifier } from './run-notifier.js';
 import { createRegistry } from './runtimes/registry.js';
 import { startServer } from './server.js';
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   // (and don't print Node's experimental-sqlite warning on stderr).
   const { Db } = await import('./db.js');
   const db = new Db(path.join(config.dataDir, 'airemote.sqlite'));
+  db.seedDefaultWorkspace(config.workspace, fromLegacyPermissionMode(config.permissionMode));
   const registry = createRegistry();
 
   log.info('airemote daemon starting');
@@ -95,12 +97,30 @@ async function main(): Promise<void> {
     log.warn(`claude runtime NOT available: ${claude?.error ?? 'not found'}`);
   }
 
+  const notifier = new RunNotifier();
   const ctx: AppContext = {
     config,
     db,
     registry,
-    permissions: new PermissionManager(120_000, (req) => db.updateEventPermissionStatus(req.id, req.status)),
-    notifier: new RunNotifier(),
+    permissions: new PermissionManager(
+      config.permissionTimeoutMs,
+      (req) => {
+        db.updateEventPermissionStatus(req.id, req.status);
+        // Pending requests may be resolved by timeout / run cleanup / allow-all
+        // without a direct client action. Push the new status so every attached
+        // client can remove it from its approval queue.
+        if (req.announced) {
+          notifier.emit(req.runId, {
+            type: 'permission_request',
+            permissionId: req.id,
+            toolName: req.toolName,
+            toolInput: req.toolInput,
+            status: req.status,
+          });
+        }
+      },
+    ),
+    notifier,
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
   };
 

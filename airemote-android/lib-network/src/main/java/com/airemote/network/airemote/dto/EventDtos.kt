@@ -119,9 +119,11 @@ data class EventsResponse(
 data class ChatRequest(
     val prompt: String,
     val sessionId: String? = null,
+    val workspaceId: String? = null,
     val claudeSessionId: String? = null,
     val model: String? = null,
     val runtime: String? = null,
+    val permissionMode: String? = null,
 )
 
 /** `POST /api/permissions/:id/decision` 请求体。 */

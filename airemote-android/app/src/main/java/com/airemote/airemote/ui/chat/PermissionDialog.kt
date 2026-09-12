@@ -36,7 +36,7 @@ internal fun PermissionDialog(
     ) {
         Surface(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Claude 请求执行命令", style = MaterialTheme.typography.titleMedium)
+                Text("Claude 请求执行", style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = permission.toolName,
                     style = MaterialTheme.typography.labelLarge,
@@ -45,16 +45,21 @@ internal fun PermissionDialog(
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth().height(160.dp),
+                    modifier = Modifier.fillMaxWidth().height(200.dp),
                 ) {
                     Text(
-                        text = commandText(permission.toolInput),
+                        text = permissionBody(permission.toolName, permission.toolInput),
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                         modifier = Modifier.padding(10.dp).verticalScroll(rememberScrollState()),
                     )
                 }
                 Text(
-                    text = "此命令可能修改文件或系统，请确认安全后再允许。120 秒内未处理将自动拒绝。",
+                    text = when (permission.toolName) {
+                        "Bash" -> "此命令可能修改文件或系统，请确认安全后再允许。超时未处理将自动拒绝。"
+                        "Write" -> "此操作可能覆盖文件内容，请确认安全后再允许。超时未处理将自动拒绝。"
+                        "Edit", "MultiEdit" -> "此操作可能修改文件内容，请确认安全后再允许。超时未处理将自动拒绝。"
+                        else -> "此操作可能修改文件或系统，请确认安全后再允许。超时未处理将自动拒绝。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -66,7 +71,7 @@ internal fun PermissionDialog(
                     OutlinedButton(
                         onClick = { onDecide("allow_all", null) },
                         modifier = Modifier.weight(1f),
-                    ) { Text("允许全部") }
+                    ) { Text("允许全部（本 Session）") }
                     Button(
                         onClick = { onDecide("allow", null) },
                         modifier = Modifier.weight(1f),
@@ -83,4 +88,28 @@ internal fun commandText(input: JsonElement?): String {
         if (c is JsonPrimitive && c.isString) return c.content
     }
     return input?.toString() ?: ""
+}
+
+private fun jsonString(input: JsonElement?, key: String): String? {
+    if (input is JsonObject) {
+        val value = input[key]
+        if (value is JsonPrimitive && value.isString) return value.content
+    }
+    return null
+}
+
+internal fun permissionBody(toolName: String, input: JsonElement?): String = when (toolName) {
+    "Bash" -> commandText(input)
+    "Write" -> {
+        val path = jsonString(input, "file_path") ?: jsonString(input, "path") ?: "(unknown path)"
+        val content = jsonString(input, "content") ?: input?.toString().orEmpty()
+        "$path\n\n$content"
+    }
+    "Edit", "MultiEdit" -> {
+        val path = jsonString(input, "file_path") ?: jsonString(input, "path") ?: "(unknown path)"
+        val oldText = jsonString(input, "old_string") ?: "(old content unavailable)"
+        val newText = jsonString(input, "new_string") ?: "(new content unavailable)"
+        "$path\n\n--- old\n$oldText\n+++ new\n$newText"
+    }
+    else -> input?.toString() ?: ""
 }

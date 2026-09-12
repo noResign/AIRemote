@@ -2,8 +2,10 @@ package com.airemote.airemote.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.base.BaseViewModel
+import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.repository.ConnectRepository
+import com.airemote.airemote.data.repository.WorkspaceRepository
 import com.airemote.airemote.model.connect.ConnectResponse
 import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +21,7 @@ sealed class ConnectUiState {
 
 class ConnectViewModel(
     private val repository: ConnectRepository = ConnectRepository(),
+    private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
     private val settings: SettingsStore = SettingsStore,
 ) : BaseViewModel() {
 
@@ -66,6 +69,18 @@ class ConnectViewModel(
                     settings.baseUrl = url
                     settings.token = tk
                     settings.workspace = result.data.workspace
+                    val workspaces = workspaceRepository.listWorkspaces()
+                    if (workspaces is NetworkResult.Success) {
+                        val list = workspaces.data
+                        val selected = settings.selectedWorkspaceId
+                            ?.takeIf { id -> list.any { it.id == id } }
+                            ?: list.firstOrNull { it.isDefault }?.id
+                            ?: list.firstOrNull()?.id
+                        WorkspaceSelection.select(selected, list.find { it.id == selected }?.path)
+                    } else {
+                        // 旧 daemon 可能没有 /api/workspaces：清掉本地选择，回退到“不过滤会话”。
+                        WorkspaceSelection.select(null)
+                    }
                     _uiState.value = ConnectUiState.Success(result.data, url)
                 }
                 is NetworkResult.Error -> {

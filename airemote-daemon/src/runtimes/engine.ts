@@ -23,7 +23,7 @@ export interface RunRequest {
   capabilities: RuntimeCapabilities;
   env: NodeJS.ProcessEnv;
   /** Wiring for the PreToolUse permission hook (ignored when unsupported). */
-  permissionHook?: { hookPath: string; daemonUrl: string; token: string };
+  permissionHook?: { hookPath: string; daemonUrl: string; token: string; timeoutMs: number; matcher: string };
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
   idleTimeoutMs?: number;
   onEvent: (ev: NormalizedEvent) => void;
@@ -73,14 +73,14 @@ export function startRun(req: RunRequest): ActiveRun {
           hooks: {
             PreToolUse: [
               {
-                // Only gate `Bash`. Read/Write/Edit are auto-accepted by
-                // `--permission-mode acceptEdits`, so they should not prompt.
-                matcher: 'Bash',
+                // `ask` gates Bash + Write/Edit; `acceptEdits` only gates
+                // Bash. The matcher is chosen by the chat route per session.
+                matcher: req.permissionHook.matcher || 'Bash',
                 hooks: [
                   {
                     type: 'command',
                     command: `${process.execPath} ${req.permissionHook.hookPath}`,
-                    timeout: 120,
+                    timeout: Math.ceil((req.permissionHook.timeoutMs + 30_000) / 1000),
                   },
                 ],
               },
@@ -95,6 +95,7 @@ export function startRun(req: RunRequest): ActiveRun {
     spawnEnv.AIREMOTE_DAEMON_URL = req.permissionHook.daemonUrl;
     spawnEnv.AIREMOTE_TOKEN = req.permissionHook.token;
     spawnEnv.AIREMOTE_RUN_ID = req.id;
+    spawnEnv.AIREMOTE_PERMISSION_TIMEOUT_MS = String(req.permissionHook.timeoutMs);
   }
 
   const ctx: SpawnContext = {

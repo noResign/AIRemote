@@ -1,29 +1,38 @@
 package com.airemote.airemote.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.local.SettingsStore
+import com.airemote.airemote.viewmodel.DirectoryPickerUiState
 import com.airemote.airemote.viewmodel.SettingsUiState
 import com.airemote.airemote.viewmodel.SettingsViewModel
 
@@ -34,6 +43,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
+    val directoryPicker by viewModel.directoryPicker.collectAsState()
     val baseUrl = SettingsStore.baseUrl ?: ""
     val token = SettingsStore.token ?: ""
 
@@ -57,7 +68,6 @@ fun SettingsScreen(
                 Text("重新连接")
             }
 
-            SectionTitle("信息")
             when (val state = uiState) {
                 is SettingsUiState.Loading -> CircularProgressIndicator()
                 is SettingsUiState.Error -> {
@@ -65,12 +75,172 @@ fun SettingsScreen(
                     OutlinedButton(onClick = viewModel::load) { Text("重试") }
                 }
                 is SettingsUiState.Ready -> {
+                    SectionTitle("当前工作区")
+                    state.workspaces.forEach { workspace ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.selectWorkspace(workspace.id) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = selectedWorkspaceId == workspace.id,
+                                onClick = { viewModel.selectWorkspace(workspace.id) },
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    workspace.name.ifBlank { workspace.path },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                                Text(
+                                    workspace.path,
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (workspace.isDefault) {
+                                Text(
+                                    "默认",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                    if (state.workspaces.isNotEmpty()) {
+                        TextButton(
+                            onClick = { viewModel.setDefaultWorkspace(selectedWorkspaceId ?: state.workspaces.first().id) },
+                        ) { Text("把当前选中设为默认工作区") }
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::openDirectoryPicker,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("新增工作区（目录选择）") }
+                    Text(
+                        "切换工作区只影响新建会话；已有会话仍使用创建时的工作目录。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    SectionTitle("新会话默认权限")
+                    listOf(
+                        "ask" to "修改类操作询问",
+                        "acceptEdits" to "编辑自动放行，Bash 仍询问",
+                        "bypass" to "全部通过（高风险）",
+                    ).forEach { (mode, desc) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { viewModel.setDefaultPermissionMode(mode) }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = state.defaultPermissionMode == mode,
+                                onClick = { viewModel.setDefaultPermissionMode(mode) },
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(mode, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    desc,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+
+                    SectionTitle("信息（只读）")
                     InfoRow("daemon 版本", state.version)
                 }
             }
 
             SectionTitle("关于")
             InfoRow("App 版本", "0.1.0")
+        }
+    }
+
+    directoryPicker?.let { state ->
+        DirectoryPickerDialog(
+            state = state,
+            onDismiss = viewModel::closeDirectoryPicker,
+            onBrowse = { viewModel.loadDirectories(it) },
+            onToggleHidden = viewModel::toggleDirectoryHidden,
+            onSelect = viewModel::createWorkspaceFromCurrentDirectory,
+        )
+    }
+}
+
+@Composable
+private fun DirectoryPickerDialog(
+    state: DirectoryPickerUiState,
+    onDismiss: () -> Unit,
+    onBrowse: (String) -> Unit,
+    onToggleHidden: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    when (state) {
+        is DirectoryPickerUiState.Loading -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("选择工作区目录") },
+                text = { CircularProgressIndicator() },
+                confirmButton = {},
+                dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+            )
+        }
+        is DirectoryPickerUiState.Error -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("目录加载失败") },
+                text = { Text(state.message, color = MaterialTheme.colorScheme.error) },
+                confirmButton = { TextButton(onClick = onDismiss) { Text("关闭") } },
+            )
+        }
+        is DirectoryPickerUiState.Ready -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = { Text("选择工作区目录") },
+                text = {
+                    Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                        Text(
+                            state.path,
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        state.parent?.let { parent ->
+                            TextButton(onClick = { onBrowse(parent) }) { Text("返回上一级") }
+                        }
+                        TextButton(onClick = onToggleHidden) {
+                            Text(if (state.showHidden) "隐藏隐藏目录" else "显示隐藏目录")
+                        }
+                        state.entries.forEach { entry ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onBrowse(entry.path) }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    "📁 ${entry.name}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = onSelect) { Text("选择当前文件夹") } },
+                dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+            )
         }
     }
 }

@@ -1,19 +1,31 @@
 package com.airemote.airemote.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,7 +40,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.viewmodel.SessionPermissionsUiState
 import com.airemote.airemote.ui.chat.InputBar
 import com.airemote.airemote.ui.chat.MessageList
 import com.airemote.airemote.ui.chat.PermissionDialog
@@ -51,6 +65,7 @@ fun ChatScreen(
     val cwd by viewModel.sessionCwd.collectAsState()
     val runtime by viewModel.sessionRuntime.collectAsState()
     val todos by viewModel.todos.collectAsState()
+    val sessionPermissions by viewModel.sessionPermissions.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -88,6 +103,9 @@ fun ChatScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
+                },
+                actions = {
+                    TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
                 },
             )
         },
@@ -137,5 +155,84 @@ fun ChatScreen(
             permission = req,
             onDecide = viewModel::decidePermission,
         )
+    }
+
+    sessionPermissions?.let { state ->
+        ModalBottomSheet(onDismissRequest = viewModel::closeSessionPermissions) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+            ) {
+                Text("会话权限", style = MaterialTheme.typography.titleLarge)
+                Spacer(modifier = Modifier.height(12.dp))
+                when (state) {
+                    is SessionPermissionsUiState.Loading -> CircularProgressIndicator()
+                    is SessionPermissionsUiState.Error -> {
+                        Text(state.message, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::closeSessionPermissions) { Text("关闭") }
+                    }
+                    is SessionPermissionsUiState.Ready -> {
+                        listOf(
+                            "ask" to "修改类操作询问",
+                            "acceptEdits" to "编辑自动放行，Bash 仍询问",
+                            "bypass" to "全部通过（高风险）",
+                        ).forEach { (mode, desc) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.updateSessionPermissionMode(mode) }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = state.mode == mode,
+                                    onClick = { viewModel.updateSessionPermissionMode(mode) },
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(mode, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        desc,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("已授权工具", style = MaterialTheme.typography.titleSmall)
+                        if (state.grants.isEmpty()) {
+                            Text(
+                                "暂无",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            state.grants.forEach { grant ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                ) {
+                                    Text(grant.toolName, modifier = Modifier.weight(1f))
+                                    TextButton(onClick = { viewModel.revokePermissionGrant(grant.toolName) }) {
+                                        Text("撤销")
+                                    }
+                                }
+                            }
+                            TextButton(onClick = viewModel::revokeAllPermissionGrants) { Text("全部撤销") }
+                        }
+                        Text(
+                            "权限模式只对后续 Run 生效；当前运行中的 Run 不受影响。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }

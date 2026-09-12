@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.repository.ChatRepository
+import com.airemote.airemote.data.repository.SessionRepository
 import com.airemote.network.airemote.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
@@ -11,6 +12,7 @@ import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.chat.parseTodos
 import com.airemote.network.airemote.dto.NormalizedEvent
+import com.airemote.network.airemote.dto.PermissionGrantDto
 import com.airemote.network.airemote.dto.SseFrame
 import com.airemote.network.airemote.dto.MessageDto
 import com.airemote.network.airemote.dto.RunDto
@@ -24,8 +26,18 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+sealed class SessionPermissionsUiState {
+    object Loading : SessionPermissionsUiState()
+    data class Ready(
+        val mode: String,
+        val grants: List<PermissionGrantDto>,
+    ) : SessionPermissionsUiState()
+    data class Error(val message: String) : SessionPermissionsUiState()
+}
+
 class ChatViewModel(
     private val repository: ChatRepository = ChatRepository(),
+    private val sessionRepository: SessionRepository = SessionRepository(),
 ) : ViewModel() {
 
     private val _messages = MutableStateFlow<List<ChatUiMessage>>(emptyList())
@@ -59,12 +71,17 @@ class ChatViewModel(
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
+    private val _sessionPermissions = MutableStateFlow<SessionPermissionsUiState?>(null)
+    val sessionPermissions = _sessionPermissions.asStateFlow()
+
     private var sessionId: String? = null
     private var streamJob: Job? = null
 
-    // 新建会话时由 Sheet 传入的续接 Claude 会话 / runtime
+    // 新建会话时由 Sheet 传入的续接 Claude 会话 / runtime / Workspace / 权限模式
     private var initialClaudeSessionId: String? = null
     private var initialRuntime: String? = null
+    private var initialWorkspaceId: String? = null
+    private var initialPermissionMode: String? = null
 
     fun load(sessionId: String?) {
         this.sessionId = sessionId
@@ -72,6 +89,8 @@ class ChatViewModel(
             PendingNewSession.take()?.let {
                 initialClaudeSessionId = it.claudeSessionId
                 initialRuntime = it.runtime
+                initialWorkspaceId = it.workspaceId
+                initialPermissionMode = it.permissionMode
             }
             return
         }
@@ -148,9 +167,20 @@ class ChatViewModel(
         }
         _messages.update { it + ChatUiMessage.User(prompt) + ChatUiMessage.Assistant() }
         _error.value = null
-        start(repository.chatStream(sessionId, prompt, initialClaudeSessionId, initialRuntime))
+        start(
+            repository.chatStream(
+                sessionId = sessionId,
+                prompt = prompt,
+                claudeSessionId = initialClaudeSessionId,
+                runtime = initialRuntime,
+                workspaceId = initialWorkspaceId,
+                permissionMode = initialPermissionMode,
+            )
+        )
         initialClaudeSessionId = null
         initialRuntime = null
+        initialWorkspaceId = null
+        initialPermissionMode = null
     }
 
     private fun attach(runId: String) {
@@ -171,7 +201,9 @@ class ChatViewModel(
                     is ChatStreamEvent.Frame -> handleFrame(evt)
                     is ChatStreamEvent.Failed -> {
                         _error.value = evt.message
-                        finish()
+                        // 传输失败不代表 daemon 上的 run 结束；保留待审批弹窗，
+                        // 网络恢复后用户仍可作出决定。
+                        finish(clearPermissions = false)
                     }
                     is ChatStreamEvent.Closed -> finish()
                 }
@@ -199,9 +231,62 @@ class ChatViewModel(
         else -> false
     }
 
-    private fun finish() {
+    fun openSessionPermissions() {
+        val id = sessionId ?: return
+        _sessionPermissions.value = SessionPermissionsUiState.Loading
+        viewModelScope.launch {
+            when (val r = sessionRepository.permissions(id)) {
+                is NetworkResult.Success -> _sessionPermissions.value = SessionPermissionsUiState.Ready(
+                    mode = r.data.mode,
+                    grants = r.data.grants,
+                )
+                is NetworkResult.Error -> _sessionPermissions.value = SessionPermissionsUiState.Error(friendly(r.code, r.message))
+            }
+        }
+    }
+
+    fun closeSessionPermissions() {
+        _sessionPermissions.value = null
+    }
+
+    fun updateSessionPermissionMode(mode: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = sessionRepository.updatePermissionMode(id, mode)) {
+                is NetworkResult.Success -> openSessionPermissions()
+                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+            }
+        }
+    }
+
+    fun revokePermissionGrant(toolName: String) {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = sessionRepository.deletePermissionGrant(id, toolName)) {
+                is NetworkResult.Success -> openSessionPermissions()
+                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+            }
+        }
+    }
+
+    fun revokeAllPermissionGrants() {
+        val id = sessionId ?: return
+        viewModelScope.launch {
+            when (val r = sessionRepository.deletePermissionGrants(id)) {
+                is NetworkResult.Success -> openSessionPermissions()
+                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+            }
+        }
+    }
+
+    private fun finish(clearPermissions: Boolean = true) {
         _streaming.value = false
         _runId.value = null
+        if (clearPermissions) {
+            _permission.value = null
+            permissionQueue.clear()
+            queuedPermissionIds.clear()
+        }
         _messages.update { list ->
             val lastIndex = list.lastIndex
             list.mapIndexed { i, m ->
@@ -305,13 +390,27 @@ class ChatViewModel(
     }
 
     private fun enqueuePermission(req: NormalizedEvent.PermissionRequest) {
-        // 重连回放会带回历史审批事件，已决（allowed/denied/timed_out）不再弹；旧 daemon 无 status 视为 pending
-        if (req.status != null && req.status != "pending") return
+        // 已决（allowed/denied/timed_out）状态帧表示该请求不需要再审批：
+        // 重连回放时跳过，运行中收到状态更新时还要把已排队的同 id 请求移除。
+        if (req.status != null && req.status != "pending") {
+            dismissPermission(req.permissionId)
+            return
+        }
         if (!queuedPermissionIds.add(req.permissionId)) return
         if (_permission.value == null) {
             _permission.value = req
         } else {
             permissionQueue.addLast(req)
+        }
+    }
+
+    private fun dismissPermission(permissionId: String) {
+        queuedPermissionIds.remove(permissionId)
+        val remaining = permissionQueue.filterNot { it.permissionId == permissionId }
+        permissionQueue.clear()
+        permissionQueue.addAll(remaining)
+        if (_permission.value?.permissionId == permissionId) {
+            _permission.value = permissionQueue.removeFirstOrNull()
         }
     }
 

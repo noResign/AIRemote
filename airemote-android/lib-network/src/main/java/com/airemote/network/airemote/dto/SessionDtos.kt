@@ -10,6 +10,8 @@ import kotlinx.serialization.Serializable
 data class SessionDto(
     val id: String,
     val runtime: String = "",
+    val workspaceId: String? = null,
+    val permissionMode: String = "ask",
     val cwd: String = "",
     val title: String? = null,
     val createdAt: Long = 0,
@@ -44,6 +46,7 @@ data class MessageDto(
 data class RunDto(
     val id: String,
     val sessionId: String = "",
+    val workspaceId: String? = null,
     val runtime: String = "",
     val model: String? = null,
     val status: String = "",

@@ -12,12 +12,14 @@ export interface Config {
   host: string;
   port: number;
   dataDir: string;
-  /** 唯一的工作空间根目录，agent 只在其下（含子目录）干活。 */
+  /** 初始 Workspace 根目录；首次启动时注册为默认 Workspace，之后可在手机上切换/新增。 */
   workspace: string;
   token: string;
   tokenPath: string;
   tokenGenerated: boolean;
   permissionMode: string;
+  /** 工具审批决策窗口（ms），超时自动拒绝。 */
+  permissionTimeoutMs: number;
   /** 空闲看门狗：run 多久无事件则自动取消（ms，0 = 禁用）。 */
   runIdleTimeoutMs: number;
   tls: TlsConfig | null;
@@ -46,11 +48,21 @@ function resolveTls(env: NodeJS.ProcessEnv): TlsConfig | null {
 
 function resolvePermissionMode(env: NodeJS.ProcessEnv): string {
   const mode = env.AIREMOTE_PERMISSION_MODE?.trim();
-  // Valid Claude Code permission modes. We intentionally default to the
-  // conservative `acceptEdits` (never `bypassPermissions`) for remote use.
+  // Valid legacy Claude Code permission modes. The product default is `ask`
+  // (mapped to Claude's `default`); set AIREMOTE_PERMISSION_MODE to override
+  // the initial value of settings.default_permission_mode.
   const allowed = new Set(['default', 'acceptEdits', 'plan', 'bypassPermissions']);
   if (mode && allowed.has(mode)) return mode;
-  return 'acceptEdits';
+  return 'default';
+}
+
+/** `AIREMOTE_PERMISSION_TIMEOUT_SECONDS`，默认 120；0 或非法值回退 120。 */
+function resolvePermissionTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const raw = env.AIREMOTE_PERMISSION_TIMEOUT_SECONDS?.trim();
+  if (!raw) return 120 * 1000;
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 1) return 120 * 1000;
+  return seconds * 1000;
 }
 
 /** `AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`，默认 900（15 分钟）；0 = 禁用。 */
@@ -100,6 +112,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,
     permissionMode: overrides.permissionMode ?? resolvePermissionMode(env),
+    permissionTimeoutMs: resolvePermissionTimeoutMs(env),
     runIdleTimeoutMs: resolveRunIdleTimeoutMs(env),
     tls: resolveTls(env),
   };

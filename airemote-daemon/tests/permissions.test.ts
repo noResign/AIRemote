@@ -7,8 +7,10 @@ describe('PermissionManager', () => {
 
   it('creates a pending permission and resolves it', () => {
     const pm = new PermissionManager(60_000);
-    const p = pm.create('run-1', 'Bash', { command: 'ls' });
+    const p = pm.create('run-1', 'session-1', 'Bash', { command: 'ls' });
     expect(p.status).toBe('pending');
+    expect(p.sessionId).toBe('session-1');
+    expect(p.announced).toBe(false);
     expect(pm.get(p.id)).toBe(p);
 
     const decided = pm.decide(p.id, 'allow');
@@ -18,7 +20,7 @@ describe('PermissionManager', () => {
 
   it('denies with a reason', () => {
     const pm = new PermissionManager(60_000);
-    const p = pm.create('run-1', 'Bash', { command: 'rm -rf /' });
+    const p = pm.create('run-1', 'session-1', 'Bash', { command: 'rm -rf /' });
     const decided = pm.decide(p.id, 'deny', 'nope');
     expect(decided?.status).toBe('denied');
     expect(decided?.decisionReason).toBe('nope');
@@ -26,7 +28,7 @@ describe('PermissionManager', () => {
 
   it('is idempotent — the first decision wins', () => {
     const pm = new PermissionManager(60_000);
-    const p = pm.create('run-1', 'Bash', {});
+    const p = pm.create('run-1', 'session-1', 'Bash', {});
     pm.decide(p.id, 'allow');
     const again = pm.decide(p.id, 'deny');
     expect(again?.status).toBe('allowed');
@@ -35,7 +37,7 @@ describe('PermissionManager', () => {
   it('auto-denies on timeout', () => {
     vi.useFakeTimers();
     const pm = new PermissionManager(60_000);
-    const p = pm.create('run-1', 'Bash', {});
+    const p = pm.create('run-1', 'session-1', 'Bash', {});
     vi.advanceTimersByTime(60_000);
     expect(pm.get(p.id)?.status).toBe('timed_out');
   });
@@ -46,20 +48,42 @@ describe('PermissionManager', () => {
     expect(pm.decide('missing', 'allow')).toBeUndefined();
   });
 
-  it('auto-allows a tool after allowAll (scoped to run + tool)', () => {
+  it('allowAll resolves already-pending asks of the same session + tool', () => {
     const pm = new PermissionManager(60_000);
-    expect(pm.isAutoAllowed('run-1', 'Bash')).toBe(false);
-    pm.allowAll('run-1', 'Bash');
-    expect(pm.isAutoAllowed('run-1', 'Bash')).toBe(true);
-    expect(pm.isAutoAllowed('run-1', 'Write')).toBe(false);
-    expect(pm.isAutoAllowed('run-2', 'Bash')).toBe(false);
+    const p1 = pm.create('run-1', 'session-1', 'Bash', { command: 'a' });
+    const p2 = pm.create('run-2', 'session-1', 'Bash', { command: 'b' });
+    const otherSession = pm.create('run-1', 'session-2', 'Bash', {});
+    const otherTool = pm.create('run-1', 'session-1', 'Write', {});
+
+    pm.allowAll('session-1', 'Bash');
+
+    expect(p1.status).toBe('allowed');
+    expect(p2.status).toBe('allowed');
+    expect(otherSession.status).toBe('pending');
+    expect(otherTool.status).toBe('pending');
   });
 
-  it('clearRun forgets auto-allow rules', () => {
-    const pm = new PermissionManager(60_000);
-    pm.allowAll('run-1', 'Bash');
+  it('clearRun resolves pending requests before dropping them', () => {
+    const resolved: string[] = [];
+    const pm = new PermissionManager(60_000, (req) => resolved.push(req.status));
+    const p = pm.create('run-1', 'session-1', 'Bash', {});
     pm.clearRun('run-1');
-    expect(pm.isAutoAllowed('run-1', 'Bash')).toBe(false);
+    expect(p.status).toBe('denied');
+    expect(resolved).toEqual(['denied']);
+    expect(pm.get(p.id)).toBeUndefined();
+  });
+
+  it('clearSession resolves pending requests before dropping them', () => {
+    const resolved: string[] = [];
+    const pm = new PermissionManager(60_000, (req) => resolved.push(req.status));
+    const p1 = pm.create('run-1', 'session-1', 'Bash', {});
+    const p2 = pm.create('run-2', 'session-2', 'Bash', {});
+    pm.clearSession('session-1');
+    expect(p1.status).toBe('denied');
+    expect(p2.status).toBe('pending');
+    expect(resolved).toEqual(['denied']);
+    expect(pm.get(p1.id)).toBeUndefined();
+    expect(pm.get(p2.id)).toBe(p2);
   });
 });
 

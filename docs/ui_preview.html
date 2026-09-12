@@ -447,6 +447,75 @@
 
   .hint { text-align: center; color: #93A29A; font-size: 12.5px; margin-top: 18px; }
   .hint code { color: #2BC7A4; }
+
+  /* ============ Workspace / 设置 / 目录选择器 / 会话权限（新增） ============ */
+  .workspace-bar {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 16px 10px; padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); box-shadow: var(--elevation-1);
+  }
+  .workspace-bar.compact { margin: 6px 0 0; }
+  .wb-ico { width: 28px; height: 28px; border-radius: 8px; background: var(--primary-subtle); color: var(--primary-deep); display: grid; place-items: center; flex: none; }
+  .wb-ico svg { width: 16px; height: 16px; fill: currentColor; }
+  .wb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .wb-label { font-size: 10.5px; color: var(--text-muted); font-weight: 600; }
+  .wb-path { font-size: 12.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wb-chev { font-size: 12px; color: var(--primary-deep); font-weight: 600; flex: none; }
+
+  .chat-ws {
+    color: var(--primary-deep); background: var(--primary-subtle);
+    border-radius: 999px; padding: 2px 7px; font-size: 10.5px; font-weight: 600;
+  }
+
+  .page-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 14px 12px 8px; border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .page-head h2 { flex: 1; font-size: 19px; color: var(--text-primary); text-align: center; }
+  .page-body { padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
+  .page-note { font-size: 12px; color: var(--text-secondary); line-height: 1.55; margin-bottom: 2px; }
+
+  .workspace-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r-card); padding: 12px 14px; box-shadow: var(--elevation-1);
+  }
+  .workspace-card.current { border-color: var(--primary); background: color-mix(in srgb, var(--primary-subtle) 55%, var(--surface)); }
+  .wc-top { display: flex; align-items: center; gap: 8px; }
+  .wc-check { width: 20px; height: 20px; border-radius: 50%; background: var(--primary); color: #fff; display: grid; place-items: center; flex: none; }
+  .wc-check svg { width: 13px; height: 13px; fill: currentColor; }
+  .wc-check.off { background: transparent; border: 1.5px solid var(--border); }
+  .wc-name { font-size: 14px; font-weight: 600; color: var(--text-primary); flex: 1; }
+  .wc-badge { font-size: 10px; color: var(--primary-deep); background: var(--primary-subtle); border-radius: 999px; padding: 2px 7px; font-weight: 700; }
+  .wc-path { font-size: 11.5px; color: var(--text-muted); margin-top: 6px; word-break: break-all; }
+  .wc-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
+
+  .breadcrumb { font-size: 12px; color: var(--text-secondary); background: var(--code-bg); border-radius: 8px; padding: 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dir-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 12px; }
+  .dir-row .file-meta { color: var(--text-muted); font-size: 11px; }
+  .dir-picker-note { font-size: 11px; color: var(--warning); line-height: 1.5; text-align: center; padding: 4px 8px; }
+
+  .mode-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 12px 14px; }
+  .mode-card.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary-subtle) 45%, var(--surface)); }
+  .mode-card.danger { border-color: color-mix(in srgb, var(--error) 55%, var(--border)); }
+  .mode-title { font-size: 14px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+  .mode-desc { font-size: 11.5px; color: var(--text-secondary); margin-top: 4px; }
+  .mode-tag { font-size: 9.5px; border-radius: 999px; padding: 2px 6px; background: var(--primary-subtle); color: var(--primary-deep); font-weight: 700; }
+  .mode-tag.danger { background: color-mix(in srgb, var(--error) 12%, transparent); color: var(--error); }
+  .btn-mini { border: none; background: transparent; color: var(--error); font-size: 12px; font-weight: 700; padding: 6px; flex: none; }
+
+  .perm-choices { display: flex; gap: 8px; }
+  .perm-choice { flex: 1; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 8px; text-align: center; }
+  .perm-choice.selected { border-color: var(--primary); background: var(--primary-subtle); }
+  .pc-title { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+  .perm-choice.selected .pc-title { color: var(--primary-deep); }
+  .pc-sub { font-size: 9.5px; color: var(--text-muted); margin-top: 2px; }
+
+  .perm-file { margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--code-bg); }
+  .pf-title { padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--text-primary); background: var(--surface); border-bottom: 1px solid var(--border); }
+  .pf-body { padding: 10px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
+
 </style>
 </head>
 <body>
@@ -493,7 +562,12 @@
     <span class="sw-sep"></span>
     <button data-target="chat">聊天详情</button>
     <button data-target="new">新建会话</button>
-    <button data-target="perm">权限审批</button>
+    <button data-target="perm">Bash 审批</button>
+    <button data-target="permwrite">Write 审批</button>
+    <span class="sw-sep"></span>
+    <button data-target="workspaces">工作区</button>
+    <button data-target="dirpicker">目录选择</button>
+    <button data-target="sessionperm">会话权限</button>
   </nav>
   <button class="theme-toggle" id="themeBtn" title="切换浅色/暗色主题">☀️</button>
 </header>
@@ -550,6 +624,14 @@
         <div class="screen-head">
           <h2>会话</h2>
           <span class="pill pill-connected"><i class="dot dot-success"></i>已连接</span>
+        </div>
+        <div class="workspace-bar" data-nav="workspaces">
+          <span class="wb-ico"><svg><use href="#i-folder"/></svg></span>
+          <span class="wb-main">
+            <span class="wb-label">当前工作区</span>
+            <span class="wb-path mono">~/projects/api</span>
+          </span>
+          <span class="wb-chev">切换 ›</span>
         </div>
         <div class="run-banner"><i class="dot dot-primary pulse"></i>1 个任务进行中 · 点击查看</div>
         <div class="session-list">
@@ -614,11 +696,12 @@
             <div class="chat-title">重构认证模块</div>
             <div class="chat-sub">
               <span class="agent-badge sm"><svg><use href="#i-toy"/></svg>Claude</span>
+              <span class="chat-ws mono">api</span>
               <span class="mono">~/projects/api</span>
-              <span class="perm-badge">默认权限</span>
+              <span class="perm-badge" data-nav="sessionperm">ask</span>
             </div>
           </div>
-          <button class="icon-btn"><svg><use href="#i-refresh"/></svg></button>
+          <button class="icon-btn" data-nav="sessionperm" title="会话权限"><svg><use href="#i-shield"/></svg></button>
         </div>
 
         <div class="chat-body">
@@ -714,6 +797,20 @@
             </div>
           </div>
 
+          <div class="set-group-title">当前工作区</div>
+          <div class="set-card">
+            <div class="set-row" data-nav="workspaces">
+              <span class="sr-ico"><svg><use href="#i-folder"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">当前工作区</div><div class="sr-value mono">~/projects/api</div></div>
+              <span class="sr-chev">›</span>
+            </div>
+            <div class="set-row" data-nav="workspaces">
+              <span class="sr-ico"><svg><use href="#i-check"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">默认工作区</div><div class="sr-value mono">~/projects/api</div></div>
+              <span class="sr-chev">›</span>
+            </div>
+          </div>
+
           <div class="set-group-title">默认偏好</div>
           <div class="set-card">
             <div class="set-row">
@@ -722,8 +819,8 @@
               <span class="sr-chev">›</span>
             </div>
             <div class="set-row">
-              <span class="sr-ico"><svg><use href="#i-settings"/></svg></span>
-              <div class="sr-txt"><div class="sr-label">默认模型</div><div class="sr-value">claude-sonnet-4-5</div></div>
+              <span class="sr-ico"><svg><use href="#i-shield"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">新会话默认权限</div><div class="sr-value">ask · 修改类操作询问</div></div>
               <span class="sr-chev">›</span>
             </div>
           </div>
@@ -735,12 +832,8 @@
               <div class="sr-txt"><div class="sr-label">daemon 版本</div><div class="sr-value">v0.4.0</div></div>
             </div>
             <div class="set-row">
-              <span class="sr-ico"><svg><use href="#i-folder"/></svg></span>
-              <div class="sr-txt"><div class="sr-label">允许的工作目录</div><div class="sr-value mono">~/projects, ~/work</div></div>
-            </div>
-            <div class="set-row">
-              <span class="sr-ico"><svg><use href="#i-shield"/></svg></span>
-              <div class="sr-txt"><div class="sr-label">权限模式</div><div class="sr-value">询问（有副作用才拦截）</div></div>
+              <span class="sr-ico"><svg><use href="#i-settings"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">host / port / TLS</div><div class="sr-value mono">0.0.0.0:4780 · HTTP</div></div>
             </div>
           </div>
 
@@ -758,7 +851,15 @@
       <section class="screen" id="screen-files">
         <div class="files">
           <h2>文件</h2>
-          <div class="files-cwd mono">~/projects/api</div>
+          <div class="workspace-bar" data-nav="workspaces">
+            <span class="wb-ico"><svg><use href="#i-folder"/></svg></span>
+            <span class="wb-main">
+              <span class="wb-label">当前工作区</span>
+              <span class="wb-path mono">~/projects/api</span>
+            </span>
+            <span class="wb-chev">切换 ›</span>
+          </div>
+          <div class="files-cwd mono">/ · src / main</div>
           <div class="file-row">
             <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
             <div><div class="file-name">src</div><div class="file-meta">目录 · 12 项</div></div>
@@ -775,6 +876,103 @@
             <span class="file-ico file"><svg><use href="#i-article"/></svg></span>
             <div><div class="file-name">tsconfig.json</div><div class="file-meta">640 B · 3 天前</div></div>
           </div>
+        </div>
+      </section>
+
+      <!-- ⑧ 工作区管理 -->
+      <section class="screen" id="screen-workspaces">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="settings"><svg><use href="#i-back"/></svg></button>
+          <h2>工作区</h2>
+          <button class="icon-btn" data-nav="dirpicker" title="新增工作区"><svg><use href="#i-plus"/></svg></button>
+        </div>
+        <div class="page-body">
+          <p class="page-note">切换后，会话、文件和设置都按当前工作区刷新。</p>
+          <div class="workspace-card current">
+            <div class="wc-top"><span class="wc-check"><svg><use href="#i-check"/></svg></span><span class="wc-name">api</span><span class="wc-badge">当前</span></div>
+            <div class="wc-path mono">/home/renbin/projects/api</div>
+            <div class="wc-meta">8 个会话 · 默认工作区</div>
+          </div>
+          <div class="workspace-card">
+            <div class="wc-top"><span class="wc-check off"></span><span class="wc-name">web</span></div>
+            <div class="wc-path mono">/home/renbin/projects/web</div>
+            <div class="wc-meta">3 个会话</div>
+          </div>
+          <div class="workspace-card">
+            <div class="wc-top"><span class="wc-check off"></span><span class="wc-name">work</span></div>
+            <div class="wc-path mono">/home/renbin/work</div>
+            <div class="wc-meta">2 个会话</div>
+          </div>
+          <button class="btn btn-secondary btn-block" data-nav="dirpicker" style="margin-top:16px">+ 新增工作区</button>
+        </div>
+      </section>
+
+      <!-- ⑨ 目录选择器 -->
+      <section class="screen" id="screen-dirpicker">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="workspaces"><svg><use href="#i-back"/></svg></button>
+          <h2>选择目录</h2>
+          <span style="width:40px"></span>
+        </div>
+        <div class="page-body">
+          <div class="breadcrumb mono">~ / OpenProject / AIRemote</div>
+          <div class="dir-row" data-nav="dirpicker">
+            <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
+            <div><div class="file-name">..</div><div class="file-meta">返回上级</div></div>
+          </div>
+          <div class="dir-row">
+            <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
+            <div><div class="file-name">airemote-daemon</div><div class="file-meta">文件夹</div></div>
+          </div>
+          <div class="dir-row">
+            <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
+            <div><div class="file-name">airemote-android</div><div class="file-meta">文件夹</div></div>
+          </div>
+          <div class="dir-row">
+            <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
+            <div><div class="file-name">docs</div><div class="file-meta">文件夹</div></div>
+          </div>
+          <div class="dir-picker-note">workspace 不是沙箱，选择宽目录时请确认风险。</div>
+          <button class="btn btn-primary btn-block" data-nav="workspaces" style="margin-top:12px">选择当前文件夹</button>
+        </div>
+      </section>
+
+      <!-- ⑩ 会话权限设置 -->
+      <section class="screen" id="screen-sessionperm">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="chat"><svg><use href="#i-back"/></svg></button>
+          <h2>会话权限</h2>
+          <span style="width:40px"></span>
+        </div>
+        <div class="page-body">
+          <p class="page-note">权限模式只对后续 Run 生效；当前正在运行的 Run 不受影响。</p>
+          <div class="mode-card selected">
+            <div class="mode-title">ask <span class="mode-tag">推荐</span></div>
+            <div class="mode-desc">修改类操作询问；只读命令自动放行</div>
+          </div>
+          <div class="mode-card">
+            <div class="mode-title">acceptEdits</div>
+            <div class="mode-desc">自动接受编辑；Bash 等命令仍询问</div>
+          </div>
+          <div class="mode-card danger">
+            <div class="mode-title">bypass <span class="mode-tag danger">高风险</span></div>
+            <div class="mode-desc">所有工具全部放行，不弹审批</div>
+          </div>
+
+          <div class="set-group-title">已授权工具</div>
+          <div class="set-card">
+            <div class="set-row">
+              <span class="sr-ico"><svg><use href="#i-terminal"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">Bash</div><div class="sr-value">本 Session 后续 Bash 免问</div></div>
+              <button class="btn-mini">撤销</button>
+            </div>
+            <div class="set-row">
+              <span class="sr-ico"><svg><use href="#i-edit"/></svg></span>
+              <div class="sr-txt"><div class="sr-label">Write</div><div class="sr-value">本 Session 后续 Write 免问</div></div>
+              <button class="btn-mini">撤销</button>
+            </div>
+          </div>
+          <button class="btn btn-error btn-block" style="margin-top:16px">全部撤销</button>
         </div>
       </section>
     </div>
@@ -801,16 +999,30 @@
           <div class="r-txt"><div class="r-title">Claude Code</div><div class="r-sub">claude</div></div>
           <span class="r-dot"></span>
         </div>
-        <label class="field-label">工作目录</label>
-        <div class="radio selected">
-          <span class="r-ico"><svg><use href="#i-folder"/></svg></span>
-          <div class="r-txt"><div class="r-title">~/projects/api</div><div class="r-sub">默认工作区</div></div>
-          <span class="r-dot"></span>
+        <label class="field-label">工作区</label>
+        <div class="workspace-bar compact">
+          <span class="wb-ico"><svg><use href="#i-folder"/></svg></span>
+          <span class="wb-main">
+            <span class="wb-label">当前工作区</span>
+            <span class="wb-path mono">~/projects/api</span>
+          </span>
+          <span class="wb-chev">切换 ›</span>
         </div>
-        <div class="radio">
-          <span class="r-ico"><svg><use href="#i-folder"/></svg></span>
-          <div class="r-txt"><div class="r-title">~/work</div><div class="r-sub">允许目录</div></div>
-          <span class="r-dot"></span>
+
+        <label class="field-label">权限模式</label>
+        <div class="perm-choices">
+          <div class="perm-choice selected">
+            <div class="pc-title">ask</div>
+            <div class="pc-sub">修改类询问</div>
+          </div>
+          <div class="perm-choice">
+            <div class="pc-title">acceptEdits</div>
+            <div class="pc-sub">编辑自动放行</div>
+          </div>
+          <div class="perm-choice">
+            <div class="pc-title">bypass</div>
+            <div class="pc-sub">全部通过</div>
+          </div>
         </div>
 
         <div class="seg-title">方式 B · 续接本机 Claude 会话</div>
@@ -824,19 +1036,43 @@
       </div>
     </div>
 
-    <!-- Ⓟ 权限审批浮层 -->
+    <!-- Ⓟ Bash 权限审批浮层 -->
     <div class="overlay" id="overlay-perm">
       <div class="perm">
         <div class="perm-head">
           <span class="perm-ico"><svg><use href="#i-shield"/></svg></span>
-          <div><h3>Claude 请求执行命令</h3><p>工具：Bash · 有副作用的操作</p></div>
+          <div><h3>Claude 请求执行</h3><p>工具：Bash · 有副作用的操作</p></div>
         </div>
         <div class="perm-cmd mono"><span class="prompt">$</span> rm -rf ./node_modules && npm ci && git checkout -- .</div>
-        <div class="perm-warn"><svg><use href="#i-warn"/></svg><span>此命令可能修改文件或系统，请确认安全后再允许。</span></div>
-        <div class="perm-countdown"><b>120 秒</b>内未处理将自动拒绝。</div>
+        <div class="perm-warn"><svg><use href="#i-warn"/></svg><span>此操作可能修改文件或系统，请确认安全后再允许。</span></div>
+        <div class="perm-countdown">超时未处理将自动拒绝。</div>
         <div class="perm-btns">
           <button class="btn btn-primary" data-close>允许（仅本次）</button>
-          <button class="btn btn-secondary" data-close>允许全部（本次 run）</button>
+          <button class="btn btn-secondary" data-close>允许全部（本 Session）</button>
+          <button class="btn btn-error" data-close>拒绝</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ⓟ Write 权限审批浮层 -->
+    <div class="overlay" id="overlay-permwrite">
+      <div class="perm">
+        <div class="perm-head">
+          <span class="perm-ico"><svg><use href="#i-shield"/></svg></span>
+          <div><h3>Claude 请求修改文件</h3><p>工具：Write · 修改类操作</p></div>
+        </div>
+        <div class="perm-file">
+          <div class="pf-title mono">src/auth/token.ts</div>
+          <div class="pf-body mono">+ export interface TokenPair {
++   accessToken: string
++   refreshToken: string
++ }</div>
+        </div>
+        <div class="perm-warn"><svg><use href="#i-warn"/></svg><span>此操作可能覆盖文件内容，请确认安全后再允许。</span></div>
+        <div class="perm-countdown">超时未处理将自动拒绝。</div>
+        <div class="perm-btns">
+          <button class="btn btn-primary" data-close>允许（仅本次）</button>
+          <button class="btn btn-secondary" data-close>允许全部（本 Session）</button>
           <button class="btn btn-error" data-close>拒绝</button>
         </div>
       </div>
@@ -846,7 +1082,7 @@
   </div>
 </div>
 
-<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 聊天详情是 push 进入（自动隐藏 Tab）· <b>聊天页按住麦克风试试语音输入</b> · 工具卡/思考块可展开 · 右上角 ☀️/🌙 切换主题</p>
+<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 顶部可预览 <code>工作区 / 目录选择 / 会话权限</code> · 聊天页按住麦克风试试语音输入 · 工具卡/思考块可展开 · 右上角 ☀️/🌙 切换主题</p>
 
 <script>
   const switcherBtns = document.querySelectorAll('#switcher button');
@@ -882,6 +1118,7 @@
     const t = b.dataset.target;
     if (t === 'new') openOverlay('overlay-new', 'list');
     else if (t === 'perm') openOverlay('overlay-perm', 'chat');
+    else if (t === 'permwrite') openOverlay('overlay-permwrite', 'chat');
     else showScreen(t);
   }));
 
@@ -951,6 +1188,10 @@
   // 新建 Sheet 里的单选切换（仅视觉）
   document.querySelectorAll('#overlay-new .radio').forEach(r => r.addEventListener('click', () => {
     r.parentElement.querySelectorAll('.radio').forEach(x => x.classList.remove('selected'));
+    r.classList.add('selected');
+  }));
+  document.querySelectorAll('#overlay-new .perm-choice').forEach(r => r.addEventListener('click', () => {
+    r.parentElement.querySelectorAll('.perm-choice').forEach(x => x.classList.remove('selected'));
     r.classList.add('selected');
   }));
 </script>

@@ -11,7 +11,13 @@
  * AIREMOTE_DAEMON_URL, AIREMOTE_TOKEN, AIREMOTE_RUN_ID.
  */
 const POLL_INTERVAL_MS = 250;
-const POLL_TIMEOUT_MS = 60_000;
+// daemon 决策窗口由 engine spawn 时下发；轮询兜底超时在此之上加缓冲，保证 hook 一定
+// 等到 daemon 先定论（timed_out），只有 daemon 不可达时才走兜底 deny。
+const DAEMON_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.AIREMOTE_PERMISSION_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 120_000;
+})();
+const POLL_TIMEOUT_MS = DAEMON_TIMEOUT_MS + 15_000;
 
 async function readAllStdin(): Promise<string> {
   let data = '';

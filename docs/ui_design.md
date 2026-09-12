@@ -72,7 +72,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 
 ## 3. 信息架构与页面地图
 
-共 **7 个屏幕 + 1 个权限审批浮层**。
+共 **10 个屏幕 + 2 个浮层（新建会话 Sheet / 权限审批）**，并新增一个横跨多个页面的「Workspace 切换器」。
 
 ```
 ┌─ 未连接 ──────────────────────────────────────┐
@@ -83,14 +83,24 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 │  底部导航（平台原生 Tab Bar / NavigationBar）    │
 │    ② 会话        ⑤ 文件(后续里程碑)   ⑦ 设置     │
 │                                             │
-│  会话 Tab ──点击──▶ ③ 聊天详情                  │
-│  会话 Tab ──FAB──▶ ④ 新建/续接会话（底部 Sheet）  │
-│  聊天页 ──审批──▶ Ⓟ 权限审批浮层（全屏覆盖）       │
-│  文件 Tab ──点击文件──▶ ⑥ 文件查看器（后续里程碑） │
+│  ② 会话 Tab
+│    ├─ 顶部：Workspace 切换器
+│    ├─ 点击会话 ──▶ ③ 聊天详情
+│    └─ FAB ──▶ ④ 新建/续接会话（底部 Sheet）
+│
+│  ③ 聊天详情
+│    ├─ 顶部：Workspace / Session / 权限模式
+│    ├─ 进入 ──▶ ⑩ 会话权限设置
+│    └─ 审批 ──▶ Ⓟ 权限审批浮层
+│
+│  ⑤ 文件 Tab：根目录跟随当前 Workspace
+│  ⑦ 设置
+│    ├─ Workspace 管理 ──▶ ⑧ 工作区管理
+│    └─ 新增工作区 ──▶ ⑨ 目录选择器
 └─────────────────────────────────────────────┘
 ```
 
-| # | 屏幕 | 类型 | 里程碑 |
+| # | 屏幕/浮层 | 类型 | 里程碑 |
 |---|---|---|---|
 | ① | 连接服务器 | 全屏门禁 | M1 |
 | ② | 会话列表 | 主 Tab | M1 |
@@ -99,12 +109,21 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | ⑤ | 文件浏览 | Tab | M2 |
 | ⑥ | 文件查看器 | 子页（push） | M2 |
 | ⑦ | 设置 | Tab | M1 |
+| ⑧ | 工作区管理 | 子页（push） | M2 |
+| ⑨ | 目录选择器 | 子页/全屏 Sheet | M2 |
+| ⑩ | 会话权限设置 | 子页（push） | M2 |
 | Ⓟ | 权限审批 | 全屏浮层（覆盖在聊天页上） | M1（🔴 安全必需） |
 
-> 交付按里程碑（M1 → M2）推进，但**每个页面从第一天起就按生产级质量设计**，不存在"先出个凑合的"。
-> M1 交付后「文件」Tab 先显示占位，M2 落地文件浏览/查看器。
+> 交付按里程碑推进，但每个页面从第一天起按生产级质量设计。
+> Workspace 切换器是横向组件，出现在 ② 会话、⑤ 文件、③ 聊天顶部信息里。
 
----
+### 3.1 Workspace 与权限的作用域
+
+- Workspace 是手机端切换的工作环境，替代原来的“daemon 全局唯一 workspace”。
+- 每个 Session 属于一个 Workspace，Session Cwd 必须位于 Workspace 内。
+- 每个 Session 有自己的权限模式：`ask` / `acceptEdits` / `bypass`。
+- 切换 Workspace 后，当前客户端的会话列表、文件根目录、设置页都按新 Workspace 更新。
+- 其他 Workspace 中正在运行的 Session 不受影响。
 
 ## 4. 全局设计规范（Design Tokens）
 
@@ -199,7 +218,8 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | **思考块** | 折叠 / 展开 | 置灰、可点击展开 |
 | **运行状态条** | 进行中 / 完成 / 失败 / 取消 | 聊天页顶部横幅，见 6.3 |
 | **Runtime 身份** | 徽章 / 图标 / 主题色 | 每个 agent 一套可扩展身份，见 5.2 |
-| **权限模式徽章** | — | 显示 daemon 级权限模式，危险模式用 error 色 |
+| **权限模式徽章** | — | 显示 **Session 级**权限模式，危险模式用 error 色 |
+| **Workspace 切换器** | 当前 / 切换中 / 空 | 会话/文件/设置共用，点击进入工作区管理或目录选择 |
 | **运行中指示器** | running / idle | 会话列表 & 聊天页的脉冲/转圈 |
 | **工作目录分组头** | 展开 / 折叠 | 会话列表按 cwd 分组的段头，见 6.2 |
 | **空态插画** | — | 各列表空态 |
@@ -276,11 +296,11 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 
 ### 6.2 ② 会话列表（Conversation List）🟢
 
-**目的**：查看所有历史会话（按工作目录分组）、当前哪个在运行、进入会话。
+**目的**：查看当前选中 Workspace 下的历史会话（按 `cwd` 分组）、当前哪个在运行、进入会话。
 
 **关键元素**：
-1. 顶栏：标题「会话」+ 全局连接状态胶囊（connected/offline）。
-2. 会话列表（LazyColumn），**按工作目录（`cwd`）分组**：
+1. 顶栏：标题「会话」+ **Workspace 切换器**（当前 Workspace 名/path；点击打开 Workspace 列表和目录选择）+ 全局连接状态胶囊（connected/offline）。
+2. 会话列表（LazyColumn），**只展示当前 Workspace 的 Session**，组内按 `cwd` 分组：
    - **工作目录分组头**（段头）：`folder` 图标 + 目录绝对路径（等宽、单行省略）+ 该目录会话数徽章
      + 折叠箭头；**默认展开、可点击折叠**；滚动时**吸顶**（sticky）；组间按「组内最近活跃时间」
      倒序（最近活跃的工作目录排最前）；**只显示有会话的工作目录，空目录不出现**。
@@ -315,7 +335,9 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 **顶部栏**：
 - 返回按钮。
 - 标题（会话标题，🟢 点击可重命名 → `PATCH /api/sessions/:id`）。
-- 副信息行：Agent 徽章 · 工作目录 · 权限模式徽章（可横向滚动/省略）。
+- 副信息行：Agent 徽章 · Workspace 名 · cwd · 权限模式徽章（可横向滚动/省略）。
+- 右侧「会话设置」入口 → **⑩ 会话权限设置**，可修改权限模式、查看/撤销 grants。
+- Workspace 徽章点击后显示当前会话所属 Workspace，但**修改当前 Session 的 cwd/Workspace 不支持原地切换**；需要“在新 Workspace 新建会话”。
 
 **消息流**（核心，自上而下）：
 1. **运行状态条**（会话运行中时显示）：由 `status` 事件驱动。
@@ -369,18 +391,18 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 **关键元素**（Sheet 内，分两段）：
 1. 标题「新建会话」+ 关闭。
 2. **方式 A · 新建空会话**：
-   - Agent 选择（单选，来自 `GET /api/agents`，如 `Claude Code`）。
-3. **方式 B · 续接本机 Claude 会话**（电脑 TUI 里开过的会话）：
-   - 会话列表（来自 `GET /api/claude-sessions`，每项显示摘要 `summary` + 工作目录 + 相对时间）。
+   - Agent 选择（单选，来自 `GET /api/agents`）。
+   - **Workspace**：显示当前选中的 Workspace；点击可切换到其他已注册 Workspace，或进入 ⑨ 目录选择器新增。
+   - **权限模式**：默认继承当前 Session 所属 Workspace 的全局默认值，可在这里覆盖为 `ask` / `acceptEdits` / `bypass`。
+3. **方式 B · 续接本机 Claude 会话**：
+   - 会话列表来自 `GET /api/claude-sessions?workspaceId=<当前Workspace>`；
+   - 每项显示摘要 `summary` + cwd + 相对时间。
 4. 主按钮「创建/开始」。
 
-**交互**：选择即高亮；创建成功后自动进入该会话并收起 Sheet。两种方式互斥（单选切换）。
-新会话在 `POST /api/chat` 里带 `runtime`（方式 A）或 `claudeSessionId`（方式 B）；工作目录
-固定为 daemon 的 `--workspace`。
+**交互**：选择即高亮；创建成功后自动进入该会话并收起 Sheet。两种方式互斥。
+新会话在 `POST /api/chat` 里带 `workspaceId`、`runtime`/`claudeSessionId`、`permissionMode`；服务端校验 Workspace 有效并写入 `sessions.workspace_id`。
 
-> 权限模式、工作目录都是 daemon 级全局配置（在设置页展示，只读），**不能按会话选择**。
-
----
+> 权限模式是 **Session 级**，不是全局只读配置。新建 Session 默认 `ask`；全局 `default_permission_mode` 可配置为 `acceptEdits`。已有 Session 的权限模式在 ⑩ 会话权限设置里修改。
 
 ### 6.5 ⑤ 文件浏览（Files）与 ⑥ 文件查看器 🟡（M2）
 
@@ -389,9 +411,11 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 > 🟡 当前后端**没有**文件列表/读取接口，UI 按此设计，需后端补 `GET /api/files`、`GET /api/files/:path`（见附录 B）。
 
 **列表页**：
-- 顶栏标题「文件」+ 当前工作目录路径（可切换）。
-- 文件/目录列表（图标区分），等宽字体显示文件名。
+- 顶栏标题「文件」+ **当前 Workspace 切换器**（显示 Workspace 名/path）。
+- 文件/目录列表（图标区分），等宽字体显示文件名；根目录即当前 Workspace 路径。
+- 支持在 Workspace 内逐层进入目录。
 - 空态："暂无文件"。
+- 顶部刷新时使用 `GET /api/files?workspaceId=<id>&path=<relativePath>`；切换 Workspace 后重新从根目录加载。
 
 **文件查看器（子页）**：
 - 顶栏：文件名 + 关闭。
@@ -402,54 +426,148 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 
 ### 6.6 ⑦ 设置（Settings）🟢
 
-**目的**：查看/修改连接与默认偏好。
+**目的**：查看/修改连接、默认偏好和工作区。
 
 **分组**：
-1. **连接**：服务器地址、token（查看/修改）。
-2. **默认偏好**：默认模型、默认 agent（🟡 需后端暴露模型列表）。
-3. **信息（只读）**：daemon 版本号（`GET /api/health` 的 `version`）、当前权限模式。
-4. **关于**：App 版本、开源许可。
+1. **连接**：服务器地址、token（查看/修改）、重新连接。
+2. **当前工作区**：
+   - 当前选中的 Workspace（名称 + path）；
+   - 点击进入 **⑧ 工作区管理**；
+   - 默认 Workspace 选择。
+3. **默认偏好**：
+   - 默认 Agent（🟡 需模型列表）；
+   - 新建 Session 默认权限模式：`ask` / `acceptEdits` / `bypass`。
+4. **信息（只读）**：daemon 版本号（`GET /api/health` 的 `version`）、只读/重启级配置。
+5. **关于**：App 版本、开源许可。
+
+**关键交互**：
+
+- 修改默认权限模式 → `PATCH /api/config`（`defaultPermissionMode`）；
+- 切换当前 Workspace → 更新客户端本地 `selectedWorkspaceId`，并通知 ② 会话、⑤ 文件刷新；
+- 工作区增删改 → 进入 ⑧ 工作区管理。
 
 ---
+
+### 6.6.1 ⑧ 工作区管理（Workspace Management）🟡 M2
+
+**目的**：管理 daemon 上注册的工作区，选择当前工作区。
+
+**关键元素**：
+1. 顶栏：标题「工作区」+ 新增按钮。
+2. 当前工作区卡片：高亮、显示 `check`。
+3. 工作区列表：
+   - 名称 + `path`；
+   - Session 数量；
+   - 是否为默认工作区；
+   - 操作：设为当前、设为默认、禁用/删除。
+4. 主按钮「新增工作区」→ 进入 ⑨ 目录选择器。
+5. 空态：引导新增工作区。
+
+**规则**：
+- 不注册嵌套 Workspace；
+- 删除有 Session 引用的 Workspace 时阻止或提示先迁移；
+- 当前工作区被删除后客户端 fallback 到默认工作区。
+
+---
+
+### 6.6.2 ⑨ 目录选择器（Directory Picker）🟡 M2
+
+**目的**：从 daemon 所在电脑的文件系统中选择一个目录，注册为 Workspace。
+
+**关键元素**：
+1. 顶部：当前路径面包屑，可从任意层级点击回退。
+2. 目录列表：只展示文件夹；可选显示隐藏目录。
+3. 返回上一级。
+4. 底部按钮「选择当前文件夹」。
+5. 安全提示：`workspace 不是沙箱`；选择 `/`、`~` 等宽目录时二次确认。
+
+**交互**：
+- 默认从 `~` 开始；
+- 点击文件夹进入下一层；
+- 选择后调 `POST /api/workspaces`，成功后返回 ⑧ 并高亮新工作区。
+
+---
+
+### 6.6.3 ⑩ 会话权限设置（Session Permissions）🟡 M2
+
+**目的**：配置单个 Session 的权限模式和“允许全部”授权。
+
+**关键元素**：
+1. 顶栏：「权限设置」+ 关闭。
+2. 当前模式：三档 Segmented Control / 单选卡片：
+   - `ask`：修改类操作询问；
+   - `acceptEdits`：自动接受编辑，Bash 等仍询问；
+   - `bypass`：全部通过，需红色警告确认。
+3. 已授权工具：
+   - 列表：`toolName` + 授权时间 + 撤销按钮；
+   - 底部「全部撤销」。
+4. 说明文案：
+   - 权限模式只对后续 Run 生效；
+   - 当前正在运行的 Run 不受影响。
+
+**交互**：
+- 切模式 → `PATCH /api/sessions/:id/permissions`；
+- 撤销 → `DELETE /api/sessions/:id/permissions/grants/:toolName`；
+- 成功之后刷新 UI；如果当前模式为 `bypass`，已授权工具显示为“已暂停”。
 
 ### 6.7 Ⓟ 权限审批浮层（Permission Approval）🔴 M1 安全必需
 
-**目的**：agent 想执行**有副作用的 Bash 命令**时，暂停运行，由用户允许/拒绝。这是本产品的**安全边界**。
+**目的**：agent 想执行需要审批的工具时，暂停运行，由用户允许/拒绝。这是本产品的**安全边界**。
 
-**触发**：聊天流中出现 `permission_request` 事件，内容为 `{permissionId, toolName, toolInput}`，
-其中 Bash 的命令在 `toolInput.command`。
+**触发**：聊天流中出现 `permission_request` 事件，内容为
+`{permissionId, toolName, toolInput, status}`。
+
+**按工具类型渲染**：
+
+| toolName | 展示内容 |
+|---|---|
+| `Bash` | command 全文，等宽、可滚动、长按复制 |
+| `Write` | 文件路径 + 内容预览 |
+| `Edit` | 文件路径 + diff |
+| 其他 | 通用 `toolInput` JSON 展示 |
 
 **界面**（全屏覆盖浮层，modal，不可通过点外部关闭）：
-1. 头部：警示图标（`shield`/`gavel`）+ 标题「Claude 请求执行命令」。
-2. 工具名（如 `Bash`）。
-3. **命令全文**：等宽字体、`code-bg` 底色、可滚动、长按复制，最大高度约屏幕 40%。
-4. 安全提示小字："此命令可能修改文件或系统，请确认安全后再允许。"
-5. 倒计时提示："120 秒内未处理将自动拒绝。"（后端超时即拒绝）
-6. 三个操作按钮（自下而上，符合拇指操作）：
-   - **允许**（primary）：仅本次放行 → `{decision: "allow"}`
-   - **允许全部**（secondary）：本次 run 内该工具（如 Bash）后续都不再询问 → `{decision: "allow_all"}`
-   - **拒绝**（error）：可选填理由 → `{decision: "deny", reason}`
-7. 拒绝时展开一个可选的理由输入框。
+1. 头部：警示图标 + 标题「Claude 请求执行」。
+2. 工具名（如 `Bash` / `Write` / `Edit`）。
+3. **工具参数主体**：按上表渲染。
+4. 安全提示小字："此操作可能修改文件或系统，请确认安全后再允许。"
+5. 超时提示：`超时未处理将自动拒绝`（不写死 120 秒，超时值由 daemon 配置决定）。
+6. 操作按钮：
+   - **允许（仅本次）**（primary）→ `{decision: "allow"}`；
+   - **允许全部（本 Session）**（secondary）→ `{decision: "allow_all"}`；
+   - **拒绝**（error）→ `{decision: "deny", reason?}`。
+7. 拒绝时展开可选理由输入框。
 
-**交互**：点击任一按钮 → 调 `POST /api/permissions/:id/decision` → 成功后关闭浮层，运行继续/中止。
+**“允许全部”说明**：
+
+- 作用域：当前 Session 后续所有 **同一个 toolName**；
+- 例如：Bash 弹窗点“允许全部” → 本 Session 后续所有 Bash 免问；
+- 不会自动放行 Write/Edit 等其他工具；
+- 可在 ⑩ 会话权限设置里撤销。
 
 **状态**：
-- pending：等待用户作答（倒计时中）。
-- 已处理：浮层关闭；若超时未答，浮层自动消失并在消息流里显示"命令审批超时，已自动拒绝"。
-
----
+- pending：等待用户作答；
+- 已处理：浮层关闭；
+- 超时：浮层自动消失，并在消息流里显示“命令审批超时，已自动拒绝”。
 
 ## 7. 关键交互与状态（设计重点，务必体现）
 
 ### 7.1 🔴 命令审批流（安全边界）
 
-1. agent 发起有副作用的 Bash → daemon 暂停该 run，向客户端推 `permission_request`。
-2. 客户端弹出审批浮层（6.7），**阻塞**该会话的输入与后续流。
-3. 用户选择 允许 / 允许全部 / 拒绝。
-4. 客户端 `POST /api/permissions/:id/decision` 回传决策。
-5. daemon 放行或拒绝该命令，run 继续；超时（120s）未答则自动拒绝。
+1. agent 发起需要审批的工具调用：
+   - `ask` 模式：`Bash`、`Write`、`Edit` 等修改类工具；
+   - `acceptEdits` 模式：`Bash` 等命令类工具；
+   - `bypass` 模式：不弹审批。
+2. daemon 暂停该 Run，向当前 Session 的客户端推 `permission_request`。
+3. 客户端弹出审批浮层（6.7），阻塞该会话的输入与后续流。
+4. 用户选择 允许 / 允许全部 / 拒绝。
+5. 客户端 `POST /api/permissions/:id/decision` 回传决策。
+6. daemon 放行或拒绝该工具，Run 继续；超时未答自动拒绝。
 
-设计要点：浮层要**醒目、完整展示命令全文、按钮防误触**（允许和拒绝不能贴太近、拒绝无需二次确认但要有视觉权重区分）。
+设计要点：
+- 浮层要完整展示工具参数：Bash 显示 command，Write/Edit 显示文件路径和内容/diff；
+- “允许全部”明确写清作用范围：**本 Session 后续同工具**；
+- 允许和拒绝要有明显视觉权重区分，避免误触。
 
 ### 7.2 运行状态（多会话 / 多 agent 并发）
 
@@ -518,35 +636,41 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 ## 8. 数据与界面映射（API → UI）
 
 > 全部端点均在 `/api` 下；除 `/api/health` 外均需请求头 `Authorization: Bearer <token>`。
+> Workspace 相关请求可带 `workspaceId`；客户端把 `selectedWorkspaceId` 存在本地。
 
 | 界面数据 | 来源 |
 |---|---|
 | 服务器地址 / token | 用户输入，本地持久化 |
-| daemon 版本号 | `GET /api/health`（无需鉴权） |
-| 可用 agent 列表（`Claude Code`…） | `GET /api/agents` |
-| 会话列表（标题/runtime/工作目录/时间） | `GET /api/sessions` |
+| 当前 Workspace | 客户端 `selectedWorkspaceId` + `GET /api/workspaces` 校验 |
+| Workspace 列表 | `GET /api/workspaces` |
+| 新增/选择目录 | `GET /api/fs/directories?path=...`、`POST /api/workspaces` |
+| daemon 版本号 | `GET /api/health` |
+| 全局默认配置 | `GET /api/config`；`PATCH /api/config` 更新默认 Workspace/权限模式 |
+| 可用 agent 列表 | `GET /api/agents` |
+| 当前 Workspace 的会话列表 | `GET /api/sessions?workspaceId=<id>` |
 | 单个会话的消息历史 + runs | `GET /api/sessions/:id` |
-| 续接本机 Claude 会话列表 | `GET /api/claude-sessions` |
-| 流式事件（状态/文本/思考/工具/用量/审批/结束） | SSE：`POST /api/chat`（body `{sessionId?, claudeSessionId?, prompt, model?, runtime?}`） |
+| 续接本机 Claude 会话列表 | `GET /api/claude-sessions?workspaceId=<id>` |
+| Session 权限模式与 grants | `GET /api/sessions/:id/permissions`；`PATCH /api/sessions/:id/permissions`；`DELETE /api/sessions/:id/permissions/grants/:toolName` |
+| 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, runtime?}`） |
 | 停止运行中的任务 | `POST /api/runs/:id/cancel` |
-| 命令审批决策（允许/拒绝/允许全部） | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
-| 文件列表 / 文件内容 | 🟡 `GET /api/files`、`GET /api/files/:path`（**待后端实现**） |
-| 断线补齐事件（续传） | `GET /api/runs/:id/events?after=seq` |
-
----
+| 工具审批决策 | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
+| 当前 Workspace 的文件列表 / 内容 | 🟡 `GET /api/files?workspaceId=<id>&path=...`（**待后端实现**） |
+| 断线补齐事件 | `GET /api/runs/:id/events?after=seq` |
 
 ## 9. 交付里程碑（正式产品，增量上线）
 
 > 这是长期维护的正式产品，按里程碑增量交付，但**每个页面从设计到实现都按生产级标准**，不留"临时版"。
 
 **M1（首批可用）**：
-- ① 连接页、② 会话列表、③ 聊天详情、④ 新建/续接会话、⑦ 设置、Ⓟ 权限审批。
-- 覆盖：连接、列会话（含运行指示）、建会话（选 agent）、会话重命名/删除、发消息、流式回复、思考块、工具卡片、用量、**命令审批**、停止任务、断线重连。
+- ① 连接页、② 会话列表、③ 聊天详情、④ 新建/续接会话、⑦ 设置、Ⓟ Bash 权限审批。
+- 覆盖：连接、列会话（含运行指示）、建会话（选 agent / Workspace 展示）、会话重命名/删除、发消息、流式回复、思考块、工具卡片、用量、**Bash 命令审批**、停止任务、断线重连。
 
 **M2（增强）**：
-- ⑤ 文件浏览 + ⑥ 文件查看器、扫码连接、消息搜索、多端观看（同一会话多设备同看）。
-
-> 建议设计师**优先交付 M1 的 6 个屏幕**（含权限审批浮层）+ 组件库 + Runtime 身份映射；M2 页面先出线框即可，但同样要符合生产级规范。
+- ⑤ 文件浏览 + ⑥ 文件查看器；
+- ⑧ Workspace 管理 + ⑨ 目录选择器；
+- ⑩ 会话权限设置 + Write/Edit 审批；
+- Workspace 切换后 Sessions/Files/Settings 刷新；
+- 扫码连接、消息搜索、多端观看。
 
 ---
 
@@ -556,70 +680,72 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 
 1. **信息架构图**确认（可对本文档第 3 章提出优化）。
 2. **高保真页面稿**（浅色为默认，附暗色对照）：
-   - 连接页、会话列表、聊天详情、新建/续接会话、设置、**权限审批浮层** —— 各含关键状态。
-3. **组件库**：消息气泡、工具卡片（running/done/error）、思考块、状态条、运行指示器、Runtime 身份（§5.2）、权限模式徽章、空态、**权限审批卡片**。
-4. **交互说明**：流式追加、工具卡状态流转、**命令审批流**、断线重连、**语音输入流（按住说话→转写→确认发送）** 的动效示意。
+   - 连接页、会话列表、聊天详情、新建/续接会话、设置、**权限审批浮层**；
+   - 工作区管理、目录选择器、会话权限设置 —— 各含关键状态。
+3. **组件库**：消息气泡、工具卡片（running/done/error）、思考块、状态条、运行指示器、Runtime 身份（§5.2）、权限模式徽章、**Workspace 切换器**、空态、**权限审批卡片**。
+4. **交互说明**：流式追加、工具卡状态流转、**命令审批流**、Workspace 切换刷新流、断线重连、**语音输入流（按住说话→转写→确认发送）** 的动效示意。
 5. **Design Tokens**：最终色板（暗/浅）、语义字体/间距/圆角、语义图标名。
 6. **Runtime 身份映射**：§5.2 的 `id → 图标 + 主题色 + 展示名` 表，含未知 id 兜底。
 7. **跨平台适配**：竖屏手机为主；小屏（≤360dp/pt 宽）排版策略；说明两端（Android/iOS）同一设计如何落到各自控件。
 
 ---
 
-## 附录 A：后端接口契约（真实，供开发/设计师对照）
+## 附录 A：后端接口契约（真实 + 规划，供开发/设计师对照）
 
 | 端点 | 方法 | 鉴权 | 返回/说明 |
 |---|---|---|---|
 | `/api/health` | GET | 否 | `{ok, service, version, workspace}` |
-| `/api/sessions` | GET | 是 | `{sessions:[{id, runtime, cwd, title, createdAt, lastActiveAt, running, runningRunId}]}` |
+| `/api/workspaces` | GET | 是 | `{workspaces:[{id,name,path,isDefault,enabled,sessionCount}]}` |
+| `/api/workspaces` | POST | 是 | body `{name?, path}`；新增 Workspace，校验目录、防嵌套 |
+| `/api/workspaces/:id` | PATCH | 是 | body `{name?, isDefault?, enabled?}` |
+| `/api/workspaces/:id` | DELETE | 是 | 删除/禁用；有 Session 引用时阻止 |
+| `/api/fs/directories` | GET | 是 | `?path=<abs>&showHidden=false`；返回目录列表、父目录、面包屑 |
+| `/api/config` | GET | 是 | 返回默认权限模式、默认 Workspace、只读/重启级配置 |
+| `/api/config` | PATCH | 是 | body `{defaultPermissionMode?, defaultWorkspaceId?}` |
+| `/api/sessions` | GET | 是 | `?workspaceId=<id>`；返回该 Workspace 的会话 |
 | `/api/sessions/:id` | GET | 是 | `{session, messages, runs}` |
-| `/api/sessions/:id` | PATCH | 是 | 重命名，body `{title}` → `{ok, session}` |
-| `/api/sessions/:id` | DELETE | 是 | 删除会话 → `{ok, id}` |
-| `/api/chat` | POST | 是 | SSE 流，帧 `{runId, seq, event}`；body `{sessionId?, claudeSessionId?, prompt, model?, runtime?}` |
-| `/api/runs` | GET | 是 | `{runs:[{id, sessionId, runtime, model, status, prompt, startedAt}]}`（当前运行中的 run） |
+| `/api/sessions/:id` | PATCH | 是 | 重命名，body `{title}` |
+| `/api/sessions/:id` | DELETE | 是 | 删除会话 |
+| `/api/sessions/:id/permissions` | GET | 是 | `{mode, grants:[{toolName,createdAt}]}` |
+| `/api/sessions/:id/permissions` | PATCH | 是 | body `{mode:"ask"|"acceptEdits"|"bypass"}`；仅影响后续 Run |
+| `/api/sessions/:id/permissions/grants/:toolName` | DELETE | 是 | 撤销单个工具授权 |
+| `/api/sessions/:id/permissions/grants` | DELETE | 是 | 撤销全部授权 |
+| `/api/chat` | POST | 是 | SSE 流；body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, runtime?, permissionMode?}` |
+| `/api/runs` | GET | 是 | `?workspaceId=<id>`；当前运行中的 run |
 | `/api/runs/:id/cancel` | POST | 是 | `{ok, id}` |
-| `/api/runs/:id/events` | GET | 是 | `{runId, events:[{runId, seq, event}]}`；`?after=<seq>` 续传游标（一次性回放） |
-| `/api/runs/:id/stream` | GET | 是 | SSE：先回放 `?after=<seq>` 后的事件，再续传直播 |
-| `/api/agents` | GET | 是 | `{agents:[{id, name, bin}]}` |
-| `/api/agent` | GET | 是 | `{agent:{…检测信息…}}` |
-| `/api/claude-sessions` | GET | 是 | `{sessions:[{sessionId, cwd, summary, messageCount, lastActiveAt}]}` |
-| `/api/permissions/:id/decision` | POST | 是 | `{ok, permission}`；body `{decision:"allow"|"deny"|"allow_all", reason?}` |
+| `/api/runs/:id/events` | GET | 是 | `?after=<seq>` 一次性回放 |
+| `/api/runs/:id/stream` | GET | 是 | SSE：回放 + 续直播 |
+| `/api/agents` | GET | 是 | `{agents:[{id,name,bin}]}` |
+| `/api/agent` | GET | 是 | 检测信息 |
+| `/api/claude-sessions` | GET | 是 | `?workspaceId=<id>`；枚举该 Workspace 内的 Claude 会话 |
+| `/api/permissions/:id/decision` | POST | 是 | body `{decision:"allow"|"deny"|"allow_all", reason?}` |
 
-**流事件（`event` 字段 union）**：
+**流事件补充**：
 
 | 事件 type | 关键字段 | UI 用途 |
 |---|---|---|
-| `status` | `label`(`starting`/`succeeded`/`failed`/`cancelled`), `terminal` | 运行状态条 |
-| `text_delta` | `delta` | 助手正文逐字追加 |
-| `thinking_delta` / `thinking_start` | `delta` | 思考块 |
-| `tool_use` | `id, name, input` | 工具卡片（running） |
-| `tool_result` | `toolUseId, content, isError` | 工具卡片（done/error） |
-| `usage` | `usage, costUsd, durationMs` | 用量条 |
-| `turn_end` | `stopReason` | 单轮结束 |
-| `error` | `code, message, terminal` | 错误卡片 |
-| `permission_request` | `permissionId, toolName, toolInput` | 🔴 审批浮层 |
-
----
+| `permission_request` | `permissionId, toolName, toolInput, status` | 🔴 审批浮层；已决状态帧用于移除旧弹窗 |
 
 ## 附录 B：后端现状与待补项（UI 依赖、但后端还没实现的能力）
 
 | 能力 | UI 依赖 | 状态 |
 |---|---|---|
-| 命令审批（Bash 有副作用时询问） | Ⓟ 审批浮层 | 🟢 **已支持** |
-| 停止任务 | 聊天页「停止」按钮 | 🟢 已支持 |
-| 事件回放（一次性补齐） | 7.3 断线重连 | 🟢 已实现（`GET /api/runs/:id/events?after=seq`） |
-| 进行中 run 的实时续订阅（续上直播） | 7.3 断线重连 | 🟢 已实现（`GET /api/runs/:id/stream?after=seq`） |
-| 运行中 run 列表（切换几个 agent） | 7.2 运行状态 | 🟢 已实现（`GET /api/runs`） |
-| 会话列表里的 running 状态 | 会话列表运行指示 | 🟢 已实现（`GET /api/sessions` 返回 `running` + `runningRunId`） |
-| 会话最后一条消息预览 | 会话列表卡片 | 🟡 未实现 |
-| 会话标题生成 / 重命名 / 删除 | 列表标题、聊天页重命名、长按删除 | 🟢 已实现（新建自动取首句为标题；`PATCH`/`DELETE /api/sessions/:id`） |
-| 全局运行锁（同一时刻一个 run） | 7.2 运行状态 | 🟡 未强制，需后端加 |
+| Bash 有副作用时审批 | Ⓟ 审批浮层 | 🟢 已支持 |
+| Write/Edit 在 `ask` 模式下审批 | 审批浮层、工具卡片 | 🟡 需扩展 PreToolUse hook matcher |
+| 三档 Session 权限模式 | ⑩ 会话权限设置 | 🟡 需新增 Session 字段和 API |
+| “允许全部”Session 级持久化、可撤销 | 审批浮层、⑩ 会话权限设置 | 🟡 当前仅内存，需改 DB |
+| Workspace 注册与切换 | 工作区管理、顶部切换器 | 🟡 未实现 |
+| 目录选择器 | ⑨ 目录选择器 | 🟡 未实现 |
+| 按 Workspace 过滤会话 | ② 会话列表 | 🟡 未实现 |
 | 文件浏览 / 文件内容 | ⑤⑥ 文件页 | 🟡 未实现 |
+| 停止任务 | 聊天页「停止」按钮 | 🟢 已支持 |
+| 事件回放 / 断线续传 | 7.3 断线重连 | 🟢 已实现 |
+| 运行中 run 列表 | 7.2 运行状态 | 🟢 已实现（需补 `workspaceId` 过滤） |
+| 会话列表 running 状态 | 会话列表运行指示 | 🟢 已实现 |
+| 会话最后一条消息预览 | 会话列表卡片 | 🟡 未实现 |
 | 模型列表 | 设置页默认模型 | 🟡 `GET /api/agent` 可返回 models，需确认 |
 | 扫码连接（二维码） | 连接页扫码 | 🟡 未实现 |
-| 按会话选择权限模式 | — | ⛔ daemon 级全局配置，非会话级 |
 | 语音输入（ASR 转文字） | 聊天输入区麦克风 | 🟡 未实现，需决策客户端系统 ASR / daemon 服务端 ASR |
-
----
 
 ## 附：关键术语对照
 
@@ -629,6 +755,8 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | agent / runtime | 编码 CLI（当前为 Claude Code，未来可加 codex 等） |
 | 会话（session / conversation） | 一次持续的对话，绑定 runtime/工作目录 |
 | run | 一次「发消息 → 跑完」的执行单元；一个会话可包含多次 run |
-| 工作区（workspace） | agent 干活的**唯一**根目录（daemon 级 `--workspace`，会话固定在其下） |
-| 权限模式（permission mode） | daemon 级全局配置，控制 agent 能做什么（改文件/只读/任意命令） |
+| 工作区（workspace） | agent 干活的根目录；daemon 启动时把 `--workspace` 注册为第一个 Workspace，之后可在手机上切换 |
+| Session Cwd | Session 实际启动目录，必须位于所属 Workspace 内 |
+| 权限模式（permission mode） | **Session 级**配置：`ask` / `acceptEdits` / `bypass` |
+| Permission Grant | Session 级“允许全部”授权，按 toolName 持久化，可撤销 |
 | token | 连接鉴权密钥（64 位 hex），**不是** LLM 计费的 token |

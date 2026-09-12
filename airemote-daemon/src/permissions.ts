@@ -7,23 +7,24 @@ export type PermissionDecision = 'allow' | 'deny';
 export interface PermissionRequest {
   id: string;
   runId: string;
+  sessionId: string;
   toolName: string;
   toolInput: unknown;
   status: PermissionStatus;
   decisionReason: string | null;
   createdAt: number;
   decidedAt: number | null;
+  /** 是否已经把 pending 请求广播给客户端；只有广播过的请求才需要在解决时再发状态帧。 */
+  announced: boolean;
 }
 
 /**
- * In-memory registry of pending tool-permission requests. The daemon creates
- * one when a runtime asks "may I run this tool?", broadcasts it to the client,
- * and resolves it when the client answers. Requests auto-deny on timeout so a
- * disconnected client can never leave a tool call hanging forever.
+ * In-memory registry of pending tool-permission requests. Grants themselves are
+ * persisted by `Db` (`session_permission_grants`); this class only tracks asks
+ * that are waiting for a decision so timeouts and queue cleanup stay simple.
  */
 export class PermissionManager {
   private readonly pending = new Map<string, PermissionRequest>();
-  private readonly autoAllow = new Map<string, Set<string>>();
   private readonly timeoutMs: number;
   private readonly onResolved?: (req: PermissionRequest) => void;
 
@@ -32,16 +33,18 @@ export class PermissionManager {
     this.onResolved = onResolved;
   }
 
-  create(runId: string, toolName: string, toolInput: unknown): PermissionRequest {
+  create(runId: string, sessionId: string, toolName: string, toolInput: unknown): PermissionRequest {
     const req: PermissionRequest = {
       id: randomUUID(),
       runId,
+      sessionId,
       toolName,
       toolInput,
       status: 'pending',
       decisionReason: null,
       createdAt: Date.now(),
       decidedAt: null,
+      announced: false,
     };
     this.pending.set(req.id, req);
     setTimeout(() => {
@@ -78,22 +81,37 @@ export class PermissionManager {
     }
   }
 
-  /** Auto-allow `toolName` for the rest of `runId` (skip approval for future asks). */
-  allowAll(runId: string, toolName: string): void {
-    let set = this.autoAllow.get(runId);
-    if (!set) {
-      set = new Set();
-      this.autoAllow.set(runId, set);
+  /**
+   * Resolve already-pending asks of the same tool in the same session. The
+   * persistent grant itself is written by the route before calling this.
+   */
+  allowAll(sessionId: string, toolName: string): void {
+    for (const req of this.pending.values()) {
+      if (req.sessionId === sessionId && req.toolName === toolName && req.status === 'pending') {
+        this.resolve(req, 'allowed', 'allow all');
+      }
     }
-    set.add(toolName);
   }
 
-  isAutoAllowed(runId: string, toolName: string): boolean {
-    return this.autoAllow.get(runId)?.has(toolName) ?? false;
-  }
-
-  /** Forget a run's auto-allow rules (called when the run ends). */
+  /** Forget a run's pending requests; deny any still-pending ask first. */
   clearRun(runId: string): void {
-    this.autoAllow.delete(runId);
+    for (const [id, req] of this.pending) {
+      if (req.runId !== runId) continue;
+      if (req.status === 'pending') {
+        this.resolve(req, 'denied', 'run ended before approval');
+      }
+      this.pending.delete(id);
+    }
+  }
+
+  /** Forget a session's pending requests; deny any still-pending ask first. */
+  clearSession(sessionId: string): void {
+    for (const [id, req] of this.pending) {
+      if (req.sessionId !== sessionId) continue;
+      if (req.status === 'pending') {
+        this.resolve(req, 'denied', 'session deleted before approval');
+      }
+      this.pending.delete(id);
+    }
   }
 }

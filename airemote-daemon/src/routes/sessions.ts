@@ -17,6 +17,8 @@ function sessionDto(s: SessionRow, runningRunId: string | null = null) {
   return {
     id: s.id,
     runtime: s.runtime,
+    workspaceId: s.workspace_id,
+    permissionMode: s.permission_mode,
     cwd: s.cwd,
     title: s.title,
     createdAt: s.created_at,
@@ -42,9 +44,14 @@ function runDto(r: RunRow) {
 }
 
 export function registerSessionRoutes(app: Express, ctx: AppContext): void {
-  app.get('/api/sessions', (_req, res) => {
+  app.get('/api/sessions', (req, res) => {
+    const workspaceId = typeof req.query.workspaceId === 'string' && req.query.workspaceId ? req.query.workspaceId : undefined;
+    if (workspaceId && !ctx.db.getWorkspace(workspaceId)) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
     const running = runningRunBySession(ctx);
-    const sessions = ctx.db.listSessions().map((s) => sessionDto(s, running.get(s.id) ?? null));
+    const sessions = ctx.db.listSessions(workspaceId).map((s) => sessionDto(s, running.get(s.id) ?? null));
     res.json({ sessions });
   });
 
@@ -97,6 +104,7 @@ export function registerSessionRoutes(app: Express, ctx: AppContext): void {
       }
     }
     ctx.db.deleteSession(s.id);
+    ctx.permissions.clearSession(s.id);
     ctx.db.audit('delete_session', s.id);
     res.json({ ok: true, id: s.id });
   });

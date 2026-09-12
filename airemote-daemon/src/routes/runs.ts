@@ -14,20 +14,29 @@ export function registerRunRoutes(app: Express, ctx: AppContext): void {
   // Currently-running runs (in-memory active runs + their DB metadata). This is
   // the phone's "which agents are running right now" list for switching between
   // several in-flight agents.
-  app.get('/api/runs', (_req, res) => {
-    const runs = listActiveRuns().map((active) => {
-      const row = ctx.db.getRun(active.id);
-      if (!row) return { id: active.id };
-      return {
-        id: row.id,
-        sessionId: row.session_id,
-        runtime: row.runtime,
-        model: row.model,
-        status: row.status,
-        prompt: row.prompt,
-        startedAt: row.started_at,
-      };
-    });
+  app.get('/api/runs', (req, res) => {
+    const workspaceId = typeof req.query.workspaceId === 'string' && req.query.workspaceId ? req.query.workspaceId : undefined;
+    if (workspaceId && !ctx.db.getWorkspace(workspaceId)) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const runs = listActiveRuns()
+      .map((active) => {
+        const row = ctx.db.getRun(active.id);
+        if (!row) return { id: active.id, sessionId: null, workspaceId: null };
+        const session = ctx.db.getSession(row.session_id);
+        return {
+          id: row.id,
+          sessionId: row.session_id,
+          workspaceId: session?.workspace_id ?? null,
+          runtime: row.runtime,
+          model: row.model,
+          status: row.status,
+          prompt: row.prompt,
+          startedAt: row.started_at,
+        };
+      })
+      .filter((run) => !workspaceId || run.workspaceId === workspaceId);
     res.json({ runs });
   });
 

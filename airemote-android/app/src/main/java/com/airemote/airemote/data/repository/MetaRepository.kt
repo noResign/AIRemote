@@ -25,9 +25,9 @@ class MetaRepository(
         return safeApiCall { api.agents() }
     }
 
-    suspend fun claudeSessions(): NetworkResult<ClaudeSessionsResponse> {
+    suspend fun claudeSessions(workspaceId: String? = null): NetworkResult<ClaudeSessionsResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.claudeSessions() }
+        return safeApiCall { api.claudeSessions(workspaceId) }
     }
 
     suspend fun health(): NetworkResult<HealthResponse> {

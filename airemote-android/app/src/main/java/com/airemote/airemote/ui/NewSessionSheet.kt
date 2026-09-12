@@ -46,6 +46,8 @@ fun NewSessionSheet(
     val uiState by viewModel.uiState.collectAsState()
     val selectedAgent by viewModel.selectedAgent.collectAsState()
     val selectedClaudeSession by viewModel.selectedClaudeSession.collectAsState()
+    val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
+    val permissionMode by viewModel.permissionMode.collectAsState()
 
     // "new" 或 "resume"
     var mode by remember { mutableStateOf("new") }
@@ -144,14 +146,81 @@ fun NewSessionSheet(
                                 Text(agent.name.ifBlank { agent.id }, style = MaterialTheme.typography.bodyMedium)
                             }
                         }
+
+                        Text("工作区", style = MaterialTheme.typography.labelLarge)
+                        state.workspaces.forEach { workspace ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectWorkspace(workspace.id) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = selectedWorkspaceId == workspace.id,
+                                    onClick = { viewModel.selectWorkspace(workspace.id) },
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        workspace.name.ifBlank { workspace.path },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        workspace.path,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+
+                        Text("权限模式", style = MaterialTheme.typography.labelLarge)
+                        listOf(
+                            "ask" to "修改类操作询问",
+                            "acceptEdits" to "编辑自动放行，Bash 仍询问",
+                            "bypass" to "全部通过（高风险）",
+                        ).forEach { (mode, desc) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectPermissionMode(mode) }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = permissionMode == mode,
+                                    onClick = { viewModel.selectPermissionMode(mode) },
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(mode, style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        desc,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Button(
                         onClick = {
                             val config = if (mode == "resume" && selectedClaudeSession != null) {
-                                NewSessionConfig(claudeSessionId = selectedClaudeSession)
+                                NewSessionConfig(
+                                    claudeSessionId = selectedClaudeSession,
+                                    workspaceId = selectedWorkspaceId,
+                                    permissionMode = permissionMode,
+                                )
                             } else {
-                                NewSessionConfig(runtime = selectedAgent)
+                                NewSessionConfig(
+                                    runtime = selectedAgent,
+                                    workspaceId = selectedWorkspaceId,
+                                    permissionMode = permissionMode,
+                                )
                             }
                             onCreate(config)
                         },

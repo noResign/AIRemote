@@ -27,14 +27,15 @@ Options:
   --workspace <path>        Working dir root (default: current directory)
   --data-dir <path>         Data dir for SQLite + token (default ~/.airemote)
   --token <token>           Bearer auth token (default: env AIREMOTE_TOKEN or generated)
-  --permission-mode <mode>  Claude Code permission mode (default acceptEdits)
+  --permission-mode <mode>  Initial Claude Code permission mode (default: default/ask)
   --env-file <path>         Load config from a .env file (default: ./.env if present)
   -h, --help                Show this help
   -v, --version             Show version
 
 Environment variables (flags take precedence; may also be set in a .env file):
   AIREMOTE_HOST, AIREMOTE_PORT, AIREMOTE_WORKSPACE, AIREMOTE_DATA_DIR,
-  AIREMOTE_TOKEN, AIREMOTE_PERMISSION_MODE, AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS,
+  AIREMOTE_TOKEN, AIREMOTE_PERMISSION_MODE, AIREMOTE_PERMISSION_TIMEOUT_SECONDS,
+  AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS,
   AIREMOTE_TLS_CERT, AIREMOTE_TLS_KEY
 `;
 }

@@ -9,9 +9,13 @@ import { registerHealthRoutes } from './routes/health.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerChatRoutes } from './routes/chat.js';
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js';
+import { registerConfigRoutes } from './routes/config.js';
+import { registerFsRoutes } from './routes/fs.js';
 import { registerPermissionRoutes } from './routes/permissions.js';
 import { registerRunRoutes } from './routes/runs.js';
+import { registerSessionPermissionRoutes } from './routes/session-permissions.js';
 import { registerSessionRoutes } from './routes/sessions.js';
+import { registerWorkspaceRoutes } from './routes/workspaces.js';
 
 export function createApp(ctx: AppContext): Express {
   const app = express();
@@ -25,9 +29,13 @@ export function createApp(ctx: AppContext): Express {
   // Everything else under /api requires a bearer token.
   app.use('/api', requireAuth(ctx.config.token));
   registerAgentRoutes(app, ctx);
+  registerConfigRoutes(app, ctx);
+  registerFsRoutes(app, ctx);
+  registerWorkspaceRoutes(app, ctx);
   registerClaudeSessionRoutes(app, ctx);
   registerChatRoutes(app, ctx);
   registerRunRoutes(app, ctx);
+  registerSessionPermissionRoutes(app, ctx);
   registerSessionRoutes(app, ctx);
   registerPermissionRoutes(app, ctx);
 
