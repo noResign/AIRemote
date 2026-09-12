@@ -158,3 +158,30 @@ export interface DiffResponse {
   truncated: boolean;
   patch: string;
 }
+
+export type FileEntryType = 'file' | 'directory';
+
+export interface FileEntryDto {
+  name: string;
+  path: string;
+  type: FileEntryType;
+  size: number | null;
+  modifiedAt: number | null;
+}
+
+export interface FilesResponse {
+  workspaceId: string;
+  workspacePath: string;
+  path: string;
+  parent: string | null;
+  entries: FileEntryDto[];
+  nextCursor: string | null;
+}
+
+export interface FileContentDto {
+  path: string;
+  size: number;
+  binary: boolean;
+  truncated: boolean;
+  content: string;
+}

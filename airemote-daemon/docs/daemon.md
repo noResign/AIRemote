@@ -118,6 +118,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
 | `GET /api/changes` | 是 | 当前 Workspace 的 Git 未提交改动，`?workspaceId=` |
 | `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&path=<relative>` |
+| `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&path=&cursor=&limit=&showHidden=&showIgnored=` |
+| `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
 | `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
