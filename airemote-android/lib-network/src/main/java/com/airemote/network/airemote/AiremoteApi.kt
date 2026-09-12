@@ -1,7 +1,9 @@
 package com.airemote.network.airemote
 
 import com.airemote.network.airemote.dto.AgentsResponse
+import com.airemote.network.airemote.dto.ChangesResponse
 import com.airemote.network.airemote.dto.ClaudeSessionsResponse
+import com.airemote.network.airemote.dto.DiffResponse
 import com.airemote.network.airemote.dto.ConfigResponse
 import com.airemote.network.airemote.dto.ConfigUpdateResponse
 import com.airemote.network.airemote.dto.CreateWorkspaceRequest
@@ -86,6 +88,15 @@ interface AiremoteApi {
         @Query("path") path: String? = null,
         @Query("showHidden") showHidden: Boolean? = null,
     ): DirectoriesResponse
+
+    @GET("api/changes")
+    suspend fun changes(@Query("workspaceId") workspaceId: String? = null): ChangesResponse
+
+    @GET("api/changes/diff")
+    suspend fun changeDiff(
+        @Query("workspaceId") workspaceId: String? = null,
+        @Query("path") path: String,
+    ): DiffResponse
 
     @GET("api/config")
     suspend fun config(): ConfigResponse
