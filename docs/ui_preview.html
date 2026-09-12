@@ -492,6 +492,8 @@
   .wc-meta { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
 
   .breadcrumb { font-size: 12px; color: var(--text-secondary); background: var(--code-bg); border-radius: 8px; padding: 8px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .compact-search { display: flex; align-items: center; gap: 8px; background: var(--code-bg); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: var(--text-muted); }
+  .compact-search .cs-ico { font-size: 13px; }
   .dir-row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 12px; }
   .dir-row .file-meta { color: var(--text-muted); font-size: 11px; }
   .dir-picker-note { font-size: 11px; color: var(--warning); line-height: 1.5; text-align: center; padding: 4px 8px; }
@@ -599,6 +601,7 @@
     <button data-target="files">改动</button>
     <button data-target="filesall">全部文件</button>
     <button data-target="diff">Diff 查看</button>
+    <button data-target="filecontent">文件全文</button>
     <button data-target="settings">设置</button>
     <span class="sw-sep"></span>
     <button data-target="chat">聊天详情</button>
@@ -905,7 +908,7 @@
           </div>
           <div class="segmented">
             <button class="active">改动</button>
-            <button disabled>全部文件</button>
+            <button>全部文件</button>
           </div>
           <div class="changes-summary">3 个文件改动 · 基于 git status</div>
           <div class="change-row" data-nav="diff">
@@ -968,6 +971,7 @@
             <span class="wb-chev">切换 ›</span>
           </div>
           <div class="breadcrumb mono">api / src / auth</div>
+          <div class="compact-search"><span class="cs-ico">🔍</span><span class="cs-ph">筛选当前目录</span></div>
           <div class="dir-row" data-nav="filesall">
             <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
             <div><div class="file-name">..</div><div class="file-meta">返回上级</div></div>
@@ -992,7 +996,8 @@
       <section class="screen" id="screen-diff">
         <div class="page-head">
           <button class="icon-btn" data-nav="files"><svg><use href="#i-back"/></svg></button>
-          <h2 class="mono" style="font-size:14px">src/auth/token.ts</h2>
+          <h2 class="mono" style="font-size:14px">token.ts</h2>
+          <button class="diff-toggle" data-nav="filecontent">全文</button>
           <span class="change-badge m">M</span>
         </div>
         <div class="diff-toolbar"><span class="diff-toggle">统一</span></div>
@@ -1033,6 +1038,23 @@
             <span class="split-line-no">16</span>
             <span class="split-code">}</span>
           </div>
+        </div>
+      </section>
+
+      <!-- ⑥b 文件全文 -->
+      <section class="screen" id="screen-filecontent">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="diff"><svg><use href="#i-back"/></svg></button>
+          <h2 class="mono" style="font-size:14px">token.ts</h2>
+          <span class="diff-toggle">不换行</span>
+        </div>
+        <div class="diff-body mono">
+          <div class="diff-line">export interface TokenPair {</div>
+          <div class="diff-line">  accessToken: string</div>
+          <div class="diff-line">  refreshToken: string</div>
+          <div class="diff-line">  expiresAt: number</div>
+          <div class="diff-line">  refreshExpiresAt: number</div>
+          <div class="diff-line">}</div>
         </div>
       </section>
 
@@ -1239,7 +1261,7 @@
   </div>
 </div>
 
-<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 文件预览 <code>改动 / 全部文件 / Diff</code> · 顶部还可预览 <code>工作区 / 目录选择 / 会话权限</code> · 聊天页按住麦克风试试语音输入 · 右上角 ☀️/🌙 切换主题</p>
+<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 文件预览 <code>改动 / 全部文件 / Diff / 全文</code> · 顶部还可预览 <code>工作区 / 目录选择 / 会话权限</code> · 聊天页按住麦克风试试语音输入 · 右上角 ☀️/🌙 切换主题</p>
 
 <script>
   const switcherBtns = document.querySelectorAll('#switcher button');
