@@ -9,6 +9,8 @@ import com.airemote.network.airemote.dto.ConfigUpdateResponse
 import com.airemote.network.airemote.dto.CreateWorkspaceRequest
 import com.airemote.network.airemote.dto.DirectoriesResponse
 import com.airemote.network.airemote.dto.EventsResponse
+import com.airemote.network.airemote.dto.FileContentDto
+import com.airemote.network.airemote.dto.FilesResponse
 import com.airemote.network.airemote.dto.HealthResponse
 import com.airemote.network.airemote.dto.OkResponse
 import com.airemote.network.airemote.dto.PermissionDecisionRequest
@@ -97,6 +99,22 @@ interface AiremoteApi {
         @Query("workspaceId") workspaceId: String? = null,
         @Query("path") path: String,
     ): DiffResponse
+
+    @GET("api/files")
+    suspend fun files(
+        @Query("workspaceId") workspaceId: String? = null,
+        @Query("path") path: String? = null,
+        @Query("cursor") cursor: String? = null,
+        @Query("limit") limit: Int? = null,
+        @Query("showHidden") showHidden: Boolean? = null,
+        @Query("showIgnored") showIgnored: Boolean? = null,
+    ): FilesResponse
+
+    @GET("api/files/content")
+    suspend fun fileContent(
+        @Query("workspaceId") workspaceId: String? = null,
+        @Query("path") path: String,
+    ): FileContentDto
 
     @GET("api/config")
     suspend fun config(): ConfigResponse
