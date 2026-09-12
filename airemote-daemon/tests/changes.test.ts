@@ -43,7 +43,7 @@ describe('git changes', () => {
     expect(result.isGitRepo).toBe(true);
 
     const tracked = result.files.find((f) => f.path === 'tracked.txt');
-    expect(tracked).toMatchObject({ status: 'modified', staged: false });
+    expect(tracked).toMatchObject({ status: 'modified', staged: false, additions: 1, deletions: 1 });
 
     const untracked = result.files.find((f) => f.path === 'untracked.txt');
     expect(untracked).toMatchObject({ status: 'untracked', staged: false });

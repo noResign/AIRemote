@@ -17,6 +17,8 @@ export interface ChangedFile {
   staged: boolean;
   binary: boolean;
   isDirectory: boolean;
+  additions: number | null;
+  deletions: number | null;
 }
 
 export interface ChangesResult {
@@ -119,6 +121,51 @@ interface ParsedStatusEntry {
   oldPath: string | null;
 }
 
+interface DiffStat {
+  additions: number | null;
+  deletions: number | null;
+}
+
+function addNullable(a: number | null | undefined, b: number | null | undefined): number | null {
+  if (a == null && b == null) return null;
+  return (a ?? 0) + (b ?? 0);
+}
+
+function mergeStat(a: DiffStat | undefined, b: DiffStat | undefined): DiffStat {
+  return {
+    additions: addNullable(a?.additions, b?.additions),
+    deletions: addNullable(a?.deletions, b?.deletions),
+  };
+}
+
+async function readNumstat(
+  workspacePath: string,
+  gitRoot: string,
+  cached: boolean,
+): Promise<Map<string, DiffStat>> {
+  const args = ['diff', '--numstat', '--no-ext-diff', '--no-textconv'];
+  if (cached) args.push('--cached');
+  args.push('--', '.');
+  const result = await runGit(workspacePath, args);
+  const stats = new Map<string, DiffStat>();
+  if (!result.ok) return stats;
+  for (const line of result.stdout.split('\n')) {
+    if (!line) continue;
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const additions = parts[0] === '-' ? null : Number(parts[0]);
+    const deletions = parts[1] === '-' ? null : Number(parts[1]);
+    const gitPath = parts.slice(2).join('\t');
+    const wire = toWirePath(workspacePath, gitRoot, gitPath);
+    if (!wire) continue;
+    stats.set(wire.path, {
+      additions: Number.isFinite(additions) ? additions : null,
+      deletions: Number.isFinite(deletions) ? deletions : null,
+    });
+  }
+  return stats;
+}
+
 function parseStatusZ(output: string): ParsedStatusEntry[] {
   const tokens = output.split('\0');
   const entries: ParsedStatusEntry[] = [];
@@ -154,12 +201,18 @@ export async function listChanges(workspacePath: string): Promise<ChangesResult>
     throw new ChangesError(`git status failed: ${result.stderr}`, 'git_failed', 500);
   }
 
+  const [unstagedStats, stagedStats] = await Promise.all([
+    readNumstat(workspacePath, gitRoot, false),
+    readNumstat(workspacePath, gitRoot, true),
+  ]);
+
   const files: ChangedFile[] = [];
   for (const entry of parseStatusZ(result.stdout)) {
     const current = toWirePath(workspacePath, gitRoot, entry.path);
     if (!current) continue;
     const old = entry.oldPath ? toWirePath(workspacePath, gitRoot, entry.oldPath) : null;
     const status = mapStatus(entry.x, entry.y);
+    const stat = mergeStat(unstagedStats.get(current.path), stagedStats.get(current.path));
     files.push({
       path: current.path,
       oldPath: old?.path ?? null,
@@ -167,6 +220,8 @@ export async function listChanges(workspacePath: string): Promise<ChangesResult>
       staged: isStaged(entry.x, entry.y),
       binary: false,
       isDirectory: current.isDirectory,
+      additions: stat.additions,
+      deletions: stat.deletions,
     });
   }
 

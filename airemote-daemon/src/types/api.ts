@@ -140,6 +140,8 @@ export interface ChangedFileDto {
   staged: boolean;
   binary: boolean;
   isDirectory: boolean;
+  additions: number | null;
+  deletions: number | null;
 }
 
 export interface ChangesResponse {
