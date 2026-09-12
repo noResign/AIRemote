@@ -516,6 +516,36 @@
   .pf-title { padding: 8px 10px; font-size: 12px; font-weight: 700; color: var(--text-primary); background: var(--surface); border-bottom: 1px solid var(--border); }
   .pf-body { padding: 10px; font-size: 11.5px; line-height: 1.6; color: var(--text-secondary); white-space: pre-wrap; }
 
+
+  /* ============ Files / Changes / Diff（新增） ============ */
+  .files-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 6px; }
+  .files-head h2 { font-size: 26px; letter-spacing: -.4px; color: var(--text-primary); }
+  .segmented { display: flex; background: var(--code-bg); border-radius: 10px; padding: 3px; margin: 8px 16px 4px; }
+  .segmented button { flex: 1; border: none; background: transparent; color: var(--text-secondary); font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 8px; }
+  .segmented button.active { background: var(--surface); color: var(--primary-deep); box-shadow: var(--elevation-1); }
+  .segmented button:disabled { color: var(--text-muted); }
+  .changes-summary { font-size: 11.5px; color: var(--text-muted); padding: 6px 20px 8px; }
+  .change-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); margin: 0 16px 8px; padding: 10px 12px; }
+  .change-row:active { background: var(--code-bg); }
+  .change-badge { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 11px; font-weight: 800; flex: none; }
+  .change-badge.m { color: var(--warning); background: color-mix(in srgb, var(--warning) 14%, transparent); }
+  .change-badge.a { color: var(--success); background: color-mix(in srgb, var(--success) 14%, transparent); }
+  .change-badge.d { color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+  .change-badge.r { color: var(--primary-deep); background: var(--primary-subtle); }
+  .change-badge.q { color: var(--text-muted); background: var(--code-bg); }
+  .change-main { flex: 1; min-width: 0; }
+  .change-path { font-size: 12.5px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .change-meta { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
+  .change-stat { font-size: 10.5px; font-family: "SF Mono", ui-monospace, monospace; white-space: nowrap; }
+  .change-stat b { color: var(--success); }
+  .change-stat i { color: var(--error); font-style: normal; }
+  .diff-body { flex: 1; overflow: auto; padding: 8px 0 24px; background: var(--surface); }
+  .diff-hunk { padding: 8px 14px; margin: 6px 0; color: var(--primary-deep); background: var(--primary-subtle); font-size: 11.5px; white-space: pre; }
+  .diff-line { padding: 2px 14px; font-size: 11.5px; line-height: 1.65; white-space: pre; color: var(--text-secondary); }
+  .diff-line.add { color: var(--success); background: color-mix(in srgb, var(--success) 9%, transparent); }
+  .diff-line.del { color: var(--error); background: color-mix(in srgb, var(--error) 8%, transparent); }
+  .diff-line.ctx { color: var(--text-secondary); }
+
 </style>
 </head>
 <body>
@@ -557,7 +587,9 @@
     <button data-target="connection" class="active">连接</button>
     <span class="sw-sep"></span>
     <button data-target="list">会话</button>
-    <button data-target="files">文件</button>
+    <button data-target="files">改动</button>
+    <button data-target="filesall">全部文件</button>
+    <button data-target="diff">Diff 查看</button>
     <button data-target="settings">设置</button>
     <span class="sw-sep"></span>
     <button data-target="chat">聊天详情</button>
@@ -847,10 +879,13 @@
         </div>
       </section>
 
-      <!-- ⑥ 文件（M2） -->
+      <!-- ⑤ 文件改动 -->
       <section class="screen" id="screen-files">
         <div class="files">
-          <h2>文件</h2>
+          <div class="files-head">
+            <h2>文件</h2>
+            <span class="pill pill-connected"><i class="dot dot-success"></i>main</span>
+          </div>
           <div class="workspace-bar" data-nav="workspaces">
             <span class="wb-ico"><svg><use href="#i-folder"/></svg></span>
             <span class="wb-main">
@@ -859,23 +894,106 @@
             </span>
             <span class="wb-chev">切换 ›</span>
           </div>
-          <div class="files-cwd mono">/ · src / main</div>
-          <div class="file-row">
+          <div class="segmented">
+            <button class="active">改动</button>
+            <button disabled>全部文件</button>
+          </div>
+          <div class="changes-summary">3 个文件改动 · 基于 git status</div>
+          <div class="change-row" data-nav="diff">
+            <span class="change-badge m">M</span>
+            <div class="change-main">
+              <div class="change-path mono">src/auth/token.ts</div>
+              <div class="change-meta">已修改 · 未暂存</div>
+            </div>
+            <span class="change-stat"><b>+18</b> <i>-4</i></span>
+          </div>
+          <div class="change-row" data-nav="diff">
+            <span class="change-badge a">A</span>
+            <div class="change-main">
+              <div class="change-path mono">src/auth/session.ts</div>
+              <div class="change-meta">新增文件 · 未暂存</div>
+            </div>
+            <span class="change-stat"><b>+42</b></span>
+          </div>
+          <div class="change-row" data-nav="diff">
+            <span class="change-badge d">D</span>
+            <div class="change-main">
+              <div class="change-path mono">src/config/old.json</div>
+              <div class="change-meta">已删除 · 已暂存</div>
+            </div>
+            <span class="change-stat"><i>-12</i></span>
+          </div>
+          <div class="change-row" data-nav="diff">
+            <span class="change-badge r">R</span>
+            <div class="change-main">
+              <div class="change-path mono">src/utils/rename.ts</div>
+              <div class="change-meta">重命名 · from src/utils/old.ts</div>
+            </div>
+            <span class="change-stat"></span>
+          </div>
+          <div class="change-row" data-nav="diff">
+            <span class="change-badge q">?</span>
+            <div class="change-main">
+              <div class="change-path mono">notes/todo.md</div>
+              <div class="change-meta">未跟踪文件</div>
+            </div>
+            <span class="change-stat"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ⑤b 全部文件 -->
+      <section class="screen" id="screen-filesall">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="files"><svg><use href="#i-back"/></svg></button>
+          <h2>全部文件</h2>
+          <button class="icon-btn" title="刷新"><svg><use href="#i-refresh"/></svg></button>
+        </div>
+        <div class="page-body">
+          <div class="workspace-bar compact" data-nav="workspaces">
+            <span class="wb-ico"><svg><use href="#i-folder"/></svg></span>
+            <span class="wb-main">
+              <span class="wb-label">当前工作区</span>
+              <span class="wb-path mono">~/projects/api</span>
+            </span>
+            <span class="wb-chev">切换 ›</span>
+          </div>
+          <div class="breadcrumb mono">api / src / auth</div>
+          <div class="dir-row" data-nav="filesall">
             <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
-            <div><div class="file-name">src</div><div class="file-meta">目录 · 12 项</div></div>
+            <div><div class="file-name">..</div><div class="file-meta">返回上级</div></div>
           </div>
-          <div class="file-row">
+          <div class="dir-row">
             <span class="file-ico dir"><svg><use href="#i-folder"/></svg></span>
-            <div><div class="file-name">tests</div><div class="file-meta">目录 · 8 项</div></div>
+            <div><div class="file-name">modules</div><div class="file-meta">文件夹</div></div>
           </div>
-          <div class="file-row">
+          <div class="dir-row">
             <span class="file-ico file"><svg><use href="#i-article"/></svg></span>
-            <div><div class="file-name">package.json</div><div class="file-meta">1.2 KB · 昨天</div></div>
+            <div><div class="file-name">token.ts</div><div class="file-meta">2.4 KB · 2 分钟前</div></div>
           </div>
-          <div class="file-row">
+          <div class="dir-row">
             <span class="file-ico file"><svg><use href="#i-article"/></svg></span>
-            <div><div class="file-name">tsconfig.json</div><div class="file-meta">640 B · 3 天前</div></div>
+            <div><div class="file-name">session.ts</div><div class="file-meta">3.1 KB · 2 分钟前</div></div>
           </div>
+          <div class="dir-picker-note">单层懒加载，默认忽略 node_modules / dist / .git 等目录。</div>
+        </div>
+      </section>
+
+      <!-- ⑥ Diff 查看器 -->
+      <section class="screen" id="screen-diff">
+        <div class="page-head">
+          <button class="icon-btn" data-nav="files"><svg><use href="#i-back"/></svg></button>
+          <h2 class="mono" style="font-size:14px">src/auth/token.ts</h2>
+          <span class="change-badge m">M</span>
+        </div>
+        <div class="diff-body mono">
+          <div class="diff-hunk">@@ -12,6 +12,8 @@ export interface TokenPair {</div>
+          <div class="diff-line ctx">  accessToken: string</div>
+          <div class="diff-line ctx">  refreshToken: string</div>
+          <div class="diff-line del">-  expiresIn: number</div>
+          <div class="diff-line add">+  expiresAt: number</div>
+          <div class="diff-line add">+  refreshExpiresAt: number</div>
+          <div class="diff-line ctx">}</div>
         </div>
       </section>
 
@@ -1082,7 +1200,7 @@
   </div>
 </div>
 
-<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 顶部可预览 <code>工作区 / 目录选择 / 会话权限</code> · 聊天页按住麦克风试试语音输入 · 工具卡/思考块可展开 · 右上角 ☀️/🌙 切换主题</p>
+<p class="hint">底部 <code>会话 / 文件 / 设置</code> Tab 可切换 · 文件预览 <code>改动 / 全部文件 / Diff</code> · 顶部还可预览 <code>工作区 / 目录选择 / 会话权限</code> · 聊天页按住麦克风试试语音输入 · 右上角 ☀️/🌙 切换主题</p>
 
 <script>
   const switcherBtns = document.querySelectorAll('#switcher button');

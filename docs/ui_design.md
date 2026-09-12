@@ -81,7 +81,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
                 │ 连接成功
 ┌───────────────▼───────────────────────────────┐
 │  底部导航（平台原生 Tab Bar / NavigationBar）    │
-│    ② 会话        ⑤ 文件(后续里程碑)   ⑦ 设置     │
+│    ② 会话        ⑤ 文件             ⑦ 设置     │
 │                                             │
 │  ② 会话 Tab
 │    ├─ 顶部：Workspace 切换器
@@ -93,7 +93,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 │    ├─ 进入 ──▶ ⑩ 会话权限设置
 │    └─ 审批 ──▶ Ⓟ 权限审批浮层
 │
-│  ⑤ 文件 Tab：根目录跟随当前 Workspace
+│  ⑤ 文件 Tab：改动（默认）/ 全部文件，根目录跟随当前 Workspace
 │  ⑦ 设置
 │    ├─ Workspace 管理 ──▶ ⑧ 工作区管理
 │    └─ 新增工作区 ──▶ ⑨ 目录选择器
@@ -106,8 +106,8 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 | ② | 会话列表 | 主 Tab | M1 |
 | ③ | 聊天详情 | 详情页（push） | M1（核心） |
 | ④ | 新建/续接会话 | 底部 Sheet | M1 |
-| ⑤ | 文件浏览 | Tab | M2 |
-| ⑥ | 文件查看器 | 子页（push） | M2 |
+| ⑤ | 文件（改动 / 全部文件） | Tab | M2 |
+| ⑥ | Diff / 文件查看器 | 子页（push） | M2 |
 | ⑦ | 设置 | Tab | M1 |
 | ⑧ | 工作区管理 | 子页（push） | M2 |
 | ⑨ | 目录选择器 | 子页/全屏 Sheet | M2 |
@@ -404,25 +404,121 @@ UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色
 
 > 权限模式是 **Session 级**，不是全局只读配置。新建 Session 默认 `ask`；全局 `default_permission_mode` 可配置为 `acceptEdits`。已有 Session 的权限模式在 ⑩ 会话权限设置里修改。
 
-### 6.5 ⑤ 文件浏览（Files）与 ⑥ 文件查看器 🟡（M2）
+### 6.5 ⑤ 文件浏览（Files）与 ⑥ Diff/文件查看器 🟡（M2）
 
-**目的**：查看 agent 工作区的文件，确认产出。
+**目的**：查看当前 Workspace 的改动文件，并查看单文件 diff；后续可选查看全部文件。
 
-> 🟡 当前后端**没有**文件列表/读取接口，UI 按此设计，需后端补 `GET /api/files`、`GET /api/files/:path`（见附录 B）。
+> Files Tab 第一版默认打开「改动」，不做全量文件树递归。
 
-**列表页**：
-- 顶栏标题「文件」+ **当前 Workspace 切换器**（显示 Workspace 名/path）。
-- 文件/目录列表（图标区分），等宽字体显示文件名；根目录即当前 Workspace 路径。
-- 支持在 Workspace 内逐层进入目录。
-- 空态："暂无文件"。
-- 顶部刷新时使用 `GET /api/files?workspaceId=<id>&path=<relativePath>`；切换 Workspace 后重新从根目录加载。
+#### 6.5.1 顶部区域
 
-**文件查看器（子页）**：
-- 顶栏：文件名 + 关闭。
-- 正文：**只读**文本，等宽字体，代码语法高亮（可选）。
-- 长按可复制全文。
+- 标题「文件」。
+- Workspace 切换器：显示当前 Workspace 名/path，点击进入 ⑧ 工作区管理。
+- 仓库状态：
+  - Git 仓库：显示分支名（若后端返回）。
+  - 非 Git 仓库：显示「非 Git 仓库」胶囊。
+- 刷新按钮：重新拉取改动列表。
 
----
+#### 6.5.2 分段控制
+
+```text
+[ 改动 ]   [ 全部文件 ]
+```
+
+- 「改动」：默认选中。
+- 「全部文件」：后续里程碑；未开放时置灰并显示「后续上线」。
+
+#### 6.5.3 改动列表
+
+数据来源：
+
+```http
+GET /api/changes?workspaceId=<id>
+```
+
+列表项：
+
+```text
+src/auth/token.ts        M    +18 -4
+src/auth/session.ts      A    new file
+src/config/old.json      D
+src/utils/rename.ts      R
+```
+
+关键元素：
+
+- 状态徽章：
+  - `M` modified（warning）
+  - `A` added（success）
+  - `D` deleted（error）
+  - `R` renamed（primary）
+  - `?` untracked（muted）
+  - `U` conflicted（error）
+- 文件相对路径，等宽字体，长路径省略中间。
+- `+additions / -deletions`（若后端返回则显示；第一版可不显示）。
+- `staged` 标记：已暂存显示小标签。
+- `binary` 标记：二进制文件显示「二进制」，不展示行数。
+- 无改动时：
+  - 空态插画 + 「当前没有未提交的改动」。
+- 非 Git 仓库：
+  - 空态：「当前工作区不是 Git 仓库，无法生成改动列表」。
+- 加载失败：
+  - 错误提示 + 重试。
+
+交互：
+
+- 点击文件 → 进入 ⑥ Diff 查看器。
+- 下拉刷新。
+- 长按路径 → 复制相对路径。
+
+#### 6.5.4 全部文件（后续里程碑）
+
+全部文件不做递归加载，采用单层懒加载：
+
+- 顶部面包屑：`workspace / src / auth`。
+- 当前目录只列一层。
+- 默认隐藏：
+  - `.git`
+  - `node_modules`
+  - `dist`
+  - `build`
+  - `.gradle`
+  - `.idea`
+  - `target`
+  - `coverage`
+- 支持「显示隐藏目录」开关。
+- 目录项显示「文件夹」；文件项显示大小/修改时间。
+- 目录条目多时后端分页；客户端滚动加载下一页。
+- 点击目录进入下一层；点击文件进入 ⑥ 文件查看器。
+
+#### 6.5.5 ⑥ Diff / 文件查看器
+
+**目的**：查看单文件改动内容。
+
+顶部：
+
+- 返回按钮。
+- 文件名。
+- 状态徽章：M/A/D/R/?。
+- 复制路径。
+- 可选「只读全文 / diff」切换。
+
+正文（diff 模式）：
+
+- 等宽字体，行级颜色：
+  - `+` 绿色
+  - `-` 红色
+  - `@@` 主色
+  - 上下文行默认 text-secondary
+- 长按可复制。
+- 超长 diff 截断时显示：「内容过大，仅展示前 N 行」。
+- 二进制文件显示：「暂不支持预览二进制文件」。
+- 非 Git 仓库或文件未改动时给出对应空态。
+
+正文（只读全文模式，后续可选）：
+
+- 等宽、只读、支持复制。
+- 大文件限制大小并提示截断。
 
 ### 6.6 ⑦ 设置（Settings）🟢
 
@@ -654,7 +750,9 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | 流式事件 | SSE：`POST /api/chat`（body `{sessionId?, workspaceId?, claudeSessionId?, prompt, model?, runtime?}`） |
 | 停止运行中的任务 | `POST /api/runs/:id/cancel` |
 | 工具审批决策 | `POST /api/permissions/:id/decision`（body `{decision, reason?}`） |
-| 当前 Workspace 的文件列表 / 内容 | 🟡 `GET /api/files?workspaceId=<id>&path=...`（**待后端实现**） |
+| 当前 Workspace 的改动文件列表 | 🟡 `GET /api/changes?workspaceId=<id>`（**待后端实现**） |
+| 改动文件 diff | 🟡 `GET /api/changes/diff?workspaceId=<id>&path=...`（**待后端实现**） |
+| 当前 Workspace 的全部文件列表 / 内容 | 🟡 `GET /api/files?workspaceId=<id>&path=...`（**后续里程碑**） |
 | 断线补齐事件 | `GET /api/runs/:id/events?after=seq` |
 
 ## 9. 交付里程碑（正式产品，增量上线）
@@ -700,6 +798,8 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | `/api/workspaces/:id` | PATCH | 是 | body `{name?, isDefault?, enabled?}` |
 | `/api/workspaces/:id` | DELETE | 是 | 删除/禁用；有 Session 引用时阻止 |
 | `/api/fs/directories` | GET | 是 | `?path=<abs>&showHidden=false`；返回目录列表、父目录、面包屑 |
+| `/api/changes` | GET | 是 | `?workspaceId=<id>`；基于 `git status` 返回改动文件列表 |
+| `/api/changes/diff` | GET | 是 | `?workspaceId=<id>&path=<relativePath>`；返回单文件 diff |
 | `/api/config` | GET | 是 | 返回默认权限模式、默认 Workspace、只读/重启级配置 |
 | `/api/config` | PATCH | 是 | body `{defaultPermissionMode?, defaultWorkspaceId?}` |
 | `/api/sessions` | GET | 是 | `?workspaceId=<id>`；返回该 Workspace 的会话 |
@@ -737,7 +837,9 @@ Android `SpeechRecognizer`）还是 **daemon 服务端 ASR** 做，需产品决�
 | Workspace 注册与切换 | 工作区管理、顶部切换器 | 🟡 未实现 |
 | 目录选择器 | ⑨ 目录选择器 | 🟡 未实现 |
 | 按 Workspace 过滤会话 | ② 会话列表 | 🟡 未实现 |
-| 文件浏览 / 文件内容 | ⑤⑥ 文件页 | 🟡 未实现 |
+| 改动文件列表（git status） | ⑤ Files 改动 Tab | 🟡 未实现 |
+| 单文件 diff | ⑥ Diff 查看器 | 🟡 未实现 |
+| 全部文件浏览 / 文件内容 | ⑤ Files 全部文件 Tab | 🟡 后续里程碑 |
 | 停止任务 | 聊天页「停止」按钮 | 🟢 已支持 |
 | 事件回放 / 断线续传 | 7.3 断线重连 | 🟢 已实现 |
 | 运行中 run 列表 | 7.2 运行状态 | 🟢 已实现（需补 `workspaceId` 过滤） |
