@@ -2,6 +2,9 @@ package com.airemote.airemote.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +20,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
@@ -37,8 +44,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -63,10 +81,15 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val fileBrowser by viewModel.fileBrowser.collectAsState()
     val fileContent by viewModel.fileContent.collectAsState()
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
+    var fileBrowserQuery by remember { mutableStateOf("") }
 
     when {
         fileContent != null -> FileContentScreen(state = fileContent!!, onBack = viewModel::closeFile)
-        diffState != null -> DiffScreen(state = diffState!!, onBack = viewModel::closeDiff)
+        diffState != null -> DiffScreen(
+            state = diffState!!,
+            onBack = viewModel::closeDiff,
+            onOpenFullFile = viewModel::openDiffFileContent,
+        )
         else -> Scaffold(
             topBar = {
                 TopAppBar(
@@ -104,7 +127,9 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     )
                     FilesMode.All -> FileBrowserContent(
                         state = fileBrowser,
-                        onBrowse = viewModel::browse,
+                        query = fileBrowserQuery,
+                        onQueryChange = { fileBrowserQuery = it },
+                        onBrowse = { fileBrowserQuery = ""; viewModel.browse(it) },
                         onLoadMore = viewModel::loadMore,
                         onToggleHidden = viewModel::toggleShowHidden,
                         onToggleIgnored = viewModel::toggleShowIgnored,
@@ -113,7 +138,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     )
                 }
             }
-        }
+    }
     }
 }
 
@@ -183,14 +208,16 @@ private fun ChangesContent(
                         ChangeRow(file = file, onClick = { onOpen(file) })
                     }
                 }
-            }
         }
     }
+}
 }
 
 @Composable
 private fun FileBrowserContent(
     state: FileBrowserUiState,
+    query: String,
+    onQueryChange: (String) -> Unit,
     onBrowse: (String?) -> Unit,
     onLoadMore: () -> Unit,
     onToggleHidden: () -> Unit,
@@ -198,65 +225,178 @@ private fun FileBrowserContent(
     onOpenFile: (FileEntryDto) -> Unit,
     onRetry: () -> Unit,
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+    val visibleEntries = remember(state.entries, query) {
+        if (query.isBlank()) state.entries else state.entries.filter { it.name.contains(query, ignoreCase = true) }
+    }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val dismissInput: () -> Unit = {
+        focusManager.clearFocus()
+        keyboardController?.hide()
+        Unit
+    }
+    val dismissAndBrowse: (String?) -> Unit = { path ->
+        dismissInput()
+        onBrowse(path)
+    }
+    var searchBounds by remember { mutableStateOf<Rect?>(null) }
+    var rootPosition by remember { mutableStateOf(Offset.Zero) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { rootPosition = it.positionInRoot() }
+            .pointerInput(Unit) {
+                val touchSlop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    val up = waitForUpOrCancellation(pass = PointerEventPass.Initial)
+                    if (up != null && (up.position - down.position).getDistance() <= touchSlop) {
+                        val tapInRoot = down.position + rootPosition
+                        if (searchBounds?.contains(tapInRoot) != true) dismissInput()
+                    }
+                }
+            },
     ) {
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            breadcrumbs(state.path).forEachIndexed { index, crumb ->
+                if (index > 0) Text(" / ", color = IdeMuted, style = MaterialTheme.typography.labelSmall)
                 Text(
-                    state.path.ifBlank { "/" },
-                    style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    crumb.label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clickable { dismissAndBrowse(crumb.path) }
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
                 )
-                if (state.parent != null) {
-                    TextButton(onClick = { onBrowse(state.parent) }) { Text("上一级") }
-                }
             }
         }
-        item {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onToggleHidden) {
-                    Text(if (state.showHidden) "隐藏隐藏项" else "显示隐藏项")
-                }
-                TextButton(onClick = onToggleIgnored) {
-                    Text(if (state.showIgnored) "隐藏忽略项" else "显示忽略项")
-                }
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (state.parent != null) {
+                TextButton(onClick = { dismissAndBrowse(state.parent) }) { Text("上一级") }
+            }
+            TextButton(onClick = { dismissInput(); onToggleHidden() }) {
+                Text(if (state.showHidden) "隐藏隐藏项" else "显示隐藏项")
+            }
+            TextButton(onClick = { dismissInput(); onToggleIgnored() }) {
+                Text(if (state.showIgnored) "隐藏忽略项" else "显示忽略项")
             }
         }
+        CompactSearchField(
+            value = query,
+            onValueChange = onQueryChange,
+            placeholder = "筛选当前目录",
+            onSearch = dismissInput,
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .onGloballyPositioned { searchBounds = it.boundsInRoot() },
+        )
 
-        if (state.loading && state.entries.isEmpty()) {
-            item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-        }
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+                if (state.loading && state.entries.isEmpty()) {
+                    item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+                }
 
-        state.error?.let { message ->
-            item { ErrorContent(message, onRetry) }
-        }
+                state.error?.let { message ->
+                    item { ErrorContent(message, onRetry) }
+                }
 
-        items(state.entries, key = { it.path }) { entry ->
-            FileEntryRow(entry = entry, onOpen = { onOpenFile(entry) }, onBrowse = onBrowse)
-        }
+                if (visibleEntries.isEmpty() && query.isNotBlank()) {
+                    item { Text("当前目录没有匹配项", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
 
-        if (state.nextCursor != null) {
-            item {
-                OutlinedButton(
-                    onClick = onLoadMore,
-                    enabled = !state.loadingMore,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text(if (state.loadingMore) "加载中…" else "加载更多") }
+                items(visibleEntries, key = { it.path }) { entry ->
+                    FileEntryRow(
+                        entry = entry,
+                        onOpen = {
+                            dismissInput()
+                            onOpenFile(entry)
+                        },
+                        onBrowse = { path ->
+                            dismissInput()
+                            onBrowse(path)
+                        },
+                    )
+                }
+
+                if (state.nextCursor != null) {
+                    item {
+                        OutlinedButton(
+                            onClick = { dismissInput(); onLoadMore() },
+                            enabled = !state.loadingMore,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(if (state.loadingMore) "加载中…" else "加载更多") }
+                    }
+                }
             }
         }
     }
+
+private data class Breadcrumb(val label: String, val path: String?)
+
+private fun breadcrumbs(path: String): List<Breadcrumb> {
+    val items = mutableListOf(Breadcrumb("workspace", null))
+    var current = ""
+    for (part in path.split('/').filter { it.isNotBlank() }) {
+        current = if (current.isEmpty()) part else "$current/$part"
+        items += Breadcrumb(part, current)
+    }
+    return items
+}
+
+@Composable
+private fun CompactSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    onSearch: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        decorationBox = { innerTextField ->
+            Box {
+                if (value.isEmpty()) {
+                    Text(
+                        placeholder,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                innerTextField()
+            }
+        },
+    )
 }
 
 @Composable
 private fun FileEntryRow(
+
     entry: FileEntryDto,
     onOpen: () -> Unit,
     onBrowse: (String?) -> Unit,
@@ -293,16 +433,18 @@ private fun FileEntryRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
+    val pathKey = when (state) {
+        is FileContentUiState.Loading -> state.path
+        is FileContentUiState.Ready -> state.content.path
+        is FileContentUiState.Error -> state.path
+    }
+    var wrap by remember(pathKey) { mutableStateOf(true) }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        when (state) {
-                            is FileContentUiState.Loading -> state.path
-                            is FileContentUiState.Ready -> state.content.path
-                            is FileContentUiState.Error -> state.path
-                        },
+                        fileName(pathKey),
                         style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -311,6 +453,11 @@ private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    TextButton(onClick = { wrap = !wrap }) {
+                        Text(if (wrap) "不换行" else "自动换行")
                     }
                 },
             )
@@ -332,23 +479,46 @@ private fun FileContentScreen(state: FileContentUiState, onBack: () -> Unit) {
                         Modifier.fillMaxSize().padding(innerPadding),
                         contentAlignment = Alignment.Center,
                     ) { Text("暂不支持预览二进制文件", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                    else -> Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                        if (content.truncated) {
-                            Text(
-                                "内容过大，已截断",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                            )
-                        }
-                        LazyColumn(modifier = Modifier.fillMaxSize().background(IdeBackground)) {
-                            items(content.content.split('\n')) { line ->
+                    else -> {
+                        val lines = remember(content.content) { content.content.split('\n') }
+                        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                            if (content.truncated) {
                                 Text(
-                                    line,
-                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                                    color = IdeText,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                                    "内容过大，已截断",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                                 )
+                            }
+                            if (wrap) {
+                                LazyColumn(modifier = Modifier.weight(1f).background(IdeBackground)) {
+                                    items(lines) { line ->
+                                        Text(
+                                            line,
+                                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                            color = IdeText,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                }
+                            } else {
+                                val maxChars = remember(lines) { lines.maxOfOrNull { it.length } ?: 0 }
+                                val lineWidth = remember(maxChars) { minOf(maxOf(360.dp, (maxChars * 7).dp), 3200.dp) }
+                                val horizontalState = rememberScrollState()
+                                LazyColumn(modifier = Modifier.weight(1f).background(IdeBackground)) {
+                                    items(lines) { line ->
+                                        Row(modifier = Modifier.horizontalScroll(horizontalState)) {
+                                            Text(
+                                                line,
+                                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                                color = IdeText,
+                                                softWrap = false,
+                                                maxLines = 1,
+                                                modifier = Modifier.width(lineWidth).padding(horizontal = 12.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -409,6 +579,14 @@ private fun ChangeRow(file: ChangedFileDto, onClick: () -> Unit) {
             Text(
                 buildString {
                     append(statusLabel(file.status))
+                    val add = file.additions
+                    val del = file.deletions
+                    if (add != null || del != null) {
+                        append("  ")
+                        if (add != null) append("+${add}")
+                        if (add != null && del != null) append(" ")
+                        if (del != null) append("-$del")
+                    }
                     if (file.staged) append(" · 已暂存")
                     if (file.binary) append(" · 二进制")
                     if (file.oldPath != null) append(" · from ${file.oldPath}")
@@ -458,18 +636,20 @@ private fun statusLabel(status: String): String = when (status) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DiffScreen(state: DiffUiState, onBack: () -> Unit) {
+private fun DiffScreen(state: DiffUiState, onBack: () -> Unit, onOpenFullFile: () -> Unit) {
     var split by remember { mutableStateOf(true) }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        when (state) {
-                            is DiffUiState.Loading -> state.path
-                            is DiffUiState.Ready -> state.diff.path
-                            is DiffUiState.Error -> state.path
-                        },
+                        fileName(
+                            when (state) {
+                                is DiffUiState.Loading -> state.path
+                                is DiffUiState.Ready -> state.diff.path
+                                is DiffUiState.Error -> state.path
+                            },
+                        ),
                         style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -481,6 +661,9 @@ private fun DiffScreen(state: DiffUiState, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    if (state is DiffUiState.Ready) {
+                        TextButton(onClick = onOpenFullFile) { Text("全文") }
+                    }
                     TextButton(onClick = { split = !split }) {
                         Text(if (split) "统一" else "并排")
                     }
@@ -647,6 +830,8 @@ private fun diffLineColor(line: String): Color = when {
     line.startsWith("@@") -> IdeHunk
     else -> IdeText
 }
+
+private fun fileName(path: String): String = path.substringAfterLast('/').ifBlank { path }
 
 private val IdeBackground = Color(0xFF1E1E1E)
 private val IdeHunkBackground = Color(0xFF2D2D30)

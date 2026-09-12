@@ -191,11 +191,20 @@ class FilesViewModel(
 
     fun openFile(entry: FileEntryDto) {
         if (entry.type != "file") return
-        _fileContent.value = FileContentUiState.Loading(entry.path)
+        openFileContent(entry.path)
+    }
+
+    fun openDiffFileContent() {
+        val path = (_diffState.value as? DiffUiState.Ready)?.diff?.path ?: return
+        openFileContent(path)
+    }
+
+    private fun openFileContent(path: String) {
+        _fileContent.value = FileContentUiState.Loading(path)
         viewModelScope.launch {
-            when (val r = repository.fileContent(WorkspaceSelection.current(), entry.path)) {
+            when (val r = repository.fileContent(WorkspaceSelection.current(), path)) {
                 is NetworkResult.Success -> _fileContent.value = FileContentUiState.Ready(r.data)
-                is NetworkResult.Error -> _fileContent.value = FileContentUiState.Error(entry.path, friendly(r.code, r.message))
+                is NetworkResult.Error -> _fileContent.value = FileContentUiState.Error(path, friendly(r.code, r.message))
             }
         }
     }

@@ -12,6 +12,8 @@ data class ChangedFileDto(
     val staged: Boolean = false,
     val binary: Boolean = false,
     val isDirectory: Boolean = false,
+    val additions: Int? = null,
+    val deletions: Int? = null,
 )
 
 @Serializable
