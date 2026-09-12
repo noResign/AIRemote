@@ -52,6 +52,10 @@ class ChatViewModel(
     private val _permission = MutableStateFlow<NormalizedEvent.PermissionRequest?>(null)
     val permission = _permission.asStateFlow()
 
+    // 并发工具调用会同时推多个 permission_request，排队逐个弹窗，避免后到的覆盖先到的
+    private val permissionQueue = ArrayDeque<NormalizedEvent.PermissionRequest>()
+    private val queuedPermissionIds = mutableSetOf<String>()
+
     private val _error = MutableStateFlow<String?>(null)
     val error = _error.asStateFlow()
 
@@ -183,7 +187,7 @@ class ChatViewModel(
             sessionId = e.sessionId
         }
         when (e) {
-            is NormalizedEvent.PermissionRequest -> _permission.value = e
+            is NormalizedEvent.PermissionRequest -> enqueuePermission(e)
             else -> applyEvent(e)
         }
         if (isTerminal(e)) finish()
@@ -292,11 +296,23 @@ class ChatViewModel(
 
     fun decidePermission(decision: String, reason: String? = null) {
         val p = _permission.value ?: return
+        queuedPermissionIds.remove(p.permissionId)
+        _permission.value = permissionQueue.removeFirstOrNull()
         viewModelScope.launch {
             val r = repository.decidePermission(p.permissionId, decision, reason)
             if (r is NetworkResult.Error) _error.value = friendly(r.code, r.message)
         }
-        _permission.value = null
+    }
+
+    private fun enqueuePermission(req: NormalizedEvent.PermissionRequest) {
+        // 重连回放会带回历史审批事件，已决（allowed/denied/timed_out）不再弹；旧 daemon 无 status 视为 pending
+        if (req.status != null && req.status != "pending") return
+        if (!queuedPermissionIds.add(req.permissionId)) return
+        if (_permission.value == null) {
+            _permission.value = req
+        } else {
+            permissionQueue.addLast(req)
+        }
     }
 
     fun stop() {

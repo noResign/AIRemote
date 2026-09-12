@@ -157,6 +157,11 @@ claude 要跑 Bash → hook(permission-hook.js) → POST /api/internal/permissio
 3. 其余（写入/删除/未知）→ 广播给客户端，弹「允许 / 拒绝 / 允许全部 Bash」；
 4. **超时（120 秒）或断线 → 默认拒绝**（deny-by-default）。
 
+审批状态会**写回 `events` 表**：`permission_request` 事件携带 `status` 字段（`pending` /
+`allowed` / `denied` / `timed_out`）。决策或超时后，daemon 按 `permissionId` 定位对应事件行、
+用 `json_set` 更新其 `status`（`db.updateEventPermissionStatus`）。这样客户端断线重连、回放
+`GET /api/runs/:id/stream` 时能跳过已决请求，只对仍 `pending` 的弹审批框。
+
 ## 8. 会话与跨端续接
 
 - Claude Code 的所有会话（TUI 与 headless）统一存 `~/.claude/projects/<cwd>/<id>.jsonl`，

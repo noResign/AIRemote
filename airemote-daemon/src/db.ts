@@ -245,6 +245,16 @@ export class Db {
       .all(runId, afterSeq) as unknown as EventRow[];
   }
 
+  /** 把 permission_request 事件的最终审批状态写回 payload，供重连回放判定是否还 pending。 */
+  updateEventPermissionStatus(permissionId: string, status: string): void {
+    this.db
+      .prepare(
+        `UPDATE events SET payload = json_set(payload, '$.status', ?)
+         WHERE type = 'permission_request' AND json_extract(payload, '$.permissionId') = ?`,
+      )
+      .run(status, permissionId);
+  }
+
   // ---- audit ----
 
   audit(action: string, detail?: string): void {

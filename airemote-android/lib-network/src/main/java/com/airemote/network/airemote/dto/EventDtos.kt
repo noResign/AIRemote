@@ -88,6 +88,7 @@ sealed class NormalizedEvent {
         val permissionId: String,
         val toolName: String,
         val toolInput: JsonElement? = null,
+        val status: String? = null,
     ) : NormalizedEvent()
 
     @Serializable

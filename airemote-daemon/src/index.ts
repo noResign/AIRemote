@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     config,
     db,
     registry,
-    permissions: new PermissionManager(),
+    permissions: new PermissionManager(120_000, (req) => db.updateEventPermissionStatus(req.id, req.status)),
     notifier: new RunNotifier(),
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
   };

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { log } from './log.js';
+import type { PermissionStatus } from './types/api.js';
 
 export type PermissionDecision = 'allow' | 'deny';
-export type PermissionStatus = 'pending' | 'allowed' | 'denied' | 'timed_out';
 
 export interface PermissionRequest {
   id: string;
@@ -25,9 +25,11 @@ export class PermissionManager {
   private readonly pending = new Map<string, PermissionRequest>();
   private readonly autoAllow = new Map<string, Set<string>>();
   private readonly timeoutMs: number;
+  private readonly onResolved?: (req: PermissionRequest) => void;
 
-  constructor(timeoutMs = 120_000) {
+  constructor(timeoutMs = 120_000, onResolved?: (req: PermissionRequest) => void) {
     this.timeoutMs = timeoutMs;
+    this.onResolved = onResolved;
   }
 
   create(runId: string, toolName: string, toolInput: unknown): PermissionRequest {
@@ -44,9 +46,7 @@ export class PermissionManager {
     this.pending.set(req.id, req);
     setTimeout(() => {
       if (req.status === 'pending') {
-        req.status = 'timed_out';
-        req.decisionReason = 'timed out waiting for approval';
-        req.decidedAt = Date.now();
+        this.resolve(req, 'timed_out', 'timed out waiting for approval');
         log.warn(`permission ${req.id} (${req.toolName}) timed out -> deny`);
       }
     }, this.timeoutMs).unref();
@@ -61,10 +61,21 @@ export class PermissionManager {
     const req = this.pending.get(id);
     if (!req) return undefined;
     if (req.status !== 'pending') return req; // idempotent: already decided
-    req.status = decision === 'allow' ? 'allowed' : 'denied';
-    req.decisionReason = reason ?? (decision === 'allow' ? null : 'denied by user');
-    req.decidedAt = Date.now();
+    const status: PermissionStatus = decision === 'allow' ? 'allowed' : 'denied';
+    this.resolve(req, status, reason ?? (decision === 'allow' ? null : 'denied by user'));
     return req;
+  }
+
+  private resolve(req: PermissionRequest, status: PermissionStatus, reason: string | null): void {
+    req.status = status;
+    req.decisionReason = reason;
+    req.decidedAt = Date.now();
+    try {
+      this.onResolved?.(req);
+    } catch (err) {
+      // 写回 events 表只影响重连回放的准确性，失败不应阻断审批本身
+      log.warn(`failed to persist permission resolution for ${req.id}`, err);
+    }
   }
 
   /** Auto-allow `toolName` for the rest of `runId` (skip approval for future asks). */

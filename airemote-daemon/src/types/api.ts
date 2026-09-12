@@ -46,7 +46,13 @@ export type NormalizedEvent =
     }
   | { type: 'turn_end'; stopReason: string }
   | { type: 'error'; code?: string; message: string; terminal?: boolean }
-  | { type: 'permission_request'; permissionId: string; toolName: string; toolInput: unknown }
+  | {
+      type: 'permission_request';
+      permissionId: string;
+      toolName: string;
+      toolInput: unknown;
+      status: PermissionStatus;
+    }
   | { type: 'question'; toolUseId: string; questions: QuestionDto[] };
 
 export interface ApiError {
@@ -90,12 +96,14 @@ export interface SseFrame {
 
 export type PermissionDecision = 'allow' | 'deny';
 
+export type PermissionStatus = 'pending' | 'allowed' | 'denied' | 'timed_out';
+
 export interface PermissionDto {
   id: string;
   runId: string;
   toolName: string;
   toolInput: unknown;
-  status: 'pending' | 'allowed' | 'denied' | 'timed_out';
+  status: PermissionStatus;
   decisionReason: string | null;
   createdAt: number;
   decidedAt: number | null;

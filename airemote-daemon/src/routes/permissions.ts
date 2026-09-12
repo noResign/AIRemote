@@ -95,6 +95,7 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       permissionId: p.id,
       toolName: p.toolName,
       toolInput: p.toolInput,
+      status: p.status,
     });
     res.json({ id: p.id });
   });
