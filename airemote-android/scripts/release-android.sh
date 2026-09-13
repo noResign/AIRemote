@@ -32,6 +32,12 @@ if ! command -v ossutil >/dev/null 2>&1; then
   exit 1
 fi
 
+# 默认 JDK 可能只有 JRE，缺少 javac；优先使用 Android Studio 自带 JBR。
+JBR_CANDIDATE="${ANDROID_STUDIO_JBR:-$HOME/android-studio/jbr}"
+if [[ -z "${JAVA_HOME:-}" && -x "$JBR_CANDIDATE/bin/javac" ]]; then
+  export JAVA_HOME="$JBR_CANDIDATE"
+fi
+
 VERSION_CODE="${VERSION_CODE:-$(date +%s)}"
 VERSION_NAME="${VERSION_NAME:-0.1.$(date +%Y%m%d%H%M)}"
 DISPLAY_VERSION_NAME="$VERSION_NAME"
@@ -57,7 +63,8 @@ if [[ ! -f "$APK_PATH" ]]; then
   exit 1
 fi
 
-APK_NAME="airemote-${VERSION_CODE}-${CHANNEL}.apk"
+# 阿里云 OSS 默认域名禁止直接分发 .apk；改用 .pkg，客户端下载后本地仍保存 latest.apk
+APK_NAME="airemote-${VERSION_CODE}-${CHANNEL}.pkg"
 MANIFEST_PATH="$ROOT_DIR/build/releases/${CHANNEL}-manifest.json"
 mkdir -p "$ROOT_DIR/build/releases"
 cp "$APK_PATH" "$ROOT_DIR/build/releases/$APK_NAME"

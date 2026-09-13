@@ -14,6 +14,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -21,6 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.ui.update.UpdateHost
+import com.airemote.airemote.viewmodel.UpdateViewModel
 
 private enum class MainTab(val label: String, val icon: ImageVector) {
     Sessions("会话", Icons.Rounded.ChatBubble),
@@ -40,6 +45,12 @@ fun MainScreen(
     onManageWorkspaces: () -> Unit,
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
+    val updateViewModel: UpdateViewModel = viewModel()
+    val updateState by updateViewModel.uiState.collectAsState()
+
+    LaunchedEffect(Unit) {
+        updateViewModel.checkOnStart()
+    }
 
     Scaffold(
         bottomBar = {
@@ -62,8 +73,20 @@ fun MainScreen(
                     onNewSession = onNewSession,
                 )
                 MainTab.Files -> FilesScreen()
-                MainTab.Settings -> SettingsScreen(onReconnect = onReconnect, onManageWorkspaces = onManageWorkspaces)
+                MainTab.Settings -> SettingsScreen(
+                    onReconnect = onReconnect,
+                    onManageWorkspaces = onManageWorkspaces,
+                    onCheckUpdate = { updateViewModel.check(manual = true) },
+                )
             }
         }
     }
+
+    UpdateHost(
+        state = updateState,
+        onDownload = updateViewModel::download,
+        onInstall = updateViewModel::install,
+        onRetry = updateViewModel::retry,
+        onDismiss = updateViewModel::dismiss,
+    )
 }

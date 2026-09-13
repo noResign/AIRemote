@@ -12,7 +12,8 @@ if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-def versionCodeOverride = project.findProperty("versionCode")?.toString()?.toIntOrNull()
+def rawVersionCode = project.findProperty("versionCode")?.toString()
+def versionCodeOverride = rawVersionCode ? rawVersionCode.toInteger() : null
 def versionNameOverride = project.findProperty("versionName")?.toString()
 
 android {

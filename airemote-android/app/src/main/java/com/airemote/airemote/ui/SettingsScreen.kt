@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.BuildConfig
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.viewmodel.DirectoryPickerUiState
 import com.airemote.airemote.viewmodel.SettingsUiState
@@ -41,6 +42,7 @@ import com.airemote.airemote.viewmodel.SettingsViewModel
 fun SettingsScreen(
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
+    onCheckUpdate: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -115,6 +117,14 @@ fun SettingsScreen(
                             }
                         }
                     }
+
+                    SectionTitle("客户端更新")
+                    InfoRow("当前版本", BuildConfig.VERSION_NAME)
+                    InfoRow("更新通道", BuildConfig.UPDATE_CHANNEL)
+                    OutlinedButton(
+                        onClick = onCheckUpdate,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("检查更新") }
 
                     SectionTitle("信息（只读）")
                     InfoRow("daemon 版本", state.version)
