@@ -23,6 +23,10 @@ export interface Config {
   /** 空闲看门狗：run 多久无事件则自动取消（ms，0 = 禁用）。 */
   runIdleTimeoutMs: number;
   tls: TlsConfig | null;
+  /** 是否允许通过 /api/deploy 触发远程部署（AIREMOTE_ALLOW_DEPLOY=1）。 */
+  allowDeploy: boolean;
+  /** 部署脚本绝对路径（AIREMOTE_DEPLOY_SCRIPT 可覆盖）。 */
+  deployScript: string;
 }
 
 function resolveToken(env: NodeJS.ProcessEnv, dataDir: string): { token: string; tokenPath: string; generated: boolean } {
@@ -115,5 +119,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     permissionTimeoutMs: resolvePermissionTimeoutMs(env),
     runIdleTimeoutMs: resolveRunIdleTimeoutMs(env),
     tls: resolveTls(env),
+    allowDeploy: env.AIREMOTE_ALLOW_DEPLOY === '1' || env.AIREMOTE_ALLOW_DEPLOY === 'true',
+    deployScript: path.resolve(
+      env.AIREMOTE_DEPLOY_SCRIPT ?? path.join(process.cwd(), '..', '.claude/skills/deploy/scripts/deploy.sh'),
+    ),
   };
 }

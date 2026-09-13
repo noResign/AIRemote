@@ -11,6 +11,7 @@ import { registerChatRoutes } from './routes/chat.js';
 import { registerChangesRoutes } from './routes/changes.js';
 import { registerClaudeSessionRoutes } from './routes/claude-sessions.js';
 import { registerConfigRoutes } from './routes/config.js';
+import { registerDeployRoutes } from './routes/deploy.js';
 import { registerFileRoutes } from './routes/files.js';
 import { registerFsRoutes } from './routes/fs.js';
 import { registerPermissionRoutes } from './routes/permissions.js';
@@ -33,6 +34,7 @@ export function createApp(ctx: AppContext): Express {
   registerAgentRoutes(app, ctx);
   registerChangesRoutes(app, ctx);
   registerConfigRoutes(app, ctx);
+  registerDeployRoutes(app, ctx);
   registerFileRoutes(app, ctx);
   registerFsRoutes(app, ctx);
   registerWorkspaceRoutes(app, ctx);

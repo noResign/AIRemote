@@ -30,7 +30,13 @@ AIRemote/
 ├─ airemote-android/      Android 客户端（Kotlin + Compose，M1 已实现）
 │  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
 │  └─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
-└─ airemote-ios/          iOS 客户端（预留，原生 SwiftUI）
+├─ airemote-ios/          iOS 客户端（预留，原生 SwiftUI）
+└─ .claude/skills/deploy/ 部署 skill（用户说“发布测试/生产”时触发）
+   ├─ SKILL.md
+   └─ scripts/
+      ├─ deploy.sh            统一部署入口（test/alpha、prod）
+      ├─ deploy-daemon.sh     daemon 编译 + 重启
+      └─ release-android.sh   Android 打包 + 上传 OSS
 ```
 
 - **airemote-daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
@@ -114,6 +120,36 @@ AIRemote/
 - **会话**：`--session-id`/`--resume` 管理 Claude 会话，`claude_session_id` 持久化；
   `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔远程双向续接。
 - **token**：持久化在 `<data-dir>/token`，启动复用（删文件即轮换）。
+
+## 部署
+
+统一入口：`.claude/skills/deploy/scripts/deploy.sh`，按 git 变更自动决定做什么。
+
+- 发布测试：`.claude/skills/deploy/scripts/deploy.sh test`（alpha 通道）
+- 发布生产：`.claude/skills/deploy/scripts/deploy.sh prod`（prod 通道）
+- 预览：`.claude/skills/deploy/scripts/deploy.sh test --dry-run`
+- 强制/跳过：`--daemon`、`--android`、`--no-daemon`、`--no-android`
+- 变更基线默认 `origin/main`，可用 `--base <ref>` 或 `DEPLOY_BASE` 覆盖
+
+规则：
+
+- `airemote-daemon/src/**`、`package.json`、`pnpm-lock.yaml`、`tsconfig.json` 等有改动时：
+  - `test` / `alpha`：`pnpm build` + 重启本地 daemon，不发 OSS
+  - `prod`：`pnpm build` + 重启本地 daemon，再 `release-daemon.sh --skip-build` 打成 `.tgz` 上传 OSS `daemon/`，并覆盖 `airemote-latest.tgz`
+  - 若存在 systemd user service `airemote.service`：`systemctl --user restart airemote`
+  - 否则回退到旧 `dist/index.js` kill + nohup 逻辑
+  - 健康检查 `http://127.0.0.1:<port>/api/health`
+- `airemote-android/**` 有改动时：`.claude/skills/deploy/scripts/release-android.sh alpha|prod`
+- 没有改动的部分自动跳过。
+
+Claude Code 部署 skill 在 `.claude/skills/deploy/SKILL.md`。只有用户明确说“发布/部署/发版”时才执行。
+
+远程对话里用户说“发布测试”“发布生产”时：
+
+- agent 必须调用 `.claude/skills/deploy/scripts/chat-deploy.sh <test|prod>`；
+- 不要直接运行 `deploy.sh`，否则 daemon 重启会把 agent 进程一起杀掉；
+- 查询状态用 `.claude/skills/deploy/scripts/chat-deploy.sh status`。
+
 
 ## git提交规范
 

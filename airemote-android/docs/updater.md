@@ -364,7 +364,7 @@ android {
 - `app/build.gradle` 在存在 `keystore.properties` 时，把 `signingConfigs.release` 同时挂到
   `debug` 和 `release` 两个 buildType 上；缺少 keystore 时 debug 回退系统默认 debug 签名。
 - keystore 不进 git：本地放 `keystore.properties`（gitignore），CI 用 secret 注入。
-- `scripts/release-android.sh` 会在缺少 `keystore.properties` 时直接报错，避免产出未签名包。
+- `.claude/skills/deploy/scripts/release-android.sh` 会在缺少 `keystore.properties` 时直接报错，避免产出未签名包。
 - 注意：debug 包从此带 release 签名，**不要对外分发 debug 包**。
 
 **「别人不能下测试包」不用做鉴权**，两层就够：

@@ -108,6 +108,35 @@ export interface RunDto {
   error: string | null;
 }
 
+/** ---- deploy ---- */
+
+export type DeployChannel = 'alpha' | 'prod';
+
+export type DeployTarget = 'auto' | 'daemon' | 'android' | 'all';
+
+export type DeployJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface DeployJobDto {
+  id: string;
+  channel: DeployChannel;
+  target: DeployTarget;
+  status: DeployJobStatus;
+  /** systemd transient unit name, e.g. airemote-deploy-... */
+  unit: string;
+  /** server-side log file path */
+  logPath: string;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  exitCode: number | null;
+  error: string | null;
+}
+
+export interface DeployRequest {
+  channel: DeployChannel | 'test';
+  target?: DeployTarget;
+}
+
 /** One SSE frame: `{ runId, seq, event }`. `seq` is the resume cursor. */
 export interface SseFrame {
   runId: string;

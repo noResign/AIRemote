@@ -67,6 +67,20 @@ export interface EventRow {
   created_at: number;
 }
 
+export interface DeployJobRow {
+  id: string;
+  channel: string;
+  target: string;
+  status: string;
+  unit: string;
+  log_path: string;
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+  exit_code: number | null;
+  error: string | null;
+}
+
 /**
  * SQLite-backed persistence. Uses Node's built-in `node:sqlite`
  * (`DatabaseSync`) so there are zero native build dependencies: `pnpm install`
@@ -122,6 +136,21 @@ export class Db {
         created_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_events_run_seq ON events (run_id, seq);
+
+      CREATE TABLE IF NOT EXISTS deploy_jobs (
+        id TEXT PRIMARY KEY,
+        channel TEXT NOT NULL,
+        target TEXT NOT NULL,
+        status TEXT NOT NULL,
+        unit TEXT NOT NULL,
+        log_path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        started_at INTEGER,
+        finished_at INTEGER,
+        exit_code INTEGER,
+        error TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_deploy_jobs_created ON deploy_jobs (created_at DESC);
 
       CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -494,6 +523,68 @@ export class Db {
          WHERE type = 'permission_request' AND json_extract(payload, '$.permissionId') = ?`,
       )
       .run(status, permissionId);
+  }
+
+  // ---- deploy jobs ----
+
+  createDeployJob(input: {
+    id: string;
+    channel: string;
+    target: string;
+    unit: string;
+    logPath: string;
+  }): DeployJobRow {
+    this.db
+      .prepare(
+        `INSERT INTO deploy_jobs (id, channel, target, status, unit, log_path, created_at, started_at, finished_at, exit_code, error)
+         VALUES (?, ?, ?, 'queued', ?, ?, ?, NULL, NULL, NULL, NULL)`,
+      )
+      .run(input.id, input.channel, input.target, input.unit, input.logPath, Date.now());
+    return this.getDeployJob(input.id) as DeployJobRow;
+  }
+
+  getDeployJob(id: string): DeployJobRow | undefined {
+    return this.db.prepare(`SELECT * FROM deploy_jobs WHERE id = ?`).get(id) as unknown as DeployJobRow | undefined;
+  }
+
+  getActiveDeployJob(): DeployJobRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM deploy_jobs WHERE status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1`)
+      .get() as unknown as DeployJobRow | undefined;
+  }
+
+  listDeployJobs(limit = 20): DeployJobRow[] {
+    return this.db
+      .prepare(`SELECT * FROM deploy_jobs ORDER BY created_at DESC LIMIT ?`)
+      .all(limit) as unknown as DeployJobRow[];
+  }
+
+  updateDeployJob(
+    id: string,
+    update: {
+      status?: string;
+      startedAt?: number | null;
+      finishedAt?: number | null;
+      exitCode?: number | null;
+      error?: string | null;
+    },
+  ): void {
+    const current = this.getDeployJob(id);
+    if (!current) return;
+    this.db
+      .prepare(
+        `UPDATE deploy_jobs
+         SET status = ?, started_at = ?, finished_at = ?, exit_code = ?, error = ?
+         WHERE id = ?`,
+      )
+      .run(
+        update.status ?? current.status,
+        update.startedAt !== undefined ? update.startedAt : current.started_at,
+        update.finishedAt !== undefined ? update.finishedAt : current.finished_at,
+        update.exitCode !== undefined ? update.exitCode : current.exit_code,
+        update.error !== undefined ? update.error : current.error,
+        id,
+      );
   }
 
   // ---- audit ----

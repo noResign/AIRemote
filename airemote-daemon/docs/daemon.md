@@ -122,6 +122,9 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
+| `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'all'}` |
+| `GET /api/deploy` | 是 | 最近部署任务列表 |
+| `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
 | `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
 | `POST /api/chat` | 是 | 发指令，返回 SSE 流 |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
@@ -319,7 +322,7 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 # 参考 airemote-daemon/.env.example
 AIREMOTE_HOST=0.0.0.0
 AIREMOTE_PORT=4780
-AIREMOTE_WORKSPACE=/home/renbin/OpenProject/AIRemote
+AIREMOTE_WORKSPACE=/path/to/your/workspace
 AIREMOTE_PERMISSION_MODE=default
 AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS=900
 # AIREMOTE_TOKEN=
@@ -367,14 +370,50 @@ ln -sf "$PWD/dist/index.js" ~/.local/bin/airemote
 airemote --help
 ```
 
-**打包分发**（产出 npm 包，对方需 Node ~24 + Claude Code）：
+**生产包分发**（npm/pnpm 全局安装，对方需 Node ~24 + Claude Code）：
 
 ```bash
-pnpm pack                 # 自动先 build，产出 airemote-0.1.0.tgz（仅 dist + package.json）
-# 对方机器：
-npm install -g airemote-0.1.0.tgz
-airemote --help
+# 在仓库根目录执行：build + pnpm pack + 上传 OSS daemon/
+.claude/skills/deploy/scripts/release-daemon.sh
+
+# 已有 dist 时可跳过 build
+.claude/skills/deploy/scripts/release-daemon.sh --skip-build
+
+# 只本地打包、不上传
+.claude/skills/deploy/scripts/release-daemon.sh --no-upload
 ```
+
+产物：
+
+```text
+.tmp/daemon-release/package/airemote-<version>.tgz
+```
+
+上传位置：
+
+```text
+https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-<version>.tgz
+https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+```
+
+对方机器直接全局安装：
+
+```bash
+# 推荐 npm（全局 bin 通常已在 PATH）
+npm install -g --force https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+
+# 或 pnpm（需先 pnpm setup 并重开终端）
+pnpm setup
+pnpm add -g --force https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+```
+
+安装后：
+
+```bash
+airemote --workspace /path/to/project --token <strong-token>
+```
+
+`airemote-latest.tgz` 永远指向最新版本；重新执行安装命令即可覆盖升级。
 
 `.env` 配置（运行目录下自动加载）：
 
