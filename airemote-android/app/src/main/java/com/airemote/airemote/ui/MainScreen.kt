@@ -14,7 +14,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,10 +46,6 @@ fun MainScreen(
     var selectedTab by rememberSaveable { mutableStateOf(MainTab.Sessions) }
     val updateViewModel: UpdateViewModel = viewModel()
     val updateState by updateViewModel.uiState.collectAsState()
-
-    LaunchedEffect(Unit) {
-        updateViewModel.checkOnStart()
-    }
 
     Scaffold(
         bottomBar = {

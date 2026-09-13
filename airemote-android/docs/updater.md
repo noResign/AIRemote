@@ -432,7 +432,7 @@ android {
 
 - 设置页「检查更新」入口 + 更新弹窗（版本号 / changelog / 进度条 / 强制更新态）。
 - 订阅 `Updater.check()` Flow，映射到 Compose 状态（走现有 MVVM，UI 不碰网络）。
-- 策略：本期**手动检查**优先（启动自动检查放决策项 §10-5）。
+- 策略：本期只做**手动检查**（设置页「检查更新」按钮），不做启动自动检查。
 
 **验收**：设置页点「检查更新」→ 有新版 → 弹窗 → 下载进度 → 调安装器。
 
@@ -454,7 +454,7 @@ android {
 | 2 | alpha 通道隔离 | **私有 bucket 或公开但不宣传的路径（MVP）** / 私有 bucket + 签名 URL / STS 临时凭证 |
 | 3 | keystore 管理 | **统一一个 keystore，本地 keystore.properties + CI secret** / alpha 用 debug 签名、prod 另签（不推荐，跨包更新会断） |
 | 4 | cleartext 收敛 | **引入 `network_security_config.xml`，只对本地 daemon 放行明文，对外 https** / 暂不动 `usesCleartextTraffic` |
-| 5 | 检查时机 | **先手动「检查更新」按钮** / 启动自动检查 + 手动 |
+| 5 | 检查时机 | **仅手动「检查更新」按钮**（已实现，不做启动自动检查） / 启动自动检查 + 手动 |
 | 6 | 强制更新 | **本期只留 `minVersionCode` 字段，不做强制 UI** / 低版本阻断 + 强更弹窗 |
 
 ---

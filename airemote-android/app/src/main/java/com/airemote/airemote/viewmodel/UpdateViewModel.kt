@@ -33,14 +33,6 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val uiState = _uiState.asStateFlow()
 
-    private var startChecked = false
-
-    fun checkOnStart() {
-        if (startChecked) return
-        startChecked = true
-        check(manual = false)
-    }
-
     fun check(manual: Boolean = true) {
         viewModelScope.launch {
             _uiState.value = UpdateUiState.Checking(manual)
