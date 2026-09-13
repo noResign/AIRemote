@@ -100,7 +100,9 @@ class SettingsViewModel(
         viewModelScope.launch {
             when (val r = workspaceRepository.setDefault(workspaceId)) {
                 is NetworkResult.Success -> {
+                    val workspace = (_uiState.value as? SettingsUiState.Ready)?.workspaces?.find { it.id == workspaceId }
                     _selectedWorkspaceId.value = workspaceId
+                    WorkspaceSelection.select(workspaceId, workspace?.path)
                     load()
                 }
                 is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))

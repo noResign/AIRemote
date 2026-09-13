@@ -1,6 +1,5 @@
 package com.airemote.airemote.data.repository
 
-import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.network.airemote.AiremoteApi
 import com.airemote.network.airemote.AiremoteClient
@@ -61,10 +60,7 @@ class WorkspaceRepository(
     suspend fun setDefault(workspaceId: String): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.updateWorkspace(workspaceId, UpdateWorkspaceRequest(isDefault = true)) }) {
-            is NetworkResult.Success -> {
-                WorkspaceSelection.select(workspaceId)
-                NetworkResult.Success(Unit)
-            }
+            is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }
     }

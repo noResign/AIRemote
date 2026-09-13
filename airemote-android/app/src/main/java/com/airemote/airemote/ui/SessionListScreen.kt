@@ -55,8 +55,8 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.WorkspaceSelection
-import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.network.airemote.dto.SessionDto
+import com.airemote.airemote.model.session.SessionListModel
 import com.airemote.airemote.model.session.WorkspaceGroup
 import com.airemote.airemote.ui.component.AgentBadge
 import com.airemote.airemote.ui.component.RunningIndicator
@@ -133,7 +133,7 @@ fun SessionListScreen(
                     }
                 }
                 is SessionListUiState.Content -> {
-                    if (state.groups.isEmpty()) {
+                    if (state.model.rootSessions.isEmpty() && state.model.subGroups.isEmpty()) {
                         Column(
                             modifier = Modifier.align(Alignment.Center),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -144,7 +144,7 @@ fun SessionListScreen(
                         }
                     } else {
                         SessionGroupedList(
-                            groups = state.groups,
+                            model = state.model,
                             onOpenSession = onOpenSession,
                             onLongClick = { pendingDelete = it },
                         )
@@ -191,30 +191,26 @@ fun SessionListScreen(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionGroupedList(
-    groups: List<WorkspaceGroup>,
+    model: SessionListModel,
     onOpenSession: (String) -> Unit,
     onLongClick: (SessionDto) -> Unit,
 ) {
     val collapsed = remember { mutableStateMapOf<String, Boolean>() }
-    val currentWorkspace = SettingsStore.workspace
-
-    // 默认只展开「当前 workspace」，其余分组折叠；用户手动操作后尊重其选择。
-    LaunchedEffect(groups, currentWorkspace) {
-        if (currentWorkspace.isNullOrBlank()) return@LaunchedEffect
-        groups.forEach { group ->
-            if (group.cwd != currentWorkspace && !collapsed.containsKey(group.cwd)) {
-                collapsed[group.cwd] = true
-            }
-        }
-    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        groups.forEach { group ->
-            val isCollapsed = collapsed[group.cwd] ?: false
+        items(model.rootSessions, key = { it.id }) { session ->
+            SessionCard(
+                session = session,
+                onClick = { onOpenSession(session.id) },
+                onLongClick = { onLongClick(session) },
+            )
+        }
+        model.subGroups.forEach { group ->
+            val isCollapsed = collapsed[group.cwd] ?: true
             stickyHeader(key = "cwd-${group.cwd}") {
                 WorkspaceHeader(
                     group = group,
@@ -257,7 +253,7 @@ private fun WorkspaceHeader(
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
-            text = group.cwd,
+            text = group.displayName,
             style = CodeBody.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

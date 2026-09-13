@@ -31,7 +31,7 @@
 | 1 | `ui/theme/Color.kt` 是模板紫色（Purple80/40）；`Theme.kt` 开着 `dynamicColor=true` | 无任何配色落地，且 Android 12+ 被系统壁纸色覆盖 | §4.1 |
 | 2 | `ui/theme/Type.kt` 只定义了 `bodyLarge` | 缺 §4.2 语义字号（title/body/caption/code） | §4.2 |
 | 3 | 无底部 Tab Bar：`MAIN`=会话列表，设置是 push 路由，`FILE` 路由有定义但未注册 | 信息架构不符 | §3 |
-| 4 | `SessionListScreen.groupByCwd` 已实现 ✅，但 `WorkspaceHeader` 是纯文本 | 缺 folder 图标 / 会话数徽章 / 折叠 / 吸顶 | §6.2 |
+| 4 | 会话列表分组已实现：根目录平铺 + 子目录分组（相对路径、默认折叠），`WorkspaceHeader` 含 folder 图标 / 会话数徽章 / 折叠 / 吸顶 | 已对齐 §6.2（2026-09） | §6.2 |
 | 5 | `RuntimeBadge` 硬编码 `when(runtime)` | 新增 agent 需改布局代码 | §5.2 |
 | 6 | `ChatScreen` 输入区无麦克风；工具卡状态用 emoji（✓✗）；气泡/代码块用 M3 默认色 | 未对齐 token、未预留语音 | §6.3 / §7.6 |
 | 7 | 未引入 `material-icons-extended` | 语义图标无图标源 | §4.4 |
@@ -245,6 +245,9 @@ connect（门禁，startDestination）
 - 可选：`groupByCwd` 下沉 `SessionListViewModel`，产出 `List<WorkspaceGroup>` 进 UiState（§10-4）
 
 **验收**：分组头吸顶/折叠/徽章齐全；卡片无 cwd 重复；running 卡片脉冲 + primary 描边。
+
+> ✅ 已实现并调整（2026-09）：分组逻辑下沉 `SessionListViewModel`，产出 `SessionListModel`
+> （根目录会话平铺 + 子目录分组）；子目录头显示相对路径、默认折叠；根目录会话置顶。
 
 ### P4 · 聊天详情 + 其余页面精修
 
