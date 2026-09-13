@@ -314,9 +314,21 @@ APK 默认下载到 `context.cacheDir/updates/`。
 android {
     defaultConfig {
         applicationId "com.airemote.airemote"
-        // CI 通过 -PversionCode=N 注入，本地默认 1
-        versionCode (project.findProperty("versionCode") as? String)?.toInt() ?: 1
-        versionName "1.0"
+        // release 脚本通过 -PversionCode=N 注入；本地构建（含 Android Studio Run 的 debug）
+        // 默认用 epoch 秒，保证 debug / release 交替安装时 versionCode 单调递增。
+        versionCode project.findProperty("versionCode")?.toString()?.toInteger()
+                ?: (System.currentTimeMillis().intdiv(1000L) as int)
+        versionName project.findProperty("versionName")?.toString() ?: "1.0"
+    }
+
+    buildTypes {
+        debug {
+            // debug 与 release 共用同一个 keystore，见下方“签名”
+            if (hasKeystore) signingConfig signingConfigs.release
+        }
+        release {
+            if (hasKeystore) signingConfig signingConfigs.release
+        }
     }
 
     flavorDimensions += "channel"
@@ -340,12 +352,20 @@ android {
 
 产生的变体：`alphaDebug` / `alphaRelease` / `prodDebug` / `prodRelease`。
 
+> 桌面名称区分：alpha 通过 `app/src/alpha/res/values/strings.xml` 覆盖 `app_name` 为
+> 「AIRemote 测试」，prod 沿用 `main` 里的「AIRemote」，避免两个应用在桌面上分不清。
+
 **签名（最容易翻车，必须统一）**：
 
-- 新旧 APK 签名一致才能覆盖安装。**alpha 和 prod 共用同一个 keystore**，只靠 flavor 区分，
-  不靠签名区分。否则同一台手机上跨包更新会被系统拒绝。
+- 新旧 APK 签名一致才能覆盖安装。**alpha 和 prod 共用同一个 keystore**；同一个 flavor 下
+  **debug 和 release 也共用同一个 keystore**。这样 Android Studio Run 安装的 debug 包
+  和应用内自动更新下载的 release 包可以互相覆盖，不会出现
+  “已安装了签名冲突的应用”。
+- `app/build.gradle` 在存在 `keystore.properties` 时，把 `signingConfigs.release` 同时挂到
+  `debug` 和 `release` 两个 buildType 上；缺少 keystore 时 debug 回退系统默认 debug 签名。
 - keystore 不进 git：本地放 `keystore.properties`（gitignore），CI 用 secret 注入。
-- 现阶段无 signingConfig，`assembleRelease` 产出的是**未签名包，装不上**；做更新闭环前必须先配好签名。
+- `scripts/release-android.sh` 会在缺少 `keystore.properties` 时直接报错，避免产出未签名包。
+- 注意：debug 包从此带 release 签名，**不要对外分发 debug 包**。
 
 **「别人不能下测试包」不用做鉴权**，两层就够：
 

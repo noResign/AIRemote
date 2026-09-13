@@ -1,0 +1,4 @@
+<resources>
+    <!-- alpha 通道覆盖 main 中的 app_name，便于和正式版在桌面上区分 -->
+    <string name="app_name">AIRemote-Beta</string>
+</resources>

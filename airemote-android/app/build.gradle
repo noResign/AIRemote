@@ -12,8 +12,12 @@ if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
+// 未显式指定 versionCode 时，本地构建（包括 Android Studio Run 的 debug）用 epoch 秒，
+// 保证 debug 与 release 交替安装时 versionCode 单调递增，避免 INSTALL_FAILED_VERSION_DOWNGRADE。
 def rawVersionCode = project.findProperty("versionCode")?.toString()
-def versionCodeOverride = rawVersionCode ? rawVersionCode.toInteger() : null
+def versionCodeOverride = rawVersionCode
+        ? rawVersionCode.toInteger()
+        : (System.currentTimeMillis().intdiv(1000L)) as int
 def versionNameOverride = project.findProperty("versionName")?.toString()
 
 android {
@@ -24,7 +28,7 @@ android {
         applicationId "com.airemote.airemote"
         minSdk 24
         targetSdk 36
-        versionCode versionCodeOverride ?: 1
+        versionCode versionCodeOverride
         versionName versionNameOverride ?: "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
@@ -42,6 +46,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Android Studio Run 安装的 debug 包与 release 包共用同一个签名，
+            // 这样“Run 安装”和“应用内自动更新安装”可以互相覆盖，不会签名冲突。
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
