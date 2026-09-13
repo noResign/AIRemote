@@ -5,6 +5,16 @@ plugins {
     // 不再需要 kotlin-serialization 插件：本模块已无 @Serializable 类，协议 DTO 都在 :lib-network
 }
 
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def versionCodeOverride = project.findProperty("versionCode")?.toString()?.toIntOrNull()
+def versionNameOverride = project.findProperty("versionName")?.toString()
+
 android {
     namespace 'com.airemote.airemote'
     compileSdk 36
@@ -13,16 +23,46 @@ android {
         applicationId "com.airemote.airemote"
         minSdk 24
         targetSdk 36
-        versionCode 1
-        versionName "1.0"
+        versionCode versionCodeOverride ?: 1
+        versionName versionNameOverride ?: "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (hasKeystore) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasKeystore) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+
+    flavorDimensions += "channel"
+    productFlavors {
+        alpha {
+            dimension "channel"
+            applicationIdSuffix ".alpha"
+            versionNameSuffix "-alpha"
+            buildConfigField "String", "UPDATE_CHANNEL", "\"alpha\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/android/alpha/manifest.json\""
+        }
+        prod {
+            dimension "channel"
+            buildConfigField "String", "UPDATE_CHANNEL", "\"prod\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/android/prod/manifest.json\""
         }
     }
     compileOptions {
@@ -36,6 +76,7 @@ android {
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 }
 
@@ -43,6 +84,7 @@ dependencies {
     // 全部网络能力（Retrofit/OkHttp/coroutines/kotlinx-serialization 依赖 + 协议 DTO + API + SSE）
     // 都由 :lib-network 以 api 暴露，本模块直接用，不重复声明
     implementation project(':lib-network')
+    implementation project(':lib-updater')
 
     implementation libs.androidx.core.ktx
     implementation libs.androidx.lifecycle.runtime.ktx
