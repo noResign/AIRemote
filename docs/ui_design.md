@@ -571,7 +571,8 @@ src/utils/rename.ts      R
 **目的**：查看/修改连接、默认偏好和工作区。
 
 **分组**：
-1. **连接**：服务器地址、token（查看/修改）、重新连接。
+1. **连接**：服务器地址、token、重新连接。
+   - token **只读展示且不暴露明文**：已配置显示掩码 `••••••••`，未配置显示「未配置」；修改 token 走 ① 连接页。
 2. **工作区**：
    - 显示当前选中的 Workspace path；
    - 「管理工作区」按钮进入 **⑧ 工作区管理**；
@@ -579,8 +580,9 @@ src/utils/rename.ts      R
 3. **默认偏好**：
    - 默认 Agent（🟡 需模型列表）；
    - 新建 Session 默认权限模式：`ask` / `acceptEdits` / `bypass`。
-4. **信息（只读）**：daemon 版本号（`GET /api/health` 的 `version`）、只读/重启级配置。
-5. **关于**：App 版本、开源许可。
+4. **客户端更新**：只放「检查更新」按钮，不重复展示版本信息。
+5. **关于**：App 版本（`BuildConfig.VERSION_NAME`）、daemon 版本（`GET /api/health` 的 `version`）。
+   - 「关于」常驻显示；daemon 未连上时其版本显示「未知」。
 
 **关键交互**：
 
@@ -607,7 +609,8 @@ src/utils/rename.ts      R
 5. 空态：引导新增工作区。
 
 **规则**：
-- 不注册嵌套 Workspace；
+- 允许嵌套 Workspace（典型场景：daemon `--workspace` 指向根目录，再把其下的子目录注册为独立 Workspace）；
+  仅拒绝**同一路径**重复注册；
 - 删除有 Session 引用的 Workspace 时阻止或提示先迁移；
 - 当前工作区被删除后客户端 fallback 到默认工作区。
 
@@ -619,15 +622,17 @@ src/utils/rename.ts      R
 
 **关键元素**：
 1. 顶部：当前路径面包屑，可从任意层级点击回退。
-2. 目录列表：只展示文件夹；可选显示隐藏目录。
+2. 目录列表：只展示文件夹；可选显示隐藏目录；**已注册为 Workspace 的子目录标注「已是工作区」**。
 3. 返回上一级。
 4. 底部按钮「选择当前文件夹」。
+   - 当前目录已是 Workspace 时按钮**禁用**并改为「已是工作区」，从源头避免 `workspace_exists` 报错。
 5. 安全提示：`workspace 不是沙箱`；选择 `/`、`~` 等宽目录时二次确认。
 
 **交互**：
 - 默认从 `~` 开始；
 - 点击文件夹进入下一层；
-- 选择后调 `POST /api/workspaces`，成功后返回 ⑧ 并高亮新工作区。
+- 选择后调 `POST /api/workspaces`，成功后返回 ⑧ 并高亮新工作区；
+- 失败时按 daemon 错误码给出中文提示（`workspace_exists` / `directory_not_found` 等，统一走 `util/ApiErrors.kt`）。
 
 ---
 

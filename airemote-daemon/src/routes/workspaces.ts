@@ -2,7 +2,7 @@ import path from 'node:path';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
-import { canonicalizeExistingDirectory, nestedWorkspace, WorkspaceValidationError } from '../workspace-service.js';
+import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspace-service.js';
 
 function workspaceDto(w: WorkspaceRow, sessionCount = 0) {
   return {
@@ -44,15 +44,6 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       const duplicate = workspaces.find((w) => w.path === realPath);
       if (duplicate) {
         res.status(409).json({ error: 'workspace already exists', code: 'workspace_exists', workspace: workspaceDto(duplicate) });
-        return;
-      }
-      const nested = nestedWorkspace(workspaces, realPath);
-      if (nested) {
-        res.status(409).json({
-          error: `workspace cannot be nested with ${nested.outer.path}`,
-          code: 'workspace_nested',
-          workspace: workspaceDto(nested.outer),
-        });
         return;
       }
       const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 80) : path.basename(realPath) || realPath;

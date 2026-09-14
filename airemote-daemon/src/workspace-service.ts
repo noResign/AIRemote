@@ -43,18 +43,6 @@ export function findContainingWorkspace(workspaces: WorkspaceRow[], candidate: s
     .sort((a, b) => b.path.length - a.path.length)[0];
 }
 
-export function nestedWorkspace(
-  workspaces: WorkspaceRow[],
-  candidate: string,
-): { outer: WorkspaceRow; inner: string } | null {
-  for (const w of workspaces) {
-    if (w.path === candidate) continue;
-    if (workspaceContains(w.path, candidate)) return { outer: w, inner: candidate };
-    if (workspaceContains(candidate, w.path)) return { outer: w, inner: w.path };
-  }
-  return null;
-}
-
 export function resolveWorkspaceForRequest(db: Db, workspaceId?: string): WorkspaceRow | null {
   if (workspaceId) {
     const ws = db.getWorkspace(workspaceId);

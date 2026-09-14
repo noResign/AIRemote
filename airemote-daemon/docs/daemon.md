@@ -112,7 +112,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置 |
 | `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
 | `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount） |
-| `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录 + 防嵌套 |
+| `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区） |
 | `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
 | `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止） |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
@@ -236,7 +236,10 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 - **工作目录**：daemon 启动时把 `--workspace` 注册为第一个 Workspace；手机可新增/切换 Workspace。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
   否则 400 `cwd_not_allowed`。
-- **Workspace 嵌套**：不注册嵌套 Workspace；`/api/workspaces` 新增时会拒绝父子包含关系。
+- **Workspace 嵌套**：允许父子包含关系（典型场景：daemon `--workspace` 指向根目录，之后把其下的
+  子目录注册成独立 Workspace）。Session 的归属靠自身 `workspace_id`，不从路径前缀推导；前缀只用于
+  校验 cwd 位于所属 Workspace 内，因此嵌套不影响归属正确性。唯一的语义放宽：查询外层 Workspace 的
+  TUI 会话列表时会包含落在内层 Workspace 里的会话（外层视为「其下所有内容」）。
 - **防御性超时**：run 空闲看门狗（`AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`，默认 900 秒、0=禁用）。
 - **审计**：chat / cancel / permission_decision / rename_session / delete_session 记入 `audit_log`。
 - **CORS**：`Access-Control-Allow-Origin: *` 仅为让网页客户端可用；真正边界是 token。
@@ -371,6 +374,10 @@ airemote --help
 ```
 
 **生产包分发**（npm/pnpm 全局安装，对方需 Node ~24 + Claude Code）：
+
+版本号取自 `airemote-daemon/package.json` 的 `version`（semver，手改递增：修 bug 加 patch，
+加功能加 minor，大改加 major）。`airemote --version`、`/api/health` 和产物文件名都读取同一来源；
+发布脚本可用 `DAEMON_VERSION=1.0.1` 临时覆盖。
 
 ```bash
 # 在仓库根目录执行：build + pnpm pack + 上传 OSS daemon/

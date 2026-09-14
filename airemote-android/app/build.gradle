@@ -12,13 +12,27 @@ if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-// 未显式指定 versionCode 时，本地构建（包括 Android Studio Run 的 debug）用 epoch 秒，
-// 保证 debug 与 release 交替安装时 versionCode 单调递增，避免 INSTALL_FAILED_VERSION_DOWNGRADE。
+// 版本号约定（与 release-android.sh 配套，见 docs/updater.md §7.1）：
+//   正式包（release variant）：versionCode = epoch 秒，versionName = version.txt 的语义化版本
+//           （alpha 追加 -alpha.<时间戳>，保证同一版本多次 alpha 也升序）
+//   本地包（debug variant）：versionCode = 1（固定低值），versionName = 0.0.0-<yyyyMMddHHmmss>
+// release-android.sh 通过 -PversionCode/-PversionName 注入时优先级最高。
+// 两个字段都必须「正式包 > 本地包」：ColorOS 安装器会拿 versionName 比大小，
+// 但 Android 安装器首先按 versionCode 判降级；本地用 epoch 时，只要本地构建晚于
+// 正式包，安装器就会报「已安装更高版本」。本地固定 1 才能保证正式包永远可覆盖安装。
 def rawVersionCode = project.findProperty("versionCode")?.toString()
 def versionCodeOverride = rawVersionCode
         ? rawVersionCode.toInteger()
-        : (System.currentTimeMillis().intdiv(1000L)) as int
+        : 1
 def versionNameOverride = project.findProperty("versionName")?.toString()
+def utcTimestamp = {
+    def fmt = new java.text.SimpleDateFormat("yyyyMMddHHmmss")
+    fmt.timeZone = TimeZone.getTimeZone("UTC")
+    fmt.format(new Date())
+}
+def localVersionName = "0.0.0-" + utcTimestamp()
+// 正式版本号源；release variant 会自动读取，不再要求必须由 release-android.sh 注入 -P。
+def versionFile = rootProject.file("version.txt")
 
 android {
     namespace 'com.airemote.airemote'
@@ -29,7 +43,7 @@ android {
         minSdk 24
         targetSdk 36
         versionCode versionCodeOverride
-        versionName versionNameOverride ?: "1.0"
+        versionName versionNameOverride ?: localVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -67,7 +81,6 @@ android {
         alpha {
             dimension "channel"
             applicationIdSuffix ".alpha"
-            versionNameSuffix "-alpha"
             buildConfigField "String", "UPDATE_CHANNEL", "\"alpha\""
             buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/android/alpha/manifest.json\""
         }
@@ -89,6 +102,35 @@ android {
     buildFeatures {
         compose true
         buildConfig true
+    }
+}
+
+// release variant 默认按正式包处理：versionCode = epoch 秒，versionName = version.txt
+// （alpha release 追加 -alpha.<UTC 时间戳>）。debug 仍是本地包：code=1、name=0.0.0-*。
+// release-android.sh 通过 -PversionCode/-PversionName 注入时优先级更高。
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        if (variant.buildType != "release") return
+        def releaseVersionCode = rawVersionCode
+                ? rawVersionCode.toInteger()
+                : (System.currentTimeMillis().intdiv(1000L)) as int
+        def releaseVersionName = versionNameOverride
+        if (!releaseVersionName) {
+            if (!versionFile.exists()) {
+                throw new GradleException("missing version file: ${versionFile}")
+            }
+            def base = versionFile.text.trim()
+            if (!(base ==~ /^[0-9]+\.[0-9]+\.[0-9]+([-+].*)?$/)) {
+                throw new GradleException("invalid semver in ${versionFile}: ${base}")
+            }
+            releaseVersionName = variant.name.toLowerCase().contains("alpha")
+                    ? "${base}-alpha.${utcTimestamp()}"
+                    : base
+        }
+        variant.outputs.forEach { output ->
+            output.versionCode.set(releaseVersionCode)
+            output.versionName.set(releaseVersionName)
+        }
     }
 }
 

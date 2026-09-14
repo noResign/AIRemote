@@ -49,6 +49,7 @@ fun SettingsScreen(
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
     val baseUrl = SettingsStore.baseUrl ?: ""
     val token = SettingsStore.token ?: ""
+    val daemonVersion = (uiState as? SettingsUiState.Ready)?.version
 
     Scaffold(
         topBar = {
@@ -65,7 +66,7 @@ fun SettingsScreen(
         ) {
             SectionTitle("连接")
             InfoRow("服务器地址", baseUrl.ifBlank { "未配置" }, monospace = true)
-            InfoRow("token", if (token.isBlank()) "未配置" else "${token.take(8)}…", monospace = true)
+            InfoRow("token", if (token.isBlank()) "未配置" else "••••••••")
             OutlinedButton(onClick = onReconnect, modifier = Modifier.fillMaxWidth()) {
                 Text("重新连接")
             }
@@ -119,20 +120,16 @@ fun SettingsScreen(
                     }
 
                     SectionTitle("客户端更新")
-                    InfoRow("当前版本", BuildConfig.VERSION_NAME)
-                    InfoRow("更新通道", BuildConfig.UPDATE_CHANNEL)
                     OutlinedButton(
                         onClick = onCheckUpdate,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("检查更新") }
-
-                    SectionTitle("信息（只读）")
-                    InfoRow("daemon 版本", state.version)
                 }
             }
 
             SectionTitle("关于")
-            InfoRow("App 版本", "0.1.0")
+            InfoRow("App 版本", BuildConfig.VERSION_NAME)
+            InfoRow("daemon 版本", daemonVersion ?: "未知")
         }
     }
 
@@ -195,12 +192,25 @@ internal fun DirectoryPickerDialog(
                                     style = MaterialTheme.typography.bodyMedium,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false),
                                 )
+                                if (entry.isWorkspace) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "已是工作区",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }
                 },
-                confirmButton = { TextButton(onClick = onSelect) { Text("选择当前文件夹") } },
+                confirmButton = {
+                    TextButton(onClick = onSelect, enabled = !state.isWorkspace) {
+                        Text(if (state.isWorkspace) "已是工作区" else "选择当前文件夹")
+                    }
+                },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
             )
         }

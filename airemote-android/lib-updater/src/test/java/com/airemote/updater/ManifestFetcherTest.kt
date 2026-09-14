@@ -6,6 +6,7 @@ import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -39,6 +40,8 @@ class ManifestFetcherTest {
             val fetcher = ManifestFetcher(config, OkHttpClient())
             val manifest = runBlocking { fetcher.fetch() }
             assertEquals(11L, manifest.versionCode)
+            val request = server.takeRequest()
+            assertNotNull(request.requestUrl?.queryParameter("_ts"))
         } finally {
             server.shutdown()
         }

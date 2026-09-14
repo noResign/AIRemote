@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.MetaRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
+import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.dto.DirectoryEntryDto
 import com.airemote.network.airemote.dto.UpdateConfigRequest
 import com.airemote.network.airemote.dto.WorkspaceDto
@@ -20,6 +21,8 @@ sealed class DirectoryPickerUiState {
         val parent: String?,
         val entries: List<DirectoryEntryDto>,
         val showHidden: Boolean,
+        /** 当前目录是否已注册为工作区（用于禁用「选择当前文件夹」）。 */
+        val isWorkspace: Boolean,
     ) : DirectoryPickerUiState()
     data class Error(val message: String) : DirectoryPickerUiState()
 }
@@ -58,17 +61,17 @@ class SettingsViewModel(
             _uiState.value = SettingsUiState.Loading
             val health = repository.health()
             if (health is NetworkResult.Error) {
-                _uiState.value = SettingsUiState.Error(friendly(health.code, health.message))
+                _uiState.value = SettingsUiState.Error(friendlyError(health))
                 return@launch
             }
             val workspaces = workspaceRepository.listWorkspaces()
             if (workspaces is NetworkResult.Error) {
-                _uiState.value = SettingsUiState.Error(friendly(workspaces.code, workspaces.message))
+                _uiState.value = SettingsUiState.Error(friendlyError(workspaces))
                 return@launch
             }
             val config = workspaceRepository.config()
             if (config is NetworkResult.Error) {
-                _uiState.value = SettingsUiState.Error(friendly(config.code, config.message))
+                _uiState.value = SettingsUiState.Error(friendlyError(config))
                 return@launch
             }
             val workspaceList = (workspaces as NetworkResult.Success).data
@@ -105,7 +108,7 @@ class SettingsViewModel(
                     WorkspaceSelection.select(workspaceId, workspace?.path)
                     load()
                 }
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -114,7 +117,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             when (val r = workspaceRepository.updateConfig(UpdateConfigRequest(defaultPermissionMode = mode))) {
                 is NetworkResult.Success -> load()
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -125,7 +128,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             when (val r = workspaceRepository.updateWorkspace(workspaceId, name = trimmed)) {
                 is NetworkResult.Success -> load()
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -134,7 +137,7 @@ class SettingsViewModel(
         viewModelScope.launch {
             when (val r = workspaceRepository.updateWorkspace(workspaceId, enabled = enabled)) {
                 is NetworkResult.Success -> load()
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -146,7 +149,7 @@ class SettingsViewModel(
                     if (WorkspaceSelection.current() == workspaceId) WorkspaceSelection.select(null)
                     load()
                 }
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -164,14 +167,17 @@ class SettingsViewModel(
             _directoryPicker.value = DirectoryPickerUiState.Loading(path)
             when (val r = workspaceRepository.directories(path, showHidden)) {
                 is NetworkResult.Success -> {
+                    // 当前目录是否已是工作区：目录接口只标注子项，本级要自己比对已加载的工作区列表。
+                    val known = (_uiState.value as? SettingsUiState.Ready)?.workspaces ?: emptyList()
                     _directoryPicker.value = DirectoryPickerUiState.Ready(
                         path = r.data.path,
                         parent = r.data.parent,
                         entries = r.data.entries,
                         showHidden = showHidden,
+                        isWorkspace = known.any { it.path == r.data.path },
                     )
                 }
-                is NetworkResult.Error -> _directoryPicker.value = DirectoryPickerUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _directoryPicker.value = DirectoryPickerUiState.Error(friendlyError(r))
             }
         }
     }
@@ -192,15 +198,9 @@ class SettingsViewModel(
                     load()
                 }
                 is NetworkResult.Error -> {
-                    _directoryPicker.value = DirectoryPickerUiState.Error(friendly(r.code, r.message))
+                    _directoryPicker.value = DirectoryPickerUiState.Error(friendlyError(r))
                 }
             }
         }
-    }
-
-    private fun friendly(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401）"
-        -1 -> "无法连接 daemon，请检查网络与地址"
-        else -> "请求失败：$message"
     }
 }

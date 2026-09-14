@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.MetaRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
+import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.dto.AgentDto
 import com.airemote.network.airemote.dto.ClaudeSessionDto
 import com.airemote.network.airemote.dto.WorkspaceDto
@@ -58,11 +59,11 @@ class NewSessionViewModel(
             val agents = repository.agents()
             val workspaces = workspaceRepository.listWorkspaces()
             if (agents is NetworkResult.Error) {
-                _uiState.value = NewSessionUiState.Error(friendly(agents.code, agents.message))
+                _uiState.value = NewSessionUiState.Error(friendlyError(agents))
                 return@launch
             }
             if (workspaces is NetworkResult.Error) {
-                _uiState.value = NewSessionUiState.Error(friendly(workspaces.code, workspaces.message))
+                _uiState.value = NewSessionUiState.Error(friendlyError(workspaces))
                 return@launch
             }
 
@@ -78,7 +79,7 @@ class NewSessionViewModel(
 
             val claudeSessions = repository.claudeSessions(current)
             if (claudeSessions is NetworkResult.Error) {
-                _uiState.value = NewSessionUiState.Error(friendly(claudeSessions.code, claudeSessions.message))
+                _uiState.value = NewSessionUiState.Error(friendlyError(claudeSessions))
                 return@launch
             }
             val config = workspaceRepository.config()
@@ -112,11 +113,5 @@ class NewSessionViewModel(
 
     fun selectPermissionMode(mode: String) {
         _permissionMode.value = mode
-    }
-
-    private fun friendly(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401）"
-        -1 -> "无法连接 daemon，请检查网络与地址"
-        else -> "请求失败：$message"
     }
 }

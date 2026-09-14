@@ -314,11 +314,11 @@ APK 默认下载到 `context.cacheDir/updates/`。
 android {
     defaultConfig {
         applicationId "com.airemote.airemote"
-        // release 脚本通过 -PversionCode=N 注入；本地构建（含 Android Studio Run 的 debug）
-        // 默认用 epoch 秒，保证 debug / release 交替安装时 versionCode 单调递增。
-        versionCode project.findProperty("versionCode")?.toString()?.toInteger()
-                ?: (System.currentTimeMillis().intdiv(1000L) as int)
-        versionName project.findProperty("versionName")?.toString() ?: "1.0"
+        // 这两个默认值只给 debug 用；release variant 由 androidComponents 自动读
+        // version.txt / epoch，见下方说明与 §7.1 版本号约定。
+        versionCode project.findProperty("versionCode")?.toString()?.toInteger() ?: 1
+        versionName project.findProperty("versionName")?.toString()
+                ?: "0.0.0-" + new Date().format("yyyyMMddHHmmss")
     }
 
     buildTypes {
@@ -336,7 +336,6 @@ android {
         alpha {
             dimension "channel"
             applicationIdSuffix ".alpha"          // 测试包与正式包可共存一台手机
-            versionNameSuffix "-alpha"
             buildConfigField "String", "UPDATE_CHANNEL", "\"alpha\""
             buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://<oss>/alpha/manifest.json\""
         }
@@ -350,10 +349,14 @@ android {
 }
 ```
 
+> 上面 `defaultConfig` 的两个默认值实际只作用于 debug；release variant 会由
+> `androidComponents.onVariants` 覆盖为 `version.txt` 里的正式号（alpha 追加时间戳），
+> 所以 Android Studio 直接构建 release 包也不会再显示 `0.0.0-*`。
+
 产生的变体：`alphaDebug` / `alphaRelease` / `prodDebug` / `prodRelease`。
 
 > 桌面名称区分：alpha 通过 `app/src/alpha/res/values/strings.xml` 覆盖 `app_name` 为
-> 「AIRemote 测试」，prod 沿用 `main` 里的「AIRemote」，避免两个应用在桌面上分不清。
+> 「AIRemote-Beta」，prod 沿用 `main` 里的「AIRemote」，避免两个应用在桌面上分不清。
 
 **签名（最容易翻车，必须统一）**：
 
@@ -371,6 +374,43 @@ android {
 
 1. **分发控制**：alpha 的 APK + manifest 放私有 bucket 或不公开路径，不贴链接别人不知道；
 2. **安装控制**：alpha 包只装在开发者手机上，别人手机上的 prod 包指向 prod 通道，根本不拉 alpha 清单。
+
+### 7.1 版本号约定
+
+**正式包 versionCode 用 epoch 秒；正式包的 versionCode 和 versionName 都必须高于本地包。**
+
+| | versionCode | versionName |
+|---|---|---|
+| 正式包（prod release） | `epoch 秒`（release variant） | `version.txt` 的语义化版本，如 `1.0.0` |
+| alpha 包（alpha release） | `epoch 秒`（release variant） | `<version>-alpha.<yyyyMMddHHmmss>` |
+| 本地包（debug） | `1`（固定低值） | `0.0.0-<yyyyMMddHHmmss>`（UTC） |
+
+- **版本源**：`airemote-android/version.txt`，语义化版本，手改递增：
+  修 bug 加 patch（`1.0.0 → 1.0.1`），加功能加 minor（`1.0.1 → 1.1.0`），大改加 major（`1.1.0 → 2.0.0`）。
+  release variant 构建（Android Studio 的 Build APK / release-android.sh）都会自动读它；
+  `VERSION_NAME=` 或 `-PversionName=` 可临时覆盖。
+- **alpha 通道**：`<version>-alpha.<yyyyMMddHHmmss>`。时间戳保证同一版本多次发 alpha 也严格升序；
+  它相对本地 debug 包的 `0.0.0-*` 仍然更高，因此测试包也能远程下载安装。
+- **本地构建**：debug variant 固定 `0.0.0-<yyyyMMddHHmmss>`（UTC），恒低于任何 `1.x` 正式版本。
+- **versionCode**：release variant 取 epoch 秒，debug variant 固定为 `1`。这样正式包在
+  versionCode 和 versionName 两个维度都恒高于本地 debug 包，无论本地测试包是什么时候构建的，
+  应用内更新下载的正式包都不会被判降级。
+- **Android Studio 直接构建**：`Build > Build APK(s)` 选 release variant 也会按正式包规则生成
+  `versionName=1.0.0` / `1.0.0-alpha.<时间戳>`；只有 debug variant 是 `0.0.0-*`。
+
+**为什么 versionCode / versionName 都要管**：Android 安装器首先按 versionCode 判降级；
+我们检查当前 ColorOS 的 `OppoPackageInstaller`，`replace_lower_version` 弹窗也是由
+`apkVersionCode < installedVersionCode` 触发，versionName 只用于弹窗展示和同 code 场景。
+但不同 ColorOS 版本或定制安装器的实现可能参考 versionName，历史事故里也出现过本地包
+versionName 比发布包大、弹窗信息误导的情况。因此约定：正式包的 versionCode 和 versionName
+都必须高于本地包。现在正式包 code=`epoch`、name=`1.0.0+`；本地 code=`1`、name=`0.0.0-*`。
+
+**有意接受的代价**：
+- 装了正式包之后再装本地构建会被拦（两个字段都更小），需要先卸载，或 `adb install -r -d`。
+- 旧版本地构建（versionName `1.0` / `1.0-alpha`，versionCode 是 epoch）比新本地包大，
+  第一次覆盖装新本地包也会被判降级，卸载一次即可。
+- 本地包之间 versionCode 相同（都是 `1`），Android 允许相同 versionCode 覆盖安装；如果某些
+  定制安装器要求严格递增，则需要卸载或走 `-d`。
 
 ---
 
@@ -423,7 +463,8 @@ android {
 
 ### P3 · Flavor + 版本注入
 
-- `app/build.gradle`：`alpha`/`prod` flavor、`buildConfigField`、`versionCode` 由 `-P` 注入、统一 signingConfig。
+- `app/build.gradle`：`alpha`/`prod` flavor、`buildConfigField`、release variant 自动读
+  `version.txt` 并取 `versionCode=epoch`（`-P` 仅作覆盖）、统一 signingConfig。
 - `:app` 依赖 `implementation project(':lib-updater')`。
 
 **验收**：`assembleAlphaRelease` / `assembleProdRelease` 出签名包；`applicationId` 后缀正确。
@@ -438,8 +479,8 @@ android {
 
 ### P5 · CI 出包上传 OSS（可先手动跑通）
 
-- CI：`assembleAlphaRelease assembleProdRelease -PversionCode=$RUN_NUMBER` → 算 sha256 → `ossutil cp` APK
-  → 渲染 `manifest.json` 上传对应通道。
+- CI / 本地发布：`.claude/skills/deploy/scripts/release-android.sh alpha|prod` → 用
+  `version.txt`/epoch 生成 APK → 算 sha256 → 渲染 `manifest.json` 上传对应通道。
 - alpha 与 prod 分目录（§3 布局）。
 
 **验收**：push 后 CI 自动出包，手机「检查更新」能拉到新版本。

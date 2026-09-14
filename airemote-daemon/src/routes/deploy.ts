@@ -169,6 +169,7 @@ export function registerDeployRoutes(app: Express, ctx: AppContext): void {
     const uid = process.getuid?.();
     const repoRoot = path.resolve(path.dirname(deployScript), '..', '..', '..', '..');
     const args = [
+      '--no-block',
       '--user',
       `--unit=${unit}`,
       '--property=Type=oneshot',
@@ -191,7 +192,9 @@ export function registerDeployRoutes(app: Express, ctx: AppContext): void {
     ];
 
     try {
-      await execFileAsync('systemd-run', args, { timeout: 10000 });
+      // --no-block 让 systemd-run 入队后立即返回；任务是否完成由
+      // refreshDeployJob() 轮询 systemctl show 判断，绝不能被构建耗时误判成启动失败。
+      await execFileAsync('systemd-run', args, { timeout: 5000 });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       ctx.db.updateDeployJob(id, { status: 'failed', finishedAt: Date.now(), error: message });

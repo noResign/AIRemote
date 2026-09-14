@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.ChangesRepository
+import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.dto.ChangedFileDto
 import com.airemote.network.airemote.dto.DiffResponse
 import com.airemote.network.airemote.dto.FileContentDto
@@ -108,7 +109,7 @@ class FilesViewModel(
                 isGitRepo = r.data.isGitRepo,
                 files = r.data.files,
             )
-            is NetworkResult.Error -> _uiState.value = FilesUiState.Error(friendly(r.code, r.message))
+            is NetworkResult.Error -> _uiState.value = FilesUiState.Error(friendlyError(r))
         }
     }
 
@@ -118,7 +119,7 @@ class FilesViewModel(
         viewModelScope.launch {
             when (val r = repository.diff(WorkspaceSelection.current(), file.path)) {
                 is NetworkResult.Success -> _diffState.value = DiffUiState.Ready(r.data)
-                is NetworkResult.Error -> _diffState.value = DiffUiState.Error(file.path, friendly(r.code, r.message))
+                is NetworkResult.Error -> _diffState.value = DiffUiState.Error(file.path, friendlyError(r))
             }
         }
     }
@@ -183,7 +184,7 @@ class FilesViewModel(
                 _fileBrowser.value = current.copy(
                     loading = false,
                     loadingMore = false,
-                    error = friendly(r.code, r.message),
+                    error = friendlyError(r),
                 )
             }
         }
@@ -204,7 +205,7 @@ class FilesViewModel(
         viewModelScope.launch {
             when (val r = repository.fileContent(WorkspaceSelection.current(), path)) {
                 is NetworkResult.Success -> _fileContent.value = FileContentUiState.Ready(r.data)
-                is NetworkResult.Error -> _fileContent.value = FileContentUiState.Error(path, friendly(r.code, r.message))
+                is NetworkResult.Error -> _fileContent.value = FileContentUiState.Error(path, friendlyError(r))
             }
         }
     }
@@ -213,9 +214,4 @@ class FilesViewModel(
         _fileContent.value = null
     }
 
-    private fun friendly(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401）"
-        -1 -> "无法连接 daemon，请检查网络与地址"
-        else -> "请求失败：$message"
-    }
 }

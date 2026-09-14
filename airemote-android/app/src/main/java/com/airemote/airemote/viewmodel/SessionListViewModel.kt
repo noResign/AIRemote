@@ -7,6 +7,7 @@ import com.airemote.airemote.data.repository.SessionRepository
 import com.airemote.network.http.NetworkResult
 import com.airemote.airemote.model.session.SessionListModel
 import com.airemote.airemote.model.session.groupByCwd
+import com.airemote.airemote.util.friendlyError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -49,29 +50,29 @@ class SessionListViewModel(
         viewModelScope.launch {
             fetchFor(
                 WorkspaceSelection.current(),
-                onError = { code, message ->
+                onError = { error ->
                     if (_uiState.value !is SessionListUiState.Content) {
-                        _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
+                        _uiState.value = SessionListUiState.Error(friendlyError(error))
                     } else {
-                        _message.value = friendlyMessage(code, message)
+                        _message.value = friendlyError(error)
                     }
                 },
             )
         }
     }
 
-    private suspend fun fetch(workspaceId: String?, onError: (Int, String) -> Unit = { code, message ->
-        _uiState.value = SessionListUiState.Error(friendlyMessage(code, message))
+    private suspend fun fetch(workspaceId: String?, onError: (NetworkResult.Error) -> Unit = { error ->
+        _uiState.value = SessionListUiState.Error(friendlyError(error))
     }) {
         when (val r = repository.listSessions(workspaceId)) {
             is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(
                 groupByCwd(r.data, WorkspaceSelection.selectedPath.value),
             )
-            is NetworkResult.Error -> onError(r.code, r.message)
+            is NetworkResult.Error -> onError(r)
         }
     }
 
-    private suspend fun fetchFor(workspaceId: String?, onError: (Int, String) -> Unit) = fetch(workspaceId, onError)
+    private suspend fun fetchFor(workspaceId: String?, onError: (NetworkResult.Error) -> Unit) = fetch(workspaceId, onError)
 
     fun delete(id: String) {
         viewModelScope.launch {
@@ -89,7 +90,7 @@ class SessionListViewModel(
                     refresh()
                 }
                 is NetworkResult.Error -> {
-                    _message.value = friendlyMessage(r.code, r.message)
+                    _message.value = friendlyError(r)
                 }
             }
         }
@@ -97,11 +98,5 @@ class SessionListViewModel(
 
     fun consumeMessage() {
         _message.value = null
-    }
-
-    private fun friendlyMessage(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401），请重新连接"
-        -1 -> "无法连接 daemon，请检查网络与地址"
-        else -> "操作失败：$message"
     }
 }

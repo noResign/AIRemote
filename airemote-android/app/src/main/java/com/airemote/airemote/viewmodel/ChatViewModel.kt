@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.repository.ChatRepository
 import com.airemote.airemote.data.repository.SessionRepository
+import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
@@ -108,7 +109,7 @@ class ChatViewModel(
                         attach(runningRunId)
                     }
                 }
-                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+                is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }
     }
@@ -240,7 +241,7 @@ class ChatViewModel(
                     mode = r.data.mode,
                     grants = r.data.grants,
                 )
-                is NetworkResult.Error -> _sessionPermissions.value = SessionPermissionsUiState.Error(friendly(r.code, r.message))
+                is NetworkResult.Error -> _sessionPermissions.value = SessionPermissionsUiState.Error(friendlyError(r))
             }
         }
     }
@@ -254,7 +255,7 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = sessionRepository.updatePermissionMode(id, mode)) {
                 is NetworkResult.Success -> openSessionPermissions()
-                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+                is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }
     }
@@ -264,7 +265,7 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = sessionRepository.deletePermissionGrant(id, toolName)) {
                 is NetworkResult.Success -> openSessionPermissions()
-                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+                is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }
     }
@@ -274,7 +275,7 @@ class ChatViewModel(
         viewModelScope.launch {
             when (val r = sessionRepository.deletePermissionGrants(id)) {
                 is NetworkResult.Success -> openSessionPermissions()
-                is NetworkResult.Error -> _error.value = friendly(r.code, r.message)
+                is NetworkResult.Error -> _error.value = friendlyError(r)
             }
         }
     }
@@ -385,7 +386,7 @@ class ChatViewModel(
         _permission.value = permissionQueue.removeFirstOrNull()
         viewModelScope.launch {
             val r = repository.decidePermission(p.permissionId, decision, reason)
-            if (r is NetworkResult.Error) _error.value = friendly(r.code, r.message)
+            if (r is NetworkResult.Error) _error.value = friendlyError(r)
         }
     }
 
@@ -425,11 +426,5 @@ class ChatViewModel(
 
     fun consumeError() {
         _error.value = null
-    }
-
-    private fun friendly(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401）"
-        -1 -> "无法连接 daemon，请检查网络与地址"
-        else -> "请求失败：$message"
     }
 }

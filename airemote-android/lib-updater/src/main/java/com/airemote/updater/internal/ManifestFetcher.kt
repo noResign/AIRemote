@@ -20,9 +20,17 @@ class ManifestFetcher(
         if (!isAllowedUpdateUrl(config.manifestUrl)) {
             throw UpdateException.ManifestInvalid("manifestUrl must be HTTPS (or localhost for debug): ${config.manifestUrl}")
         }
+        // 给每次检查加唯一 query，避免运营商/透明代理/中间缓存返回旧 manifest。
+        // 曾经因此装到过旧 alpha 包（app 名都回到了 AIRemote）。
+        val requestUrl = (config.manifestUrl.toHttpUrlOrNull()
+            ?: throw UpdateException.ManifestInvalid("invalid manifestUrl: ${config.manifestUrl}"))
+            .newBuilder()
+            .addQueryParameter("_ts", System.currentTimeMillis().toString())
+            .build()
         val request = Request.Builder()
-            .url(config.manifestUrl)
-            .header("Cache-Control", "no-cache")
+            .url(requestUrl)
+            .header("Cache-Control", "no-cache, no-store, max-age=0")
+            .header("Pragma", "no-cache")
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {

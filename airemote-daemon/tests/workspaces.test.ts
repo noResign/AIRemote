@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { Db } from '../src/db';
-import { nestedWorkspace, workspaceContains } from '../src/workspace-service';
+import { workspaceContains } from '../src/workspace-service';
 
 const dbs: Db[] = [];
 
@@ -44,13 +44,17 @@ describe('Db workspaces + permissions', () => {
     expect(db.hasPermissionGrant('s-1', 'Bash')).toBe(false);
   });
 
-  it('detects nested workspaces', () => {
+  it('allows a subdirectory of an existing workspace as its own workspace', () => {
     const db = openDb();
     const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
-    const child = `${ws.path}/child`;
-    expect(workspaceContains(ws.path, child)).toBe(true);
-    expect(nestedWorkspace([ws], child)).toEqual({ outer: ws, inner: child });
-    expect(nestedWorkspace([ws], ws.path)).toBeNull();
+    const childPath = `${ws.path}/child`;
+
+    // Containment still holds (cwd validation relies on it)...
+    expect(workspaceContains(ws.path, childPath)).toBe(true);
+    // ...but registering the nested path is no longer refused.
+    const child = db.createWorkspace({ name: 'child', path: childPath });
+    expect(db.listWorkspaces().map((w) => w.path).sort()).toEqual([childPath, ws.path].sort());
+    expect(db.getWorkspace(child.id)?.path).toBe(childPath);
   });
 
   it('deletes permission grants with their session', () => {

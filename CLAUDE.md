@@ -142,6 +142,20 @@ AIRemote/
 - `airemote-android/**` 有改动时：`.claude/skills/deploy/scripts/release-android.sh alpha|prod`
 - 没有改动的部分自动跳过。
 
+Android 版本号：版本源是 `airemote-android/version.txt`（语义化，`1.0.0 → 1.0.1` 小修 /
+`→ 1.1.0` 加功能 / `→ 2.0.0` 大改）。发布脚本据此生成 versionName（alpha 追加 `-alpha.<时间戳>`），
+release variant（AS 直接 Build APK 或发布脚本）自动读它并取
+versionCode = `epoch 秒`；debug variant 才是本地包，固定 versionCode = `1`、versionName = `0.0.0-*`。
+约定与踩坑记录见 `airemote-android/docs/updater.md` §7.1 —— **正式包的 versionCode 和 versionName
+都必须高于本地 debug 构建**，否则安装器会判降级拒装。
+
+Daemon 版本号：版本源是 `airemote-daemon/package.json` 的 `version`（同样语义化，
+`1.0.0 → 1.0.1` 小修 / `→ 1.1.0` 加功能 / `→ 2.0.0` 大改），`--version`、`/api/health`
+和发布产物版本都由它派生。
+
+版本文件必须入库：`airemote-android/version.txt`（Android release 构建与发布脚本都依赖）、
+`airemote-daemon/src/version.ts`（daemon 编译与运行时依赖，源是 package.json）。
+
 Claude Code 部署 skill 在 `.claude/skills/deploy/SKILL.md`。只有用户明确说“发布/部署/发版”时才执行。
 
 远程对话里用户说“发布测试”“发布生产”时：

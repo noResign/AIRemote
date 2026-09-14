@@ -1,6 +1,7 @@
 import { parseArgs } from 'node:util';
+import { VERSION } from './version.js';
 
-export const VERSION = '0.1.0';
+export { VERSION };
 
 export interface CliOptions {
   host?: string;

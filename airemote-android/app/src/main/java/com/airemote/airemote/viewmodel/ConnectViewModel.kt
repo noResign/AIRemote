@@ -7,6 +7,7 @@ import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.repository.ConnectRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
 import com.airemote.airemote.model.connect.ConnectResponse
+import com.airemote.airemote.util.friendlyError
 import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -84,15 +85,9 @@ class ConnectViewModel(
                     _uiState.value = ConnectUiState.Success(result.data, url)
                 }
                 is NetworkResult.Error -> {
-                    _uiState.value = ConnectUiState.Error(friendlyMessage(result.code, result.message))
+                    _uiState.value = ConnectUiState.Error(friendlyError(result, fallbackPrefix = "连接失败"))
                 }
             }
         }
-    }
-
-    private fun friendlyMessage(code: Int, message: String): String = when (code) {
-        401 -> "token 无效或未授权（401），请核对 ~/.airemote/token"
-        -1 -> "无法连接 daemon，请确认地址与网络（$message）"
-        else -> "连接失败：$message"
     }
 }
