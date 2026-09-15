@@ -21,7 +21,8 @@
 AIRemote/
 ├─ CLAUDE.md              本文件
 ├─ docs/
-│  └─ ui_design.md        移动端 UI 设计规范（Android/iOS 通用，单一设计源）
+│  ├─ ui_design.md        移动端 UI 设计规范（Android/iOS 通用，单一设计源）
+│  └─ chat_history_pagination.md  聊天历史分页加载技术方案（跨 daemon + Android，待实施）
 ├─ airemote-daemon/       daemon 子项目（Node 24 + Express + SQLite）
 │  ├─ src/                daemon 源码
 │  ├─ client/             极简测试网页客户端（index.html，零依赖）
