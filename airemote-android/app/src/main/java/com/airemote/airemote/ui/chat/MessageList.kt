@@ -9,12 +9,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
@@ -38,6 +40,7 @@ import kotlinx.coroutines.launch
 internal fun MessageList(
     messages: List<ChatUiMessage>,
     streaming: Boolean,
+    loading: Boolean,
     onAnswer: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -88,24 +91,41 @@ internal fun MessageList(
     }
 
     Box(modifier = modifier) {
-        LazyColumn(
-            state = listState,
-            reverseLayout = false,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(
-                count = messages.size,
-                key = { index -> index },
-            ) { index ->
-                when (val message = messages[index]) {
-                    is ChatUiMessage.User -> UserBubble(message.text)
-                    is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
-                }
+        if (loading && messages.isEmpty()) {
+            // 重建历史要按 run 逐个回放事件，会话越长越慢；这段时间别留空白页。
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "正在加载对话…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            item(key = "bottom-spacer") {
-                Spacer(Modifier.height(1.dp))
+        } else {
+            LazyColumn(
+                state = listState,
+                reverseLayout = false,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(
+                    count = messages.size,
+                    key = { index -> index },
+                ) { index ->
+                    when (val message = messages[index]) {
+                        is ChatUiMessage.User -> UserBubble(message.text)
+                        is ChatUiMessage.Assistant -> AssistantBlock(message, streaming, onAnswer)
+                    }
+                }
+                item(key = "bottom-spacer") {
+                    Spacer(Modifier.height(1.dp))
+                }
             }
         }
         if (showJumpToBottom) {

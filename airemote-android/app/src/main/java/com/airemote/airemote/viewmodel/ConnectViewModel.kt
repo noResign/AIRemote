@@ -2,6 +2,7 @@ package com.airemote.airemote.viewmodel
 
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.base.BaseViewModel
+import com.airemote.airemote.data.SavedConnection
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.repository.ConnectRepository
@@ -34,6 +35,22 @@ class ConnectViewModel(
 
     private val _token = MutableStateFlow(settings.token ?: "")
     val token = _token.asStateFlow()
+
+    private val _savedConnections = MutableStateFlow(settings.savedConnections)
+    val savedConnections = _savedConnections.asStateFlow()
+
+    /** 选中「最近连接」里的某条：填入地址与 token 并直接发起连接。 */
+    fun selectSaved(connection: SavedConnection) {
+        _baseUrl.value = connection.baseUrl
+        _token.value = connection.token
+        _uiState.value = ConnectUiState.Idle
+        connect()
+    }
+
+    fun forgetSaved(baseUrl: String) {
+        settings.forgetConnection(baseUrl)
+        _savedConnections.value = settings.savedConnections
+    }
 
     fun onBaseUrlChange(value: String) {
         _baseUrl.value = value
@@ -70,6 +87,8 @@ class ConnectViewModel(
                     settings.baseUrl = url
                     settings.token = tk
                     settings.workspace = result.data.workspace
+                    settings.rememberConnection(url, tk)
+                    _savedConnections.value = settings.savedConnections
                     val workspaces = workspaceRepository.listWorkspaces()
                     if (workspaces is NetworkResult.Success) {
                         val list = workspaces.data

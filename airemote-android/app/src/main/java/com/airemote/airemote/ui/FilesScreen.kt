@@ -570,14 +570,16 @@ private fun ChangeRow(file: ChangedFileDto, onClick: () -> Unit) {
         ChangeBadge(file.status)
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
+            // 文件名单独一行：路径单行显示时省略号会吃掉末尾，而末尾恰恰是最该看的文件名。
             Text(
-                file.path,
+                fileName(file.path),
                 style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 buildString {
+                    directoryLabel(file.path)?.let { append("$it  ") }
                     append(statusLabel(file.status))
                     val add = file.additions
                     val del = file.deletions
@@ -832,6 +834,17 @@ private fun diffLineColor(line: String): Color = when {
 }
 
 private fun fileName(path: String): String = path.substringAfterLast('/').ifBlank { path }
+
+/**
+ * 改动行的目录前缀：只保留最后 [segments] 级 —— 前面的层级各行都在重复、信息量低，
+ * 层级更多时以 `…/` 开头。顶层文件返回 null（没有目录可显示）。
+ */
+private fun directoryLabel(path: String, segments: Int = 3): String? {
+    val parts = path.substringBeforeLast('/', "").split('/').filter { it.isNotBlank() }
+    if (parts.isEmpty()) return null
+    val prefix = if (parts.size > segments) "…/" else ""
+    return "$prefix${parts.takeLast(segments).joinToString("/")}/"
+}
 
 private val IdeBackground = Color(0xFF1E1E1E)
 private val IdeHunkBackground = Color(0xFF2D2D30)

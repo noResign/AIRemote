@@ -59,6 +59,7 @@ fun ChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     val streaming by viewModel.streaming.collectAsState()
+    val historyLoading by viewModel.historyLoading.collectAsState()
     val permission by viewModel.permission.collectAsState()
     val error by viewModel.error.collectAsState()
     val title by viewModel.sessionTitle.collectAsState()
@@ -137,6 +138,7 @@ fun ChatScreen(
         MessageList(
             messages = messages,
             streaming = streaming,
+            loading = historyLoading,
             onAnswer = viewModel::answerQuestion,
             modifier = Modifier
                 .fillMaxSize()

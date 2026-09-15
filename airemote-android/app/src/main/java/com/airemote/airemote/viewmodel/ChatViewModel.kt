@@ -50,6 +50,10 @@ class ChatViewModel(
     private val _streaming = MutableStateFlow(false)
     val streaming = _streaming.asStateFlow()
 
+    /** 进入会话后重建历史期间为 true：界面据此显示加载指示，而不是空白消息区。 */
+    private val _historyLoading = MutableStateFlow(false)
+    val historyLoading = _historyLoading.asStateFlow()
+
     private val _runId = MutableStateFlow<String?>(null)
     val runId = _runId.asStateFlow()
 
@@ -96,20 +100,26 @@ class ChatViewModel(
             return
         }
         viewModelScope.launch {
-            when (val r = repository.sessionDetail(sessionId)) {
-                is NetworkResult.Success -> {
-                    val session = r.data.session
-                    _sessionTitle.value = session.title
-                    _sessionCwd.value = session.cwd
-                    _sessionRuntime.value = session.runtime
-                    // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
-                    val runningRunId = session.runningRunId
-                    _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
-                    if (session.running && runningRunId != null) {
-                        attach(runningRunId)
+            _historyLoading.value = true
+            try {
+                when (val r = repository.sessionDetail(sessionId)) {
+                    is NetworkResult.Success -> {
+                        val session = r.data.session
+                        _sessionTitle.value = session.title
+                        _sessionCwd.value = session.cwd
+                        _sessionRuntime.value = session.runtime
+                        // runningRunId 来自另一个 module，无法直接智能转换，先取到局部变量
+                        val runningRunId = session.runningRunId
+                        _messages.value = reconstructHistory(r.data.runs, runningRunId, r.data.messages)
+                        if (session.running && runningRunId != null) {
+                            attach(runningRunId)
+                        }
                     }
+                    is NetworkResult.Error -> _error.value = friendlyError(r)
                 }
-                is NetworkResult.Error -> _error.value = friendlyError(r)
+            } finally {
+                // 出错也要复位，否则指示器会一直转。
+                _historyLoading.value = false
             }
         }
     }
