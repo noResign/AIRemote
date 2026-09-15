@@ -81,7 +81,19 @@ fun UpdateHost(
             AlertDialog(
                 onDismissRequest = onDismiss,
                 title = { Text("下载完成") },
-                text = { Text("${state.manifest.versionName} 已下载，点击安装。") },
+                text = {
+                    Column {
+                        Text("${state.manifest.versionName} 已下载，点击安装。")
+                        if (state.apkVersionCode != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "安装包：${state.apkVersionName ?: "-"}（${state.apkVersionCode}）",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
                 confirmButton = { TextButton(onClick = onInstall) { Text("安装") } },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } },
             )

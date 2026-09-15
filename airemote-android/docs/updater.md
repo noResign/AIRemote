@@ -182,7 +182,7 @@ class Updater(private val config: UpdaterConfig) {
     /** 检查并（若有新版本）下载到 destDir，校验 sha256，产出 Downloaded */
     fun checkAndDownload(destDir: File): Flow<UpdateEvent>
 
-    /** 对已知 manifest 单独下载（写固定文件名 latest.apk，覆盖旧包，见 §6.1） */
+    /** 对已知 manifest 单独下载（写 airemote-<versionCode>.apk，见 §6.1） */
     fun download(manifest: UpdateManifest, destDir: File): Flow<UpdateEvent>
 
     /** 用 FileProvider 生成 content:// URI 并调起系统安装器，返回是否成功触发 */
@@ -289,18 +289,25 @@ install(apkFile)
 
 APK 默认下载到 `context.cacheDir/updates/`。
 
-### 6.1 安装包清理（防测试反复下载占磁盘）
+### 6.1 安装包文件名与清理（防测试反复下载占磁盘）
 
-测试会反复下载，一个包 ~20-30MB，不清理会越堆越多。两条机制叠加：
+测试会反复下载，一个包 ~13MB，不清理会越堆越多。
 
-1. **固定文件名覆盖**：`download()` 始终写到 `destDir/latest.apk`，下次下载直接覆盖旧包，
-   磁盘上永远只有一份（单这条就能把占用封顶到 1 个包）。
-2. **下次启动清理**：`Updater.cleanup(context)` 清空整个 `updates/` 目录，App 在
-   `AppApplication.onCreate()` 里调一次即可。
+1. **文件名带 versionCode**：`download()` 写到 `destDir/airemote-<versionCode>.apk`。
+   每次更新的文件名（也就是 `content://` URI 路径）都不一样——**不要**改回固定文件名：
+   曾经用固定的 `latest.apk`，路径永远不变，结果系统安装器在用户点「安装」时报
+   「已安装相同版本」而装不上（怀疑安装器按同一路径复用了上次解析出来的包信息）。
+2. **每次下载前清理旧包**：`download()` 开头调 `pruneStaleApks()`，把历史包删掉，
+   磁盘上最多留两份——**最近下载的一份**和本次要写的一份（`keep`）。只留一份会把
+   "最近一份"也删掉，见下面的警告。
+3. **下次启动清理**：`Updater.cleanup(context)` 清空整个 `updates/` 目录，App 在
+   `AppApplication.onCreate()` 里调一次即可。这是兜底：即使用户中途退出、留下了两份，
+   下次启动也会清干净（`cacheDir` 本身也会被系统按需回收）。
 
-> ⚠️ **不能在 `install()` 触发后立刻删**：系统安装器是异步读 `content://` URI 的，用户点
-> 「安装」时才真正读文件。触发 intent 后马上删，安装会失败。所以删的时机放在「下次启动」
-> （此时上次安装要么已完成、要么已取消），而不是 `install()` 之后。
+> ⚠️ **不能在 `install()` 触发后立刻删，也不能把"最近一份"一起删**：系统安装器是异步读
+> `content://` URI 的，用户可能还停在安装确认框上（甚至切回 App 又发起一次更新），此时删掉
+> 他正在等的那个包，等他点「安装」就读不到文件了。所以清理时始终保留最近下载的那一份，
+> 整体清空只放在「下次启动」。
 
 ---
 
@@ -447,7 +454,7 @@ versionName 比发布包大、弹窗信息误导的情况。因此约定：正�
 ### P1 · 拉清单 + 下载 + 校验
 
 - `internal/ManifestFetcher.kt`（okhttp + kotlinx-serialization 解析 + channel 校验）
-- `internal/ApkDownloader.kt`（流式下载 + 进度，写固定文件名 `latest.apk` 覆盖旧包）、`internal/ApkVerifier.kt`（流式 sha256）
+- `internal/ApkDownloader.kt`（流式下载 + 进度，写 `airemote-<versionCode>.apk`）、`internal/ApkVerifier.kt`（流式 sha256）
 - `UpdateEvent.kt`；`Updater.check()` / `checkAndDownload()` / `download()`。
 - 单测：`ManifestFetcherTest` + `ApkVerifierTest`（MockWebServer）。
 

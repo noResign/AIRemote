@@ -53,13 +53,17 @@ class Updater(private val config: UpdaterConfig) {
         emit(UpdateEvent.Failed(UpdateException.from(throwable)))
     }
 
-    /** 下载 APK 到 destDir/latest.apk.part，sha256 校验后重命名为 latest.apk。 */
+    /** 下载 APK 到 destDir/airemote-<versionCode>.apk.part，sha256 校验后重命名为同名 .apk。 */
     fun download(manifest: UpdateManifest, destDir: File): Flow<UpdateEvent> = flow {
         if (!destDir.exists() && !destDir.mkdirs()) {
             throw UpdateException.Storage("cannot create update dir: ${destDir.absolutePath}")
         }
-        val part = File(destDir, "latest.apk.part")
-        val target = File(destDir, "latest.apk")
+        // 文件名带 versionCode：每次更新的 URI/路径都不同，避免系统安装器按同一路径
+        // 复用上一次解析出来的安装包信息（表现为「已安装相同版本」而装不上）。
+        val name = "airemote-${manifest.versionCode}.apk"
+        val part = File(destDir, "$name.part")
+        val target = File(destDir, name)
+        pruneStaleApks(destDir, keep = target)
         part.delete()
         try {
             val request = Request.Builder().url(manifest.apkUrl).build()
@@ -104,6 +108,18 @@ class Updater(private val config: UpdaterConfig) {
         }
     }.flowOn(Dispatchers.IO).catch { throwable ->
         emit(UpdateEvent.Failed(UpdateException.from(throwable)))
+    }
+
+    /**
+     * 清掉历史下载的包，磁盘上最多留两份：最近下载的一份和本次要写的一份。
+     *
+     * 保留"最近一份"不是漏删——系统安装器是异步读 `content://` URI 的：用户可能停在安装
+     * 确认框上，此刻删掉那个包，等他点「安装」时就会读不到文件。
+     */
+    private fun pruneStaleApks(destDir: File, keep: File) {
+        val files = destDir.listFiles { file -> file.isFile && file.name.startsWith("airemote-") } ?: return
+        val newestApk = files.filter { it.name.endsWith(".apk") }.maxByOrNull { it.lastModified() }
+        files.forEach { file -> if (file != keep && file != newestApk) file.delete() }
     }
 
     /** 调起系统安装器；FileProvider 由宿主 App 声明。 */

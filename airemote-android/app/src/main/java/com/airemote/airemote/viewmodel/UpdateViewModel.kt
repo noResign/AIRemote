@@ -1,6 +1,9 @@
 package com.airemote.airemote.viewmodel
 
 import android.app.Application
+import android.content.pm.PackageInfo
+import android.util.Log
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.update.AppUpdater
@@ -22,7 +25,13 @@ sealed interface UpdateUiState {
         val downloadedBytes: Long,
         val totalBytes: Long,
     ) : UpdateUiState
-    data class Downloaded(val apkFile: File, val manifest: UpdateManifest) : UpdateUiState
+    data class Downloaded(
+        val apkFile: File,
+        val manifest: UpdateManifest,
+        /** 下载到的 APK 自身的版本，用于确认递交给系统安装器的确实是刚下发的包。 */
+        val apkVersionCode: Long?,
+        val apkVersionName: String?,
+    ) : UpdateUiState
     data class Error(val manual: Boolean, val message: String) : UpdateUiState
 }
 
@@ -67,10 +76,22 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         downloadedBytes = event.downloadedBytes,
                         totalBytes = event.totalBytes,
                     )
-                    is UpdateEvent.Downloaded -> _uiState.value = UpdateUiState.Downloaded(
-                        apkFile = event.apkFile,
-                        manifest = event.manifest,
-                    )
+                    is UpdateEvent.Downloaded -> {
+                        val apk = inspectApk(event.apkFile)
+                        val apkVersionCode = apk?.let { PackageInfoCompat.getLongVersionCode(it) }
+                        Log.i(
+                            TAG,
+                            "downloaded apk: ${event.apkFile.absolutePath} package=${apk?.packageName} " +
+                                "versionCode=$apkVersionCode versionName=${apk?.versionName} " +
+                                "manifestVersionCode=${event.manifest.versionCode}",
+                        )
+                        _uiState.value = UpdateUiState.Downloaded(
+                            apkFile = event.apkFile,
+                            manifest = event.manifest,
+                            apkVersionCode = apkVersionCode,
+                            apkVersionName = apk?.versionName,
+                        )
+                    }
                     is UpdateEvent.Failed -> _uiState.value = UpdateUiState.Error(
                         manual = true,
                         message = event.error.message ?: "下载更新失败",
@@ -97,5 +118,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     fun dismiss() {
         _uiState.value = UpdateUiState.Idle
+    }
+
+    private fun inspectApk(apkFile: File): PackageInfo? =
+        getApplication<Application>().packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+
+    private companion object {
+        const val TAG = "AIRemoteUpdater"
     }
 }
