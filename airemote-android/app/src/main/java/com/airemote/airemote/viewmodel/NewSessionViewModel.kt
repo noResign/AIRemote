@@ -48,6 +48,8 @@ class NewSessionViewModel(
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
                 _selectedWorkspaceId.value = workspaceId
+                // 切换工作区后，原先选中的本机会话已不属于当前工作区。
+                _selectedClaudeSession.value = null
                 load()
             }
         }
@@ -102,13 +104,6 @@ class NewSessionViewModel(
 
     fun selectClaudeSession(id: String) {
         _selectedClaudeSession.value = id
-    }
-
-    fun selectWorkspace(id: String) {
-        val path = (_uiState.value as? NewSessionUiState.Ready)?.workspaces?.find { it.id == id }?.path
-        _selectedClaudeSession.value = null
-        // 交给 WorkspaceSelection collector 统一触发 load()。
-        WorkspaceSelection.select(id, path)
     }
 
     fun selectPermissionMode(mode: String) {

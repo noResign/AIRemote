@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -36,6 +35,12 @@ import com.airemote.airemote.util.relativeTime
 import com.airemote.airemote.viewmodel.NewSessionUiState
 import com.airemote.airemote.viewmodel.NewSessionViewModel
 
+private val permissionModeOptions = listOf(
+    "ask" to "修改类操作询问",
+    "acceptEdits" to "编辑自动放行，Bash 仍询问",
+    "bypass" to "全部通过（高风险）",
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewSessionSheet(
@@ -56,46 +61,71 @@ fun NewSessionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("新建会话", style = MaterialTheme.typography.titleLarge)
+            LazyColumn(
+                // fill = false：内容不足时按内容高度收起，主按钮紧贴其下方；
+                // 内容超出时占满剩余高度并内部滚动，主按钮始终留在可见区。
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item { Text("新建会话", style = MaterialTheme.typography.titleLarge) }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    selected = mode == "new",
-                    onClick = { mode = "new" },
-                    label = { Text("新建空会话") },
-                )
-                FilterChip(
-                    selected = mode == "resume",
-                    onClick = { mode = "resume" },
-                    label = { Text("续接本机会话") },
-                )
-            }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = mode == "new",
+                            onClick = { mode = "new" },
+                            label = { Text("新建空会话") },
+                        )
+                        FilterChip(
+                            selected = mode == "resume",
+                            onClick = { mode = "resume" },
+                            label = { Text("续接本机会话") },
+                        )
+                    }
+                }
 
-            when (val state = uiState) {
-                is NewSessionUiState.Loading -> {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                }
-                is NewSessionUiState.Error -> {
-                    Text(state.message, color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = viewModel::load) { Text("重试") }
-                }
-                is NewSessionUiState.Ready -> {
-                    if (mode == "resume") {
-                        if (state.claudeSessions.isEmpty()) {
+                when (val state = uiState) {
+                    is NewSessionUiState.Loading -> {
+                        item {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                        }
+                    }
+                    is NewSessionUiState.Error -> {
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(state.message, color = MaterialTheme.colorScheme.error)
+                                OutlinedButton(onClick = viewModel::load) { Text("重试") }
+                            }
+                        }
+                    }
+                    is NewSessionUiState.Ready -> {
+                        // 会话归属的工作区由「工作区管理」里的当前选择决定，此处只读展示。
+                        item {
+                            val workspace = state.workspaces.find { it.id == selectedWorkspaceId }
+                            val workspaceLabel = workspace?.let { if (it.name.isBlank()) it.path else it.name }
                             Text(
-                                "没有可续接的本机 Claude 会话",
-                                style = MaterialTheme.typography.bodyMedium,
+                                text = "工作区：${workspaceLabel ?: "-"}",
+                                style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.heightIn(max = 320.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
+                        }
+
+                        if (mode == "resume") {
+                            if (state.claudeSessions.isEmpty()) {
+                                item {
+                                    Text(
+                                        "没有可续接的本机 Claude 会话",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            } else {
                                 items(state.claudeSessions, key = { it.sessionId }) { session ->
                                     Row(
                                         modifier = Modifier
@@ -127,109 +157,81 @@ fun NewSessionSheet(
                                     }
                                 }
                             }
-                        }
-                    } else {
-                        Text("Agent", style = MaterialTheme.typography.labelLarge)
-                        state.agents.forEach { agent ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.selectAgent(agent.id) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = selectedAgent == agent.id,
-                                    onClick = { viewModel.selectAgent(agent.id) },
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(agent.name.ifBlank { agent.id }, style = MaterialTheme.typography.bodyMedium)
-                            }
-                        }
-
-                        Text("工作区", style = MaterialTheme.typography.labelLarge)
-                        state.workspaces.forEach { workspace ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.selectWorkspace(workspace.id) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = selectedWorkspaceId == workspace.id,
-                                    onClick = { viewModel.selectWorkspace(workspace.id) },
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
+                        } else {
+                            item { Text("Agent", style = MaterialTheme.typography.labelLarge) }
+                            items(state.agents, key = { it.id }) { agent ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.selectAgent(agent.id) }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = selectedAgent == agent.id,
+                                        onClick = { viewModel.selectAgent(agent.id) },
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        workspace.name.ifBlank { workspace.path },
+                                        agent.name.ifBlank { agent.id },
                                         style = MaterialTheme.typography.bodyMedium,
                                     )
-                                    Text(
-                                        workspace.path,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                }
+                            }
+
+                            item { Text("权限模式", style = MaterialTheme.typography.labelLarge) }
+                            items(permissionModeOptions) { (value, desc) ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { viewModel.selectPermissionMode(value) }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    RadioButton(
+                                        selected = permissionMode == value,
+                                        onClick = { viewModel.selectPermissionMode(value) },
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(value, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            desc,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
                                 }
                             }
                         }
-
-                        Text("权限模式", style = MaterialTheme.typography.labelLarge)
-                        listOf(
-                            "ask" to "修改类操作询问",
-                            "acceptEdits" to "编辑自动放行，Bash 仍询问",
-                            "bypass" to "全部通过（高风险）",
-                        ).forEach { (mode, desc) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.selectPermissionMode(mode) }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = permissionMode == mode,
-                                    onClick = { viewModel.selectPermissionMode(mode) },
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(mode, style = MaterialTheme.typography.bodyMedium)
-                                    Text(
-                                        desc,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    Button(
-                        onClick = {
-                            val config = if (mode == "resume" && selectedClaudeSession != null) {
-                                NewSessionConfig(
-                                    claudeSessionId = selectedClaudeSession,
-                                    workspaceId = selectedWorkspaceId,
-                                    permissionMode = permissionMode,
-                                )
-                            } else {
-                                NewSessionConfig(
-                                    runtime = selectedAgent,
-                                    workspaceId = selectedWorkspaceId,
-                                    permissionMode = permissionMode,
-                                )
-                            }
-                            onCreate(config)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = mode == "resume" && selectedClaudeSession != null || mode == "new",
-                    ) {
-                        Text(if (mode == "resume") "开始" else "创建")
                     }
                 }
+            }
+
+            Button(
+                onClick = {
+                    val config = if (mode == "resume" && selectedClaudeSession != null) {
+                        NewSessionConfig(
+                            claudeSessionId = selectedClaudeSession,
+                            workspaceId = selectedWorkspaceId,
+                            permissionMode = permissionMode,
+                        )
+                    } else {
+                        NewSessionConfig(
+                            runtime = selectedAgent,
+                            workspaceId = selectedWorkspaceId,
+                            permissionMode = permissionMode,
+                        )
+                    }
+                    onCreate(config)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 16.dp),
+                enabled = mode == "resume" && selectedClaudeSession != null || mode == "new",
+            ) {
+                Text(if (mode == "resume") "开始" else "创建")
             }
         }
     }
