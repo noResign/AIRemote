@@ -80,7 +80,7 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 └───────────────┬───────────────────────────────┘
                 │ 连接成功
 ┌───────────────▼───────────────────────────────┐
-│  底部导航（平台原生 Tab Bar / NavigationBar）    │
+│  底部导航（自绘紧凑 Tab Bar，见 §3.2）           │
 │    ② 会话        ⑤ 文件             ⑦ 设置     │
 │                                             │
 │  ② 会话 Tab
@@ -124,6 +124,21 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 - 每个 Session 有自己的权限模式：`ask` / `acceptEdits` / `bypass`。
 - 切换 Workspace 后，当前客户端的会话列表、文件根目录、设置页都按新 Workspace 更新。
 - 其他 Workspace 中正在运行的 Session 不受影响。
+
+### 3.2 顶部栏与底部 Tab Bar（尺寸）
+
+尺寸以 `docs/ui_preview.html` 为准（紧凑稿），实现时不要套平台默认高度。
+
+**底部 Tab Bar**（会话 / 文件 / 设置）
+- 条高约 **61dp + 系统导航栏 inset**；**不用** Material3 `NavigationBar` 的 80dp 默认（它不暴露高度参数，压不到这个尺寸）。
+- 每项：icon **24dp** + 上方内边距 7dp、图标与文字间距 3dp、下方内边距 9dp；文字 **10.5sp**。
+- 选中：主色 + 文字加粗；未选中：次要文字色 + Medium。
+- 顶部 1px 分隔线；条背景用 `surface`（预览稿的毛玻璃为可选增强，见 §4.1.1）。
+
+**顶部栏**
+- 用 Material3 `TopAppBar` 默认高度（64dp）+ 状态栏 inset 即可，**不要再额外加状态栏高度**。
+- ⚠️ 每个 Tab 页各自带 Scaffold + TopAppBar，而外层 `MainScreen` 的 Scaffold 已经把系统栏 inset 算进了 `innerPadding`；
+  外层必须 `consumeWindowInsets(innerPadding)`，否则 inset 会被应用两次 —— 表现为标题上方多一条状态栏高度的空白、底栏上方多一段空隙。
 
 ## 4. 全局设计规范（Design Tokens）
 
@@ -591,6 +606,8 @@ src/utils/rename.ts      R
 3. **默认偏好**：
    - 默认 Agent（🟡 需模型列表）；
    - 新建 Session 默认权限模式：`ask` / `acceptEdits` / `bypass`。
+     点击**立即选中**（乐观更新，不等接口）；`PATCH /api/config` 失败则弹回原选项并在下方显示失败原因。
+     成功的刷新要**原地替换**，不要退回 Loading 态，否则整页会闪一下。
 4. **客户端更新**：只放「检查更新」按钮，不重复展示版本信息。
 5. **关于**：App 版本（`BuildConfig.VERSION_NAME`）、daemon 版本（`GET /api/health` 的 `version`）。
    - 「关于」常驻显示；daemon 未连上时其版本显示「未知」。
