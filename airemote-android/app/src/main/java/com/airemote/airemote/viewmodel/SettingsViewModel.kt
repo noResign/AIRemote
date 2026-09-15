@@ -52,13 +52,29 @@ class SettingsViewModel(
     private val _directoryPicker = MutableStateFlow<DirectoryPickerUiState?>(null)
     val directoryPicker = _directoryPicker.asStateFlow()
 
+    /** 改默认权限失败的提示：选项已乐观选中，失败时回滚，这里说明为什么弹回去了。 */
+    private val _permissionModeError = MutableStateFlow<String?>(null)
+    val permissionModeError = _permissionModeError.asStateFlow()
+
     init {
         load()
+        // 工作区也会在「工作区管理」页被切换/新增（那是另一个 ViewModel 实例），
+        // 这里跟着全局选择走，否则切换后返回本页还显示旧的工作区。
+        viewModelScope.launch {
+            WorkspaceSelection.selectedId.collect { workspaceId ->
+                _selectedWorkspaceId.value = workspaceId
+                // 选中的工作区不在本页已加载的列表里（例如刚在管理页新增），重新拉一次。
+                val known = (_uiState.value as? SettingsUiState.Ready)?.workspaces
+                if (workspaceId != null && known != null && known.none { it.id == workspaceId }) load()
+            }
+        }
     }
 
     fun load() {
         viewModelScope.launch {
-            _uiState.value = SettingsUiState.Loading
+            // 已有内容时原地刷新：改默认权限、重命名工作区等都会走 load()，
+            // 每次都退回 Loading 会让整页闪一下。
+            if (_uiState.value !is SettingsUiState.Ready) _uiState.value = SettingsUiState.Loading
             val health = repository.health()
             if (health is NetworkResult.Error) {
                 _uiState.value = SettingsUiState.Error(friendlyError(health))
@@ -114,10 +130,18 @@ class SettingsViewModel(
     }
 
     fun setDefaultPermissionMode(mode: String) {
+        val ready = _uiState.value as? SettingsUiState.Ready ?: return
+        if (ready.defaultPermissionMode == mode) return
+        _permissionModeError.value = null
+        // 先立即选中，不等接口；成功后以服务端数据为准，失败回滚并提示。
+        _uiState.value = ready.copy(defaultPermissionMode = mode)
         viewModelScope.launch {
             when (val r = workspaceRepository.updateConfig(UpdateConfigRequest(defaultPermissionMode = mode))) {
                 is NetworkResult.Success -> load()
-                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
+                is NetworkResult.Error -> {
+                    _uiState.value = ready
+                    _permissionModeError.value = friendlyError(r)
+                }
             }
         }
     }

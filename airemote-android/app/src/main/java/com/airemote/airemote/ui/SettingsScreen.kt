@@ -47,6 +47,7 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
+    val permissionModeError by viewModel.permissionModeError.collectAsState()
     val baseUrl = SettingsStore.baseUrl ?: ""
     val token = SettingsStore.token ?: ""
     val daemonVersion = (uiState as? SettingsUiState.Ready)?.version
@@ -117,6 +118,14 @@ fun SettingsScreen(
                                 )
                             }
                         }
+                    }
+
+                    permissionModeError?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
                     }
 
                     SectionTitle("客户端更新")
