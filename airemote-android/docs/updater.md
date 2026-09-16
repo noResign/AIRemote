@@ -412,6 +412,15 @@ android {
 versionName 比发布包大、弹窗信息误导的情况。因此约定：正式包的 versionCode 和 versionName
 都必须高于本地包。现在正式包 code=`epoch`、name=`1.0.0+`；本地 code=`1`、name=`0.0.0-*`。
 
+**⚠️ 本地 release 构建会挡住正式包**（2026-09-15 实际踩到）：AS 直接 Build APK 跑 release variant，
+拿到的是**本机构建时刻的 epoch** + 当前 `version.txt`。装上它之后再去装 OSS 的正式包：
+
+- versionCode 通常更小（发布包的 epoch 早于本地构建）→ 判降级；
+- versionName **和发布包同名**（同一个 `version.txt`）→ 定制安装器会报「已安装相同版本」。
+
+⇒ 想测正式通道就装 OSS 上的发布包；本地构建测 UI 用 debug variant（`code=1`、`name=0.0.0-*`，
+见上表）。已经装了本地 release 包又要换回发布包：先卸载，或者把 `version.txt` 递增后重发一次。
+
 **有意接受的代价**：
 - 装了正式包之后再装本地构建会被拦（两个字段都更小），需要先卸载，或 `adb install -r -d`。
 - 旧版本地构建（versionName `1.0` / `1.0-alpha`，versionCode 是 epoch）比新本地包大，
