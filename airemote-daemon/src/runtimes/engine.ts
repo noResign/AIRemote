@@ -73,8 +73,10 @@ export function startRun(req: RunRequest): ActiveRun {
           hooks: {
             PreToolUse: [
               {
-                // `ask` gates Bash + Write/Edit; `acceptEdits` only gates
-                // Bash. The matcher is chosen by the chat route per session.
+                // `ask` gates Bash + Write/Edit; `acceptEdits` gates Bash.
+                // Both always gate MCP tools (mcp__*), whose side effects are
+                // arbitrary and match no edit-ish category. The matcher is
+                // chosen by the chat route per session.
                 matcher: req.permissionHook.matcher || 'Bash',
                 hooks: [
                   {

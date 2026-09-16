@@ -63,6 +63,21 @@ describe('PermissionManager', () => {
     expect(otherTool.status).toBe('pending');
   });
 
+  it('allowAll on an MCP server covers every pending tool of that server', () => {
+    const pm = new PermissionManager(60_000);
+    const create = pm.create('run-1', 'session-1', 'mcp__github__create_issue', {});
+    const list = pm.create('run-1', 'session-1', 'mcp__github__list_issues', {});
+    const otherServer = pm.create('run-1', 'session-1', 'mcp__slack__send', {});
+    const bash = pm.create('run-1', 'session-1', 'Bash', {});
+
+    pm.allowAll('session-1', 'mcp__github__*');
+
+    expect(create.status).toBe('allowed');
+    expect(list.status).toBe('allowed');
+    expect(otherServer.status).toBe('pending');
+    expect(bash.status).toBe('pending');
+  });
+
   it('clearRun resolves pending requests before dropping them', () => {
     const resolved: string[] = [];
     const pm = new PermissionManager(60_000, (req) => resolved.push(req.status));

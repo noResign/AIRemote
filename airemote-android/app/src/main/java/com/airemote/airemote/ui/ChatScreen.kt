@@ -47,6 +47,7 @@ import com.airemote.airemote.ui.chat.InputBar
 import com.airemote.airemote.ui.chat.MessageList
 import com.airemote.airemote.ui.chat.PermissionDialog
 import com.airemote.airemote.ui.chat.TodoListPanel
+import com.airemote.airemote.ui.chat.toolLabel
 import com.airemote.airemote.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -219,7 +220,7 @@ fun ChatScreen(
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                                 ) {
-                                    Text(grant.toolName, modifier = Modifier.weight(1f))
+                                    Text(toolLabel(grant.toolName), modifier = Modifier.weight(1f))
                                     TextButton(onClick = { viewModel.revokePermissionGrant(grant.toolName) }) {
                                         Text("撤销")
                                     }

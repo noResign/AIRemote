@@ -38,7 +38,7 @@ internal fun PermissionDialog(
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Claude 请求执行", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = permission.toolName,
+                    text = toolLabel(permission.toolName),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -54,12 +54,7 @@ internal fun PermissionDialog(
                     )
                 }
                 Text(
-                    text = when (permission.toolName) {
-                        "Bash" -> "此命令可能修改文件或系统，请确认安全后再允许。超时未处理将自动拒绝。"
-                        "Write" -> "此操作可能覆盖文件内容，请确认安全后再允许。超时未处理将自动拒绝。"
-                        "Edit", "MultiEdit" -> "此操作可能修改文件内容，请确认安全后再允许。超时未处理将自动拒绝。"
-                        else -> "此操作可能修改文件或系统，请确认安全后再允许。超时未处理将自动拒绝。"
-                    },
+                    text = permissionWarning(permission.toolName),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -71,7 +66,7 @@ internal fun PermissionDialog(
                     OutlinedButton(
                         onClick = { onDecide("allow_all", null) },
                         modifier = Modifier.weight(1f),
-                    ) { Text("允许全部（本 Session）") }
+                    ) { Text("允许全部") }
                     Button(
                         onClick = { onDecide("allow", null) },
                         modifier = Modifier.weight(1f),
@@ -80,6 +75,31 @@ internal fun PermissionDialog(
             }
         }
     }
+}
+
+private const val MCP_PREFIX = "mcp__"
+
+internal fun isMcpTool(toolName: String): Boolean = toolName.startsWith(MCP_PREFIX)
+
+/** `mcp__github__create_issue` → `github · create_issue`; other tool names unchanged. */
+internal fun toolLabel(toolName: String): String {
+    if (!isMcpTool(toolName)) return toolName
+    return toolName.removePrefix(MCP_PREFIX).replace("__", " · ")
+}
+
+/** Warning under the body: what the tool can do, plus what 「允许全部」 actually grants. */
+internal fun permissionWarning(toolName: String): String {
+    if (isMcpTool(toolName)) {
+        return "这是 MCP Server 提供的工具，可能调用外部服务或产生副作用。" +
+            "超时未处理将自动拒绝；「允许全部」在本 Session 内不再询问该 Server 的所有工具。"
+    }
+    val risk = when (toolName) {
+        "Bash" -> "此命令可能修改文件或系统"
+        "Write" -> "此操作可能覆盖文件内容"
+        "Edit", "MultiEdit" -> "此操作可能修改文件内容"
+        else -> "此操作可能修改文件或系统"
+    }
+    return "$risk，请确认安全后再允许。超时未处理将自动拒绝；「允许全部」在本 Session 内不再询问该工具。"
 }
 
 internal fun commandText(input: JsonElement?): String {

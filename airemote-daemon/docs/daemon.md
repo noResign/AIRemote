@@ -79,6 +79,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + 同 Session allow-all 结算 |
 | `run-notifier.ts` | `RunNotifier`：runId → 该 run 的多个 SSE 订阅者（emitter + listeners） |
 | `command-safety.ts` | Bash 只读命令白名单（只读自动放行，其余询问） |
+| `tool-grants.ts` | grant key 映射：MCP 工具 → server 级 `mcp__<server>__*`，其余用 toolName |
 | `workspace.ts` / `workspace-service.ts` | Workspace 路径校验/包含关系；目录选择器复用 |
 | `permission-hook.ts` | PreToolUse hook 脚本（被 claude 调用，转发审批到 daemon） |
 | `claude-sessions.ts` | 枚举 `~/.claude/projects/` 下的 Claude 会话 |
@@ -94,7 +95,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 |---|---|
 | `sessions` | 会话：`id`、`runtime`、`claude_session_id`、`workspace_id`、`permission_mode`、`cwd`、`title`、时间戳 |
 | `workspaces` | 工作区根目录：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
-| `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`、`created_at` |
+| `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
 | `runs` | 一次 spawn：`status`（running/succeeded/failed/cancelled）、`exit_code`、`error` |
@@ -184,8 +185,13 @@ acceptEdits  -> acceptEdits
 bypass       -> bypassPermissions
 ```
 
-`ask` 模式下 PreToolUse hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit`；
-`acceptEdits` 只匹配 `Bash`；`bypass` 不注入 hook。
+`ask` 模式下 PreToolUse hook 的 matcher 为
+`Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*`；`acceptEdits` 匹配 `Bash|mcp__.*`；
+`bypass` 不注入 hook。
+
+**MCP 工具**（`mcp__<server>__<tool>`）与 Bash/Write/Edit 是平级的顶层工具，不属于其中任何
+一类，但**在 `ask` 和 `acceptEdits` 下都纳入远程审批**：MCP 工具能调用外部服务、产生任意副
+作用，不属于「编辑类」语义，静默放行会留下绕过审批的口子。只有 `bypass` 模式不审批。
 
 ```
 claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permissions/create
@@ -203,8 +209,12 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 
 规则：
 
-- `allow_all` 写入 `session_permission_grants`，作用域为 **当前 Session + 同一个 toolName**；
-- 「允许全部」会把当前已 pending 的同 Session + 同工具请求一并放行，并广播最终状态；
+- `allow_all` 写入 `session_permission_grants`，作用域为 **当前 Session + 同一个 grant key**：
+  普通工具是 toolName 本身（`Bash`、`Write`…），**MCP 工具是 server 级通配**
+  `mcp__<server>__*`——一个 server 往往暴露几十个工具，逐个批准没法用；key 映射见
+  `tool-grants.ts`（`toGrantKey` / `grantKeyCandidates`）；
+- 查 grant 时 MCP 工具会同时匹配 server 级通配与早期写入的精确名字，旧 grant 继续有效；
+- 「允许全部」会把当前已 pending 的、同一 grant key 覆盖的请求一并放行，并广播最终状态；
 - grant 持久化到 SQLite，daemon 重启/App 重连后仍有效；
 - 用户可在 Session 权限设置中撤销单条或全部；
 - 切换权限模式不会清空已有 grant；切到 `bypass` 时 grant 暂时不生效，切回后继续生效；
@@ -345,6 +355,7 @@ airemote-daemon/
 │  ├─ permissions.ts     权限注册表
 │  ├─ run-notifier.ts    runId → 多 SSE 订阅者
 │  ├─ command-safety.ts  只读命令白名单
+│  ├─ tool-grants.ts     grant key 映射（MCP → server 级通配）
 │  ├─ permission-hook.ts PreToolUse hook 脚本（→ dist/permission-hook.js）
 │  ├─ claude-sessions.ts 枚举本机 Claude 会话
 │  ├─ session-title.ts   从首条 prompt 生成会话标题

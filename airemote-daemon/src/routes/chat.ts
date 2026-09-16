@@ -188,7 +188,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
             daemonUrl,
             token: ctx.config.token,
             timeoutMs: ctx.config.permissionTimeoutMs,
-            matcher: sessionPermissionMode === 'ask' ? 'Bash|Write|Edit|MultiEdit|NotebookEdit' : 'Bash',
+            matcher: sessionPermissionMode === 'ask'
+              ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
+              : 'Bash|mcp__.*',
           },
       idleTimeoutMs: ctx.config.runIdleTimeoutMs,
       onEvent: send,

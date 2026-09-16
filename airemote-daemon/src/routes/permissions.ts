@@ -3,6 +3,7 @@ import type { AppContext } from '../context.js';
 import type { PermissionDecision, PermissionRequest } from '../permissions.js';
 import type { PermissionDto } from '../types/api.js';
 import { isReadOnlyBash } from '../command-safety.js';
+import { grantKeyCandidates, toGrantKey } from '../tool-grants.js';
 
 function toDto(p: PermissionRequest): PermissionDto {
   return {
@@ -24,9 +25,9 @@ function toDto(p: PermissionRequest): PermissionDto {
  * Client-facing: `POST /api/permissions/:id/decision` — the remote operator
  * answers allow/deny.
  *
- * Internal (used by the MCP permission server subprocess): `create` registers
- * a pending request and broadcasts it to the owning run's SSE stream; `status`
- * is polled by the MCP server until the request resolves.
+ * Internal (used by the PreToolUse hook subprocess): `create` registers a
+ * pending request and broadcasts it to the owning run's SSE stream; `status`
+ * is polled by the hook until the request resolves.
  */
 export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
   app.post('/api/permissions/:id/decision', (req, res) => {
@@ -44,9 +45,10 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
         res.status(409).json({ error: 'permission already resolved', code: 'permission_resolved' });
         return;
       }
-      ctx.db.addPermissionGrant(p.sessionId, p.toolName);
-      ctx.permissions.allowAll(p.sessionId, p.toolName);
-      ctx.db.audit('permission_decision', JSON.stringify({ id, decision: 'allow_all', toolName: p.toolName, sessionId: p.sessionId }));
+      const grantKey = toGrantKey(p.toolName);
+      ctx.db.addPermissionGrant(p.sessionId, grantKey);
+      ctx.permissions.allowAll(p.sessionId, grantKey);
+      ctx.db.audit('permission_decision', JSON.stringify({ id, decision: 'allow_all', toolName: p.toolName, grantKey, sessionId: p.sessionId }));
       res.json({ ok: true, permission: toDto(p) });
       return;
     }
@@ -75,7 +77,9 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
     }
     const sessionId = ctx.db.getRun(runId)?.session_id ?? runId;
     const p = ctx.permissions.create(runId, sessionId, toolName, body.toolInput ?? null);
-    if (ctx.db.hasPermissionGrant(sessionId, toolName)) {
+    // An MCP call is covered either by a server-wide grant or by an exact one
+    // (grants written before allowances were widened to the whole server).
+    if (grantKeyCandidates(toolName).some((key) => ctx.db.hasPermissionGrant(sessionId, key))) {
       // Already granted for this session: resolve immediately, don't bother the client.
       ctx.permissions.decide(p.id, 'allow', 'auto-allowed');
       res.json({ id: p.id });

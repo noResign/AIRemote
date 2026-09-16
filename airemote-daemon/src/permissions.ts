@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { log } from './log.js';
+import { toGrantKey } from './tool-grants.js';
 import type { PermissionStatus } from './types/api.js';
 
 export type PermissionDecision = 'allow' | 'deny';
@@ -82,12 +83,14 @@ export class PermissionManager {
   }
 
   /**
-   * Resolve already-pending asks of the same tool in the same session. The
-   * persistent grant itself is written by the route before calling this.
+   * Resolve already-pending asks covered by the same grant key in the same
+   * session — every MCP tool of a server for `mcp__<server>__*`, otherwise the
+   * exact tool. The persistent grant itself is written by the route before
+   * calling this.
    */
-  allowAll(sessionId: string, toolName: string): void {
+  allowAll(sessionId: string, grantKey: string): void {
     for (const req of this.pending.values()) {
-      if (req.sessionId === sessionId && req.toolName === toolName && req.status === 'pending') {
+      if (req.sessionId === sessionId && req.status === 'pending' && toGrantKey(req.toolName) === grantKey) {
         this.resolve(req, 'allowed', 'allow all');
       }
     }
