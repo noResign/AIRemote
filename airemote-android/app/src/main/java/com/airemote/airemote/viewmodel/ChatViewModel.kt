@@ -1,5 +1,6 @@
 package com.airemote.airemote.viewmodel
 
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.PendingNewSession
@@ -19,13 +20,16 @@ import com.airemote.network.airemote.dto.MessageDto
 import com.airemote.network.airemote.dto.RunDto
 import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlin.random.Random
 
 sealed class SessionPermissionsUiState {
     object Loading : SessionPermissionsUiState()
@@ -49,6 +53,10 @@ class ChatViewModel(
 
     private val _streaming = MutableStateFlow(false)
     val streaming = _streaming.asStateFlow()
+
+    /** 断线自动重连中：界面据此显示横幅（此时 [streaming] 仍为 true）。 */
+    private val _reconnecting = MutableStateFlow(false)
+    val reconnecting = _reconnecting.asStateFlow()
 
     /** 进入会话后重建历史期间为 true：界面据此显示加载指示，而不是空白消息区。 */
     private val _historyLoading = MutableStateFlow(false)
@@ -82,6 +90,15 @@ class ChatViewModel(
     private var sessionId: String? = null
     private var streamJob: Job? = null
 
+    /** 已收到的最大 `seq`，重连时作为 `?after=` 游标（-1 = 本轮还没收到任何帧）。 */
+    private var lastSeq = -1L
+
+    /** 流的代数：`cancel()` 存在取消不掉的窗口，靠它让旧循环彻底失效。 */
+    private var streamGen = 0
+
+    /** 用户主动停止 / 切会话 / 发新消息时置位，让在途的重连循环退出。 */
+    private var giveUp = false
+
     // 新建会话时由 Sheet 传入的续接 Claude 会话 / runtime / Workspace / 权限模式
     private var initialClaudeSessionId: String? = null
     private var initialRuntime: String? = null
@@ -89,6 +106,8 @@ class ChatViewModel(
     private var initialPermissionMode: String? = null
 
     fun load(sessionId: String?) {
+        // 切会话时先掐掉在途的流，否则旧 run 的帧会灌进新会话。
+        cancelStream()
         this.sessionId = sessionId
         if (sessionId == null) {
             PendingNewSession.take()?.let {
@@ -178,15 +197,18 @@ class ChatViewModel(
         }
         _messages.update { it + ChatUiMessage.User(prompt) + ChatUiMessage.Assistant() }
         _error.value = null
-        start(
-            repository.chatStream(
+        // 新 run：seq 空间是新的，runId 要等首帧 status 才知道
+        startStream(
+            initialFlow = repository.chatStream(
                 sessionId = sessionId,
                 prompt = prompt,
                 claudeSessionId = initialClaudeSessionId,
                 runtime = initialRuntime,
                 workspaceId = initialWorkspaceId,
                 permissionMode = initialPermissionMode,
-            )
+            ),
+            runId = null,
+            initialAfter = null,
         )
         initialClaudeSessionId = null
         initialRuntime = null
@@ -200,26 +222,144 @@ class ChatViewModel(
             val last = list.lastOrNull()
             if (last is ChatUiMessage.Assistant && !last.done) list else list + ChatUiMessage.Assistant()
         }
-        start(repository.runStream(runId, after = null))
+        // 全量回放该 run 的事件（历史重建时运行中的 run 是留空的）
+        startStream(
+            initialFlow = repository.runStream(runId, after = null),
+            runId = runId,
+            initialAfter = null,
+        )
     }
 
-    private fun start(flow: Flow<ChatStreamEvent>) {
+    /**
+     * 跑一条流，并在断线时自动续接。
+     *
+     * daemon 侧 run 与连接解耦（断开不杀进程），事件按 `(run_id, seq)` 落库，所以「流断了」
+     * 几乎总能靠 `GET /api/runs/:id/stream?after=<lastSeq>` 续上：回放缺口后继续直播，
+     * 不重建消息列表，也就不会闪烁或重复。
+     *
+     * @param initialFlow 首轮用的流：新会话是 `/api/chat`，重连已有 run 是 `/api/runs/:id/stream`
+     * @param runId 已知的 run id；新会话传 null（首帧 `status` 才会带出来）
+     * @param initialAfter 首轮的 `?after=` 游标
+     */
+    private fun startStream(
+        initialFlow: Flow<ChatStreamEvent>,
+        runId: String?,
+        initialAfter: Long?,
+    ) {
         streamJob?.cancel()
+        val gen = ++streamGen
         _streaming.value = true
+        _reconnecting.value = false
+        giveUp = false
+        lastSeq = -1L
+
         streamJob = viewModelScope.launch {
-            flow.collect { evt ->
-                when (evt) {
-                    is ChatStreamEvent.Frame -> handleFrame(evt)
-                    is ChatStreamEvent.Failed -> {
-                        _error.value = evt.message
-                        // 传输失败不代表 daemon 上的 run 结束；保留待审批弹窗，
-                        // 网络恢复后用户仍可作出决定。
-                        finish(clearPermissions = false)
+            var currentRunId = runId
+            var after = initialAfter
+            var flow = initialFlow
+            var attempt = 0
+            var unreachableSince: Long? = null
+
+            while (isActive && !giveUp && gen == streamGen) {
+                var terminal = false
+                var failure: ChatStreamEvent.Failed? = null
+                var frames = 0
+                val startedAt = SystemClock.elapsedRealtime()
+
+                flow.collect { evt ->
+                    when (evt) {
+                        is ChatStreamEvent.Frame -> {
+                            frames++
+                            // 收到帧说明链路已恢复，横幅撤掉（重连成功但没终局事件时靠这里收尾）
+                            if (_reconnecting.value) _reconnecting.value = false
+                            if (evt.frame.seq > lastSeq) lastSeq = evt.frame.seq
+                            handleFrame(evt)
+                            if (isTerminal(evt.frame.event)) terminal = true
+                        }
+                        is ChatStreamEvent.Failed -> failure = evt
+                        is ChatStreamEvent.Closed -> Unit
                     }
-                    is ChatStreamEvent.Closed -> finish()
+                }
+                if (!isActive || giveUp || gen != streamGen) return@launch
+                // 健康判定只看流本身活了多久，不含下面探测的耗时（探测要等连接超时，会误判）
+                val streamMs = SystemClock.elapsedRealtime() - startedAt
+
+                // 新会话的 run id 来自首帧 status；首轮就失败时会拿不到。
+                // 已终局就不必探测了 —— 少一次无谓的请求。
+                val resumable = currentRunId ?: _runId.value
+                val probed = if (terminal || resumable == null) null else repository.isRunActive(resumable)
+                val now = SystemClock.elapsedRealtime()
+                if (probed == null) {
+                    if (unreachableSince == null) unreachableSince = now
+                } else {
+                    unreachableSince = null
+                }
+
+                // 连 run id 都没拿到（请求刚发出就断了）→ 无从续接，只能让用户重发
+                val decision = if (!terminal && resumable == null) {
+                    ReconnectPolicy.Decision.GiveUp
+                } else {
+                    ReconnectPolicy.decide(
+                        terminal = terminal,
+                        httpCode = failure?.httpCode,
+                        runActive = probed,
+                        unreachableMs = unreachableSince?.let { now - it } ?: 0L,
+                        attempt = attempt,
+                        jitter = Random.nextDouble(),
+                    )
+                }
+
+                when (decision) {
+                    ReconnectPolicy.Decision.Finished -> {
+                        finish()
+                        return@launch
+                    }
+                    ReconnectPolicy.Decision.Settled -> {
+                        // run 已经从 daemon 消失（结束 / 重启 / 被看门狗取消）。
+                        // 通常尾部事件在这一轮 connect 时就回放完了；但如果这一轮压根没连上
+                        // （failure != null），缺的尾部得用一次性回放补上，否则消息会截断。
+                        if (failure != null && resumable != null) {
+                            val r = repository.runEvents(resumable, if (lastSeq >= 0) lastSeq else null)
+                            if (r is NetworkResult.Success) {
+                                r.data.events.forEach { handleFrame(ChatStreamEvent.Frame(it)) }
+                            }
+                        }
+                        finish()
+                        return@launch
+                    }
+                    ReconnectPolicy.Decision.GiveUp -> {
+                        _error.value = failure?.message
+                            ?: if (resumable == null) "请求未送达，请重新发送" else "连接已断开"
+                        finish(clearPermissions = false, markDone = false)
+                        return@launch
+                    }
+                    is ReconnectPolicy.Decision.Retry -> {
+                        // 这一轮收到过帧、或流活过了健康阈值，就认为退避该归零；
+                        // 反之（连上就被掐断）才加长退避
+                        attempt = if (frames > 0 || streamMs > ReconnectPolicy.HEALTHY_ATTEMPT_MS) {
+                            0
+                        } else {
+                            attempt + 1
+                        }
+                        _reconnecting.value = true
+                        delay(decision.delayMs)
+                        currentRunId = resumable
+                        after = if (lastSeq >= 0) lastSeq else initialAfter
+                        flow = repository.runStream(currentRunId!!, after)
+                    }
                 }
             }
         }
+    }
+
+    /** 掐断在途的流（含在途的重连循环），不碰 run 本身。 */
+    private fun cancelStream() {
+        giveUp = true
+        streamGen++
+        streamJob?.cancel()
+        streamJob = null
+        _reconnecting.value = false
+        _streaming.value = false
     }
 
     private fun handleFrame(evt: ChatStreamEvent.Frame) {
@@ -290,18 +430,25 @@ class ChatViewModel(
         }
     }
 
-    private fun finish(clearPermissions: Boolean = true) {
+    /**
+     * 结束当前流。[markDone] 为 false 时保留最后一条回复的"未完成"状态——放弃重连时用，
+     * 否则被中断的回复会被标成已完成，用户既看不出区别也无法再续。
+     */
+    private fun finish(clearPermissions: Boolean = true, markDone: Boolean = true) {
         _streaming.value = false
+        _reconnecting.value = false
         _runId.value = null
         if (clearPermissions) {
             _permission.value = null
             permissionQueue.clear()
             queuedPermissionIds.clear()
         }
-        _messages.update { list ->
-            val lastIndex = list.lastIndex
-            list.mapIndexed { i, m ->
-                if (i == lastIndex && m is ChatUiMessage.Assistant) m.copy(done = true) else m
+        if (markDone) {
+            _messages.update { list ->
+                val lastIndex = list.lastIndex
+                list.mapIndexed { i, m ->
+                    if (i == lastIndex && m is ChatUiMessage.Assistant) m.copy(done = true) else m
+                }
             }
         }
     }
@@ -426,8 +573,9 @@ class ChatViewModel(
     }
 
     fun stop() {
+        // 先取 runId：cancelStream() 会把 _runId 清掉
         val rid = _runId.value
-        streamJob?.cancel()
+        cancelStream()
         finish()
         if (rid != null) {
             viewModelScope.launch { repository.cancelRun(rid) }

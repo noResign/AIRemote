@@ -1,5 +1,6 @@
 package com.airemote.airemote.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +37,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
@@ -42,6 +45,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.ui.theme.LocalSemanticColors
 import com.airemote.airemote.viewmodel.SessionPermissionsUiState
 import com.airemote.airemote.ui.chat.InputBar
 import com.airemote.airemote.ui.chat.MessageList
@@ -68,6 +72,7 @@ fun ChatScreen(
     val runtime by viewModel.sessionRuntime.collectAsState()
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
+    val reconnecting by viewModel.reconnecting.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -121,6 +126,9 @@ fun ChatScreen(
                         expanded = todoExpanded,
                         onToggle = { todoExpanded = !todoExpanded },
                     )
+                }
+                if (reconnecting) {
+                    ReconnectBanner()
                 }
                 InputBar(
                     input = input,
@@ -237,5 +245,32 @@ fun ChatScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * 断线重连中的提示条（设计规范 §7.5 的 `reconnecting` 态：琥珀转圈 + 文案）。
+ * run 仍在电脑上跑，所以这里不打断阅读、也不清空消息，只提示"正在续上"。
+ */
+@Composable
+private fun ReconnectBanner() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(14.dp),
+            strokeWidth = 2.dp,
+            color = LocalSemanticColors.current.warning,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = "连接断开，正在重连…",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }

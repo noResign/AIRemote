@@ -57,9 +57,25 @@ class ChatRepository(
         return safeApiCall { api.session(id) }
     }
 
-    suspend fun runEvents(runId: String): NetworkResult<EventsResponse> {
+    suspend fun runEvents(runId: String, after: Long? = null): NetworkResult<EventsResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.runEvents(runId) }
+        return safeApiCall { api.runEvents(runId, after) }
+    }
+
+    /**
+     * daemon **内存态**里这个 run 是否仍在运行（`GET /api/runs`）。
+     *
+     * 用来区分两种「流断了」：run 还活着（继续重连）／run 已消失（收口）——后者覆盖正常结束、
+     * daemon 重启、被空闲看门狗取消三种情况。
+     *
+     * 返回 `null` 表示查询本身失败（断网 / daemon 不可达），此时没有判断依据，调用方应继续重试。
+     */
+    suspend fun isRunActive(runId: String): Boolean? {
+        val api = api() ?: return null
+        return when (val r = safeApiCall { api.runs() }) {
+            is NetworkResult.Success -> r.data.runs.any { it.id == runId }
+            is NetworkResult.Error -> null
+        }
     }
 
     suspend fun decidePermission(permissionId: String, decision: String, reason: String? = null): NetworkResult<Unit> {

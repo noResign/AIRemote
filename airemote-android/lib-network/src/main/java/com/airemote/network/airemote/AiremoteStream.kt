@@ -62,7 +62,7 @@ class AiremoteStream(
             // 传输层异常 / 协议解码失败 → Failed（其余异常照旧抛出）
             .catch { cause ->
                 when (cause) {
-                    is SseException -> emit(ChatStreamEvent.Failed(describe(cause)))
+                    is SseException -> emit(ChatStreamEvent.Failed(describe(cause), cause.httpCode))
                     is SerializationException -> emit(ChatStreamEvent.Failed("无法解析 daemon 事件帧（协议可能不兼容）"))
                     else -> throw cause
                 }

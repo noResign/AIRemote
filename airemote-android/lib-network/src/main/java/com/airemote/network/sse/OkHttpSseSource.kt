@@ -62,10 +62,19 @@ class OkHttpSseSource(
 private val sharedSseClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS) // 长连接不设读超时
+        // 读超时不能是 0：断网（wifi 掉线、锁屏、隧道瞬断）后阻塞读永不返回，上层连
+        // 「连接已死」这个信号都拿不到，自动重连也就无从触发。
+        .readTimeout(SSE_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 }
+
+/**
+ * SSE 读超时。**与 daemon 的 keepalive 间隔（15 秒）绑定**：两条 SSE 端点都每 15 秒写一行
+ * `: keepalive`，所以 45 秒（连续 3 次收不到任何字节）足以判定死链。改动任一边都要同步改
+ * 另一边（`airemote-daemon/src/routes/chat.ts`、`routes/runs.ts` 里的 `setInterval`）。
+ */
+private const val SSE_READ_TIMEOUT_SECONDS = 45L
 
 /** [OkHttpSseSource] 的默认长连接客户端；构造时可注入替换（测试 / 复用）。 */
 fun defaultSseClient(): OkHttpClient = sharedSseClient
