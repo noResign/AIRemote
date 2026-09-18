@@ -80,6 +80,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val diffState by viewModel.diffState.collectAsState()
     val fileBrowser by viewModel.fileBrowser.collectAsState()
     val fileContent by viewModel.fileContent.collectAsState()
+    val pickingDir by viewModel.pickingDir.collectAsState()
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
     var fileBrowserQuery by remember { mutableStateOf("") }
 
@@ -120,11 +121,24 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
             ) {
                 SegmentedTabs(mode = mode, onSelect = viewModel::selectMode)
                 when (mode) {
-                    FilesMode.Changes -> ChangesContent(
-                        state = uiState,
-                        onRetry = viewModel::refresh,
-                        onOpen = viewModel::openDiff,
-                    )
+                    FilesMode.Changes -> if (pickingDir) {
+                        DirPickerContent(
+                            state = fileBrowser,
+                            onBrowse = viewModel::browse,
+                            onLoadMore = viewModel::loadMore,
+                            onConfirm = viewModel::confirmPickDir,
+                            onCancel = viewModel::cancelPickDir,
+                            onRetry = viewModel::refresh,
+                        )
+                    } else {
+                        ChangesContent(
+                            state = uiState,
+                            onRetry = viewModel::refresh,
+                            onOpen = viewModel::openDiff,
+                            onSelectScope = viewModel::selectScope,
+                            onPickDir = viewModel::startPickDir,
+                        )
+                    }
                     FilesMode.All -> FileBrowserContent(
                         state = fileBrowser,
                         query = fileBrowserQuery,
@@ -176,17 +190,21 @@ private fun ChangesContent(
     state: FilesUiState,
     onRetry: () -> Unit,
     onOpen: (ChangedFileDto) -> Unit,
+    onSelectScope: (String) -> Unit,
+    onPickDir: () -> Unit,
 ) {
     when (state) {
         is FilesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
         is FilesUiState.Error -> ErrorContent(state.message, onRetry)
-        is FilesUiState.Content -> {
+        is FilesUiState.Content -> Column(modifier = Modifier.fillMaxSize()) {
+            ScopeBar(scopePath = state.scopePath, onPickDir = onPickDir)
             when {
+                !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onSelectScope)
                 !state.isGitRepo -> EmptyHint(
-                    title = "当前工作区不是 Git 仓库",
-                    body = "改动视图基于 git status，暂不可用。",
+                    title = "此目录不是 Git 仓库",
+                    body = "它下面的仓库会列在这里；更深的目录请点上方选择。",
                 )
                 state.files.isEmpty() -> EmptyHint(
                     title = "当前没有未提交的改动",
@@ -208,9 +226,149 @@ private fun ChangesContent(
                         ChangeRow(file = file, onClick = { onOpen(file) })
                     }
                 }
+            }
         }
     }
 }
+
+/** 改动视图作用于哪个目录；点一下进选目录模式。 */
+@Composable
+private fun ScopeBar(scopePath: String, onPickDir: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onPickDir() }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            "目录：" + scopePath.ifBlank { "工作区根目录" },
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            "选择",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun RepoList(repos: List<String>, onSelectScope: (String) -> Unit) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        item {
+            Text(
+                "此目录不是 Git 仓库，下面是它子目录里的仓库",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+        }
+        items(repos, key = { it }) { repo ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelectScope(repo) }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("📁")
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    repo.substringAfterLast('/'),
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+/** 选目录模式：点行 = 进入该目录，选中靠「用此目录」。 */
+@Composable
+private fun DirPickerContent(
+    state: FileBrowserUiState,
+    onBrowse: (String?) -> Unit,
+    onLoadMore: () -> Unit,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val directories = remember(state.entries) { state.entries.filter { it.type == "directory" } }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onCancel) { Text("取消") }
+            Text(
+                "选择要查看改动的目录",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onConfirm) { Text("用此目录") }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            breadcrumbs(state.path).forEachIndexed { index, crumb ->
+                if (index > 0) Text(" / ", color = IdeMuted, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    crumb.label,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clickable { onBrowse(crumb.path) }
+                        .padding(horizontal = 2.dp, vertical = 4.dp),
+                )
+            }
+        }
+        Row(modifier = Modifier.padding(horizontal = 12.dp)) {
+            if (state.parent != null) {
+                TextButton(onClick = { onBrowse(state.parent) }) { Text("上一级") }
+            }
+        }
+        LazyColumn(
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (state.loading && state.entries.isEmpty()) {
+                item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+            }
+            state.error?.let { message -> item { ErrorContent(message, onRetry) } }
+            if (directories.isEmpty() && !state.loading && state.error == null) {
+                item { Text("此目录下没有子目录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            items(directories, key = { it.path }) { entry ->
+                FileEntryRow(entry = entry, onOpen = {}, onBrowse = onBrowse)
+            }
+            if (state.nextCursor != null) {
+                item {
+                    OutlinedButton(
+                        onClick = onLoadMore,
+                        enabled = !state.loadingMore,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (state.loadingMore) "加载中…" else "加载更多") }
+                }
+            }
+        }
+    }
 }
 
 @Composable

@@ -20,8 +20,12 @@ data class ChangedFileDto(
 data class ChangesResponse(
     val workspaceId: String = "",
     val workspacePath: String = "",
+    /** 本次检查的目录，workspace 相对路径（"" = 工作区根目录）。 */
+    val dir: String = "",
     val isGitRepo: Boolean = false,
     val gitRoot: String? = null,
+    /** `dir` 直接子目录里的 git 仓库（workspace 相对路径），仅在非仓库目录下有值。 */
+    val repos: List<String> = emptyList(),
     val files: List<ChangedFileDto> = emptyList(),
 )
 

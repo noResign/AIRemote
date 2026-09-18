@@ -117,8 +117,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
 | `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止） |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
-| `GET /api/changes` | 是 | 当前 Workspace 的 Git 未提交改动，`?workspaceId=` |
-| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&path=<relative>` |
+| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&dir=<relative>`（`dir` 默认工作区根） |
+| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&path=<relative>&dir=<relative>` |
 | `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&path=&cursor=&limit=&showHidden=&showIgnored=` |
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
@@ -146,9 +146,20 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 会话 DTO 含 `workspaceId`、`permissionMode`；Run DTO 含 `workspaceId`（见 `types/api.ts`）。
 
-**改动文件（Files Tab）**：`/api/changes` 基于 `git status --porcelain=v1 -z -- .` 返回当前
-Workspace 内的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回
-单文件 patch。非 Git Workspace 返回 `isGitRepo=false`。详见 `docs/files_tab_design.md`。
+**改动文件（Files Tab）**：`/api/changes` 基于 `git status --porcelain=v1 -z -- .` 返回指定目录
+的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回单文件 patch。
+详见 `docs/files_tab_design.md`。
+
+**目录作用域（`dir`）**：`git rev-parse --show-toplevel` 只向上找仓库，所以工作区根目录自身不在
+任何仓库时（如 `~/OpenProject` 下面平铺着一堆仓库），根目录看改动会直接 `isGitRepo=false`。
+为此两个端点都接受 `dir`（workspace 相对路径，默认 `''` = 根）：
+
+- `dir` 必须落在 workspace 内（`resolveScopeDir` 做 realpath 后再判包含，防 symlink 逃逸），
+  越界/不存在/非目录分别报 `path_outside_workspace` / `directory_not_found` / `not_a_directory`；
+- git 命令的 cwd 是 `dir`，但**返回的文件路径始终是 workspace 相对**——客户端既有链路
+  （diff、文件内容）因此不需要区分作用域；
+- 非仓库目录额外返回 `repos`：**只看直接子目录一层**（跳过 `.git`/`node_modules` 等 `IGNORED_DIRS`，
+  命中仓库不再下钻），更深的层级由客户端选目录进去。返回空数组表示该目录下没有仓库。
 
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 
@@ -407,22 +418,22 @@ airemote --help
 .tmp/daemon-release/package/airemote-<version>.tgz
 ```
 
-上传位置：
+上传位置（bucket 由 `OSS_BUCKET` / `OSS_PUBLIC_BASE` 决定，见 `scripts/oss-config.sh`）：
 
 ```text
-https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-<version>.tgz
-https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+$OSS_PUBLIC_BASE/daemon/airemote-<version>.tgz
+$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz
 ```
 
 对方机器直接全局安装：
 
 ```bash
 # 推荐 npm（全局 bin 通常已在 PATH）
-npm install -g --force https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+npm install -g --force "$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz"
 
 # 或 pnpm（需先 pnpm setup 并重开终端）
 pnpm setup
-pnpm add -g --force https://your-bucket.oss-cn-hangzhou.aliyuncs.com/daemon/airemote-latest.tgz
+pnpm add -g --force "$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz"
 ```
 
 安装后：

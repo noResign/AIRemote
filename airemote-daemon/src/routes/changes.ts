@@ -19,8 +19,9 @@ export function registerChangesRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
+    const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
     try {
-      const result = await listChanges(workspace.path);
+      const result = await listChanges(workspace.path, dir);
       res.json({
         workspaceId: workspace.id,
         workspacePath: workspace.path,
@@ -43,8 +44,9 @@ export function registerChangesRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'path is required', code: 'bad_request' });
       return;
     }
+    const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
     try {
-      const result = await getDiff(workspace.path, relativePath);
+      const result = await getDiff(workspace.path, relativePath, dir);
       res.json(result);
     } catch (err) {
       sendChangesError(res, err);

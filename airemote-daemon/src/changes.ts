@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { IGNORED_DIRS } from './file-browser.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -22,8 +23,10 @@ export interface ChangedFile {
 }
 
 export interface ChangesResult {
+  dir: string;
   isGitRepo: boolean;
   gitRoot: string | null;
+  repos: string[];
   files: ChangedFile[];
 }
 
@@ -93,6 +96,62 @@ function insideWorkspace(workspacePath: string, absolute: string): boolean {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
+function toWire(relativePath: string): string {
+  return relativePath.split(path.sep).filter(Boolean).join('/');
+}
+
+/**
+ * Resolve the directory whose git state we inspect. `dir` is workspace-relative
+ * ('' = workspace root), so the scope can only narrow the workspace, never
+ * escape it. Reported paths stay workspace-relative regardless.
+ */
+function resolveScopeDir(workspacePath: string, dir: string): string {
+  if (path.isAbsolute(dir)) {
+    throw new ChangesError('dir must be a relative path', 'path_outside_workspace', 400);
+  }
+  const absolute = dir ? path.resolve(workspacePath, dir) : workspacePath;
+  if (!insideWorkspace(workspacePath, absolute)) {
+    throw new ChangesError('dir is outside workspace', 'path_outside_workspace', 400);
+  }
+  let real: string;
+  try {
+    real = fs.realpathSync(absolute);
+  } catch {
+    throw new ChangesError('directory not found', 'directory_not_found', 404);
+  }
+  if (!insideWorkspace(workspacePath, real)) {
+    throw new ChangesError('dir is outside workspace', 'path_outside_workspace', 400);
+  }
+  if (!fs.statSync(real).isDirectory()) {
+    throw new ChangesError('dir is not a directory', 'not_a_directory', 400);
+  }
+  return real;
+}
+
+/**
+ * Git repos among `rootAbs`'s direct children. Depth is deliberately 1: a
+ * workspace like ~/OpenProject holds a dozen repos one level down, and going
+ * deeper would scan the whole tree on every request. Deeper nesting is reached
+ * by browsing into it.
+ */
+function listChildGitRepos(rootAbs: string): string[] {
+  let dirents: fs.Dirent[];
+  try {
+    dirents = fs.readdirSync(rootAbs, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const repos: string[] = [];
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory() || dirent.isSymbolicLink()) continue;
+    const name = dirent.name;
+    if (!name || name.startsWith('.') || IGNORED_DIRS.has(name)) continue;
+    if (!fs.existsSync(path.join(rootAbs, name, '.git'))) continue;
+    repos.push(name);
+  }
+  return repos.sort((a, b) => a.localeCompare(b));
+}
+
 function toWirePath(workspacePath: string, gitRoot: string, gitPath: string): { path: string; isDirectory: boolean } | null {
   const absolute = path.resolve(gitRoot, gitPath);
   if (!insideWorkspace(workspacePath, absolute)) return null;
@@ -138,7 +197,10 @@ function mergeStat(a: DiffStat | undefined, b: DiffStat | undefined): DiffStat {
   };
 }
 
+/** `scopeDir` is git's cwd (it must be inside the repo); paths come back
+ *  relative to `workspacePath`. */
 async function readNumstat(
+  scopeDir: string,
   workspacePath: string,
   gitRoot: string,
   cached: boolean,
@@ -146,7 +208,7 @@ async function readNumstat(
   const args = ['diff', '--numstat', '--no-ext-diff', '--no-textconv'];
   if (cached) args.push('--cached');
   args.push('--', '.');
-  const result = await runGit(workspacePath, args);
+  const result = await runGit(scopeDir, args);
   const stats = new Map<string, DiffStat>();
   if (!result.ok) return stats;
   for (const line of result.stdout.split('\n')) {
@@ -190,20 +252,28 @@ function parseStatusZ(output: string): ParsedStatusEntry[] {
   return entries;
 }
 
-export async function listChanges(workspacePath: string): Promise<ChangesResult> {
-  const gitRoot = await gitRootFor(workspacePath);
+export async function listChanges(workspacePath: string, dir = ''): Promise<ChangesResult> {
+  const scopeDir = resolveScopeDir(workspacePath, dir);
+  const scopeWire = toWire(path.relative(workspacePath, scopeDir));
+  const gitRoot = await gitRootFor(scopeDir);
   if (!gitRoot) {
-    return { isGitRepo: false, gitRoot: null, files: [] };
+    return {
+      dir: scopeWire,
+      isGitRepo: false,
+      gitRoot: null,
+      repos: listChildGitRepos(scopeDir).map((name) => (scopeWire ? `${scopeWire}/${name}` : name)),
+      files: [],
+    };
   }
 
-  const result = await runGit(workspacePath, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--', '.']);
+  const result = await runGit(scopeDir, ['status', '--porcelain=v1', '-z', '--untracked-files=normal', '--', '.']);
   if (!result.ok) {
     throw new ChangesError(`git status failed: ${result.stderr}`, 'git_failed', 500);
   }
 
   const [unstagedStats, stagedStats] = await Promise.all([
-    readNumstat(workspacePath, gitRoot, false),
-    readNumstat(workspacePath, gitRoot, true),
+    readNumstat(scopeDir, workspacePath, gitRoot, false),
+    readNumstat(scopeDir, workspacePath, gitRoot, true),
   ]);
 
   const files: ChangedFile[] = [];
@@ -226,7 +296,7 @@ export async function listChanges(workspacePath: string): Promise<ChangesResult>
   }
 
   files.sort((a, b) => a.path.localeCompare(b.path));
-  return { isGitRepo: true, gitRoot, files };
+  return { dir: scopeWire, isGitRepo: true, gitRoot, repos: [], files };
 }
 
 function resolveRelativePath(workspacePath: string, relativePath: string): string {
@@ -270,14 +340,15 @@ function untrackedPatch(relativePath: string, text: string): string {
   ].join('\n');
 }
 
-export async function getDiff(workspacePath: string, relativePath: string): Promise<DiffResult> {
+export async function getDiff(workspacePath: string, relativePath: string, dir = ''): Promise<DiffResult> {
   const absolute = resolveRelativePath(workspacePath, relativePath);
-  const gitRoot = await gitRootFor(workspacePath);
+  const scopeDir = resolveScopeDir(workspacePath, dir);
+  const gitRoot = await gitRootFor(scopeDir);
   if (!gitRoot) {
-    throw new ChangesError('workspace is not a git repository', 'not_git_repo', 400);
+    throw new ChangesError('directory is not a git repository', 'not_git_repo', 400);
   }
 
-  const changes = await listChanges(workspacePath);
+  const changes = await listChanges(workspacePath, dir);
   const normalized = relativePath.split(path.sep).join('/');
   const entry = changes.files.find((file) => file.path === normalized || file.oldPath === normalized);
   if (!entry) {
@@ -304,12 +375,16 @@ export async function getDiff(workspacePath: string, relativePath: string): Prom
     };
   }
 
+  // Git resolves pathspecs against its cwd, which is the scope dir — hand it the
+  // scope-relative path, not the workspace-relative one we report.
+  const scopedPath = toWire(path.relative(scopeDir, absolute));
+
   let staged = false;
-  const unstaged = await runGit(workspacePath, ['diff', '--no-ext-diff', '--no-textconv', '-M', '--unified=3', '--', relativePath]);
+  const unstaged = await runGit(scopeDir, ['diff', '--no-ext-diff', '--no-textconv', '-M', '--unified=3', '--', scopedPath]);
   if (unstaged.ok && unstaged.stdout) {
     patch = unstaged.stdout;
   } else {
-    const cached = await runGit(workspacePath, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '-M', '--unified=3', '--', relativePath]);
+    const cached = await runGit(scopeDir, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '-M', '--unified=3', '--', scopedPath]);
     if (cached.ok && cached.stdout) {
       patch = cached.stdout;
       staged = true;

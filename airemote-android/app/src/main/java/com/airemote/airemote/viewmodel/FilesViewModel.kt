@@ -20,7 +20,11 @@ sealed class FilesUiState {
     object Loading : FilesUiState()
     data class Content(
         val workspacePath: String,
+        /** 本次检查的目录（workspace 相对路径，"" = 工作区根目录）。 */
+        val scopePath: String,
         val isGitRepo: Boolean,
+        /** `scopePath` 直接子目录里的仓库；非仓库目录下才有值。 */
+        val repos: List<String>,
         val files: List<ChangedFileDto>,
     ) : FilesUiState()
     data class Error(val message: String) : FilesUiState()
@@ -69,6 +73,14 @@ class FilesViewModel(
     private val _fileContent = MutableStateFlow<FileContentUiState?>(null)
     val fileContent = _fileContent.asStateFlow()
 
+    /** 改动视图当前检查的目录（workspace 相对路径，"" = 工作区根目录）。 */
+    private val _scope = MutableStateFlow("")
+    val scope = _scope.asStateFlow()
+
+    /** 选目录模式：借用 `fileBrowser` 的列表与导航，点行只用于浏览，选中靠确认按钮。 */
+    private val _pickingDir = MutableStateFlow(false)
+    val pickingDir = _pickingDir.asStateFlow()
+
     init {
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
@@ -76,6 +88,8 @@ class FilesViewModel(
                 _fileContent.value = null
                 _uiState.value = FilesUiState.Loading
                 _fileBrowser.value = FileBrowserUiState()
+                _scope.value = ""
+                _pickingDir.value = false
                 loadChanges(workspaceId)
                 if (_mode.value == FilesMode.All) browse(null)
             }
@@ -97,27 +111,56 @@ class FilesViewModel(
     fun selectMode(mode: FilesMode) {
         if (_mode.value == mode) return
         _mode.value = mode
+        _pickingDir.value = false
         if (mode == FilesMode.All && _fileBrowser.value.entries.isEmpty() && !_fileBrowser.value.loading) {
             browse(null)
         }
     }
 
-    private suspend fun loadChanges(workspaceId: String?) {
-        when (val r = repository.changes(workspaceId)) {
-            is NetworkResult.Success -> _uiState.value = FilesUiState.Content(
-                workspacePath = r.data.workspacePath,
-                isGitRepo = r.data.isGitRepo,
-                files = r.data.files,
-            )
+    private suspend fun loadChanges(workspaceId: String?, dir: String = _scope.value) {
+        when (val r = repository.changes(workspaceId, dir)) {
+            is NetworkResult.Success -> {
+                _scope.value = r.data.dir
+                _uiState.value = FilesUiState.Content(
+                    workspacePath = r.data.workspacePath,
+                    scopePath = r.data.dir,
+                    isGitRepo = r.data.isGitRepo,
+                    repos = r.data.repos,
+                    files = r.data.files,
+                )
+            }
             is NetworkResult.Error -> _uiState.value = FilesUiState.Error(friendlyError(r))
         }
+    }
+
+    /** 切到某个目录看它的 git（"" = 工作区根目录）。 */
+    fun selectScope(dir: String) {
+        _pickingDir.value = false
+        _diffState.value = null
+        _fileContent.value = null
+        _scope.value = dir
+        _uiState.value = FilesUiState.Loading
+        viewModelScope.launch { loadChanges(WorkspaceSelection.current(), dir) }
+    }
+
+    fun startPickDir() {
+        _pickingDir.value = true
+        browse(_scope.value.ifBlank { null })
+    }
+
+    fun cancelPickDir() {
+        _pickingDir.value = false
+    }
+
+    fun confirmPickDir() {
+        selectScope(_fileBrowser.value.path)
     }
 
     fun openDiff(file: ChangedFileDto) {
         if (file.isDirectory) return
         _diffState.value = DiffUiState.Loading(file.path)
         viewModelScope.launch {
-            when (val r = repository.diff(WorkspaceSelection.current(), file.path)) {
+            when (val r = repository.diff(WorkspaceSelection.current(), file.path, _scope.value)) {
                 is NetworkResult.Success -> _diffState.value = DiffUiState.Ready(r.data)
                 is NetworkResult.Error -> _diffState.value = DiffUiState.Error(file.path, friendlyError(r))
             }

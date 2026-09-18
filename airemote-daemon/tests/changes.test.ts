@@ -11,6 +11,16 @@ function git(...args: string[]): void {
   execFileSync('git', args, { cwd: dir, stdio: 'pipe' });
 }
 
+function gitIn(cwd: string, ...args: string[]): void {
+  execFileSync('git', args, { cwd, stdio: 'pipe' });
+}
+
+function initRepo(repoDir: string): void {
+  gitIn(repoDir, 'init', '-q');
+  gitIn(repoDir, 'config', 'user.email', 'test@example.com');
+  gitIn(repoDir, 'config', 'user.name', 'Test');
+}
+
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'airemote-changes-'));
 });
@@ -41,6 +51,8 @@ describe('git changes', () => {
 
     const result = await listChanges(dir);
     expect(result.isGitRepo).toBe(true);
+    expect(result.dir).toBe('');
+    expect(result.repos).toEqual([]);
 
     const tracked = result.files.find((f) => f.path === 'tracked.txt');
     expect(tracked).toMatchObject({ status: 'modified', staged: false, additions: 1, deletions: 1 });
@@ -75,5 +87,71 @@ describe('git changes', () => {
   it('rejects paths outside the workspace', async () => {
     await expect(getDiff(dir, '../outside.txt')).rejects.toMatchObject({ code: 'path_outside_workspace' });
     await expect(getDiff(dir, '/tmp/outside.txt')).rejects.toMatchObject({ code: 'path_outside_workspace' });
+  });
+});
+
+describe('directory scope', () => {
+  it('lists git repos among the direct children when the root is not a repo', async () => {
+    fs.mkdirSync(path.join(dir, 'beta'));
+    fs.mkdirSync(path.join(dir, 'alpha'));
+    fs.mkdirSync(path.join(dir, 'plain'));
+    fs.mkdirSync(path.join(dir, '.hidden'));
+    initRepo(path.join(dir, 'beta'));
+    initRepo(path.join(dir, 'alpha'));
+
+    const result = await listChanges(dir);
+    expect(result.isGitRepo).toBe(false);
+    expect(result.dir).toBe('');
+    expect(result.repos).toEqual(['alpha', 'beta']);
+  });
+
+  it('does not look past the direct children', async () => {
+    const nested = path.join(dir, 'wrapper', 'inner');
+    fs.mkdirSync(nested, { recursive: true });
+    initRepo(nested);
+
+    const result = await listChanges(dir);
+    expect(result.isGitRepo).toBe(false);
+    expect(result.repos).toEqual([]);
+  });
+
+  it('scopes changes to a subdirectory, keeping workspace-relative paths', async () => {
+    const repo = path.join(dir, 'alpha');
+    fs.mkdirSync(repo);
+    initRepo(repo);
+    fs.writeFileSync(path.join(repo, 'keep.txt'), 'one\n');
+    gitIn(repo, 'add', '.');
+    gitIn(repo, 'commit', '-qm', 'init');
+    fs.writeFileSync(path.join(repo, 'keep.txt'), 'two\n');
+    fs.writeFileSync(path.join(repo, 'untracked.txt'), 'new\n');
+
+    const scoped = await listChanges(dir, 'alpha');
+    expect(scoped.dir).toBe('alpha');
+    expect(scoped.isGitRepo).toBe(true);
+    expect(scoped.repos).toEqual([]);
+    expect(scoped.files.map((f) => f.path)).toEqual(['alpha/keep.txt', 'alpha/untracked.txt']);
+  });
+
+  it('diffs a file inside a scoped subdirectory', async () => {
+    const repo = path.join(dir, 'alpha');
+    fs.mkdirSync(repo);
+    initRepo(repo);
+    fs.writeFileSync(path.join(repo, 'keep.txt'), 'one\n');
+    gitIn(repo, 'add', '.');
+    gitIn(repo, 'commit', '-qm', 'init');
+    fs.writeFileSync(path.join(repo, 'keep.txt'), 'two\n');
+
+    const diff = await getDiff(dir, 'alpha/keep.txt', 'alpha');
+    expect(diff.status).toBe('modified');
+    expect(diff.patch).toContain('+two');
+  });
+
+  it('rejects a dir that escapes the workspace or is not a directory', async () => {
+    await expect(listChanges(dir, '../')).rejects.toMatchObject({ code: 'path_outside_workspace' });
+    await expect(listChanges(dir, '/tmp')).rejects.toMatchObject({ code: 'path_outside_workspace' });
+    await expect(listChanges(dir, 'missing')).rejects.toMatchObject({ code: 'directory_not_found' });
+
+    fs.writeFileSync(path.join(dir, 'plain.txt'), 'x');
+    await expect(listChanges(dir, 'plain.txt')).rejects.toMatchObject({ code: 'not_a_directory' });
   });
 });

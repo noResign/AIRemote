@@ -176,8 +176,12 @@ export interface ChangedFileDto {
 export interface ChangesResponse {
   workspaceId: string;
   workspacePath: string;
+  /** Directory inspected, relative to the workspace ('' = workspace root). */
+  dir: string;
   isGitRepo: boolean;
   gitRoot: string | null;
+  /** Git repos among `dir`'s direct children; only filled when `isGitRepo` is false. */
+  repos: string[];
   files: ChangedFileDto[];
 }
 

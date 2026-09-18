@@ -20,14 +20,14 @@ class ChangesRepository(
         return AiremoteClient.create(url, token)
     }
 
-    suspend fun changes(workspaceId: String?): NetworkResult<ChangesResponse> {
+    suspend fun changes(workspaceId: String?, dir: String = ""): NetworkResult<ChangesResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.changes(workspaceId) }
+        return safeApiCall { api.changes(workspaceId, dir) }
     }
 
-    suspend fun diff(workspaceId: String?, path: String): NetworkResult<DiffResponse> {
+    suspend fun diff(workspaceId: String?, path: String, dir: String = ""): NetworkResult<DiffResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.changeDiff(workspaceId, path) }
+        return safeApiCall { api.changeDiff(workspaceId, path, dir) }
     }
 
     suspend fun files(

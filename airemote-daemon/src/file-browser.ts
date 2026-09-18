@@ -4,7 +4,7 @@ import path from 'node:path';
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 500;
 const MAX_CONTENT_BYTES = 1024 * 1024;
-const IGNORED_DIRS = new Set([
+export const IGNORED_DIRS = new Set([
   '.git',
   '.gradle',
   '.idea',

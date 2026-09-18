@@ -92,12 +92,16 @@ interface AiremoteApi {
     ): DirectoriesResponse
 
     @GET("api/changes")
-    suspend fun changes(@Query("workspaceId") workspaceId: String? = null): ChangesResponse
+    suspend fun changes(
+        @Query("workspaceId") workspaceId: String? = null,
+        @Query("dir") dir: String? = null,
+    ): ChangesResponse
 
     @GET("api/changes/diff")
     suspend fun changeDiff(
         @Query("workspaceId") workspaceId: String? = null,
         @Query("path") path: String,
+        @Query("dir") dir: String? = null,
     ): DiffResponse
 
     @GET("api/files")

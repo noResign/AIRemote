@@ -59,42 +59,49 @@ src/utils/rename.ts      R
 - 支持大文件截断；
 - 二进制显示“暂不支持预览”。
 
-### 2.2 非 Git Workspace
+### 2.2 非 Git Workspace（目录作用域）
 
-如果 Workspace 不是 Git 仓库：
+`git rev-parse --show-toplevel` 只向上找仓库，所以 Workspace 根目录自身不在任何仓库时
+（典型场景：`~/OpenProject`，下面平铺着一堆各自 `git init` 的仓库），根目录看改动必然是
+`isGitRepo = false`。
 
-- 改动 Tab 显示空态：
-  - “当前工作区不是 Git 仓库，无法生成改动列表”；
-- 后续“全部文件”Tab 仍可独立工作。
+改动 Tab 因此带一个**目录作用域**：
+
+- 顶部显示当前检查的目录（空 = 工作区根目录），点一下进**选目录模式**；
+- 选目录模式复用「全部文件」的目录导航（面包屑 + 上一级），点行只用于浏览，选中靠
+  「用此目录」确认；
+- 当前目录不是仓库时，列出它**直接子目录**里的仓库供直接点选；更深的层级靠选目录进去；
+- 子目录里的仓库没有任何子仓库时，显示空态提示。
+
+作用域始终限制在 Workspace 内，不放开边界。
 
 ### 2.3 子模块 / 嵌套仓库
 
-第一版不处理子模块。
-
-如果 Workspace 下有嵌套 Git 仓库：
-
-- 以 Workspace 对应的主仓库为准；
-- 嵌套仓库会显示为普通目录/untracked 目录，不递归展开。
+- 子模块仍不特殊处理（显示为普通目录/untracked 目录）；
+- 嵌套仓库只在**直接子目录**这一层被识别（用于上面的仓库列表），不递归展开；
+- 仓库根在 Workspace 之上时，改动仍按 Workspace 边界过滤，只显示范围内的文件。
 
 ## 3. daemon 技术设计
 
 ### 3.1 Git 探测
 
-请求时对 Workspace 路径执行：
+请求时对**作用域目录**（`dir`，缺省为 Workspace 根）执行：
 
 ```bash
-git -C <workspacePath> rev-parse --show-toplevel
+git -C <scopeDir> rev-parse --show-toplevel
 ```
 
 结果：
 
 - 成功：得到 `gitRoot`；
-- 失败：`isGitRepo = false`；
+- 失败：`isGitRepo = false`，并扫描 `scopeDir` 的直接子目录填 `repos`；
 - 命令不存在：返回 `git_unavailable`。
 
 约束：
 
 - `workspacePath` 必须来自已注册且启用的 Workspace；
+- `dir` 必须是相对 Workspace 的路径，且解析后（含 realpath）仍落在 Workspace 内，
+  否则 `path_outside_workspace`；
 - 所有 path 参数必须是相对 Workspace 的路径；
 - 禁止直接把客户端传入的绝对路径交给 git。
 
@@ -160,8 +167,10 @@ GET /api/changes?workspaceId=<id>
 {
   "workspaceId": "ws-1",
   "workspacePath": "/home/me/project",
+  "dir": "",
   "isGitRepo": true,
   "gitRoot": "/home/me/project",
+  "repos": [],
   "files": [
     {
       "path": "src/auth/token.ts",
@@ -174,15 +183,20 @@ GET /api/changes?workspaceId=<id>
 }
 ```
 
-非 Git 仓库：
+非 Git 目录，但直接子目录里有仓库（`dir` 缺省 = 根）：
 
 ```json
 {
   "workspaceId": "ws-1",
+  "dir": "",
   "isGitRepo": false,
+  "gitRoot": null,
+  "repos": ["AIRemote", "llama.cpp"],
   "files": []
 }
 ```
+
+`dir` 指向子仓库时，`files` 里的路径仍是 **workspace 相对**（形如 `AIRemote/src/foo.kt`）。
 
 ### 4.2 文件 diff
 
