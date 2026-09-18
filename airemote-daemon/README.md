@@ -1,183 +1,81 @@
-# airemote
+# airemote-daemon
 
-Remote-control daemon for local coding agents. Run it on your Mac/Linux machine,
-point a client (Android/iOS app, web, or `curl`) at it, and it drives **Claude
-Code** for you — spawning the CLI headlessly, streaming text / thinking / tool
-calls back over SSE, and keeping sessions resumable.
+AIRemote 的守护进程：`spawn` 本机已安装的编码 agent CLI（当前 Claude Code，架构上预留多
+agent），以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给远程客户端。
 
-> Status: **daemon only**. The runtime abstraction is in place for future agents
-> (Codex, OpenCode, DeepSeek Harness, …); the Android/iOS client is not yet
-> implemented.
+完整技术方案（架构 / 协议 / 权限模型 / 数据模型 / 全部配置参数 / 分发）见
+**[docs/daemon.md](docs/daemon.md)**；项目总览见[根 README](../README.md)。
 
-## Why this exists
+## 前置
 
-OpenDesign's daemon already proved the hard parts: spawning Claude Code
-headlessly (`-p --input-format stream-json --output-format stream-json
---verbose`), parsing its JSONL stream into normalized events, and resuming
-sessions via `--session-id` / `--resume`. `airemote` extracts that loop into a
-standalone daemon and adds the remote-access boundary it needs (auth, TLS
-option, audit log, conservative permission mode).
+- Node `~24`、pnpm 10
+- 本机已装并登录 `claude` CLI（`claude auth login`）
 
-## Requirements
-
-- Node `~24`
-- pnpm `10.x`
-- `claude` CLI installed, on `PATH`, and authenticated (`claude auth login`)
-
-## Install & run
+## 构建与运行
 
 ```bash
-cd airemote
 pnpm install
-pnpm build
-ln -sf "$PWD/dist/index.js" ~/.local/bin/airemote   # make `airemote` runnable
-# or: pnpm setup && pnpm link --global
+pnpm build            # tsc → dist/index.js（含 permission-hook.js）
+node dist/index.js --workspace ~/code/my-project
 ```
 
-Then start it as a command, passing options directly:
+首次启动生成 token 并打印，同时打印本机局域网地址；token 持久化在 `<data-dir>/token`
+（默认 `~/.airemote/token`），删掉即轮换。
+
+开发用 `pnpm dev`（tsx watch）。要全局安装成 `airemote` 命令：
 
 ```bash
-airemote                              # 0.0.0.0:4780, workspace = current dir, prints token
-airemote --workspace ~/code/my-project # work in a specific directory
-airemote --port 9000 --permission-mode plan
-airemote --help                       # full option list
+ln -sf "$PWD/dist/index.js" ~/.local/bin/airemote
+airemote --help
 ```
 
-First run generates an auth token and prints it (persisted under the data dir).
-Store it somewhere safe. For development without a global install, use
-`pnpm dev` (tsx watch) or `pnpm start`.
+常用 flag：`--host`（默认 `0.0.0.0`）、`--port`（默认 `4780`）、`--workspace`
+（默认当前目录）、`--data-dir`（默认 `~/.airemote`）、`--token`、
+`--permission-mode`、`--env-file`。环境变量同名 `AIREMOTE_*`，**flag 优先**；
+`.env` 在运行目录自动加载，模板见 [.env.example](.env.example)。
 
-### CLI options
-
-| Flag | Env fallback | Default | Meaning |
-|---|---|---|---|
-| `--host <host>` | `AIREMOTE_HOST` | `0.0.0.0` | Bind address. |
-| `--port <port>` | `AIREMOTE_PORT` | `4780` | HTTP port. |
-| `--workspace <path>` | `AIREMOTE_WORKSPACE` | *(current dir)* | Directory Claude Code works in. |
-| `--data-dir <path>` | `AIREMOTE_DATA_DIR` | `~/.airemote` | Data dir (SQLite + token). |
-| `--token <token>` | `AIREMOTE_TOKEN` | *(generated)* | Bearer auth token. |
-| `--permission-mode <mode>` | `AIREMOTE_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode. |
-| `-h, --help` | — | — | Show help. |
-| `-v, --version` | — | — | Show version. |
-
-Flags take precedence over environment variables.
-
-## Configuration
-
-| Env var | Default | Meaning |
-|---|---|---|
-| `AIREMOTE_HOST` | `0.0.0.0` | Bind address. |
-| `AIREMOTE_PORT` | `4780` | HTTP port. |
-| `AIREMOTE_DATA_DIR` | `~/.airemote` | Data dir (SQLite, token). |
-| `AIREMOTE_WORKSPACE` | *(current dir)* | Directory the agent works in. |
-| `AIREMOTE_TOKEN` | *(generated)* | Shared secret for bearer auth. |
-| `AIREMOTE_PERMISSION_MODE` | `acceptEdits` | Claude Code permission mode. Never set `bypassPermissions` for remote use. |
-| `AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY` | *(unset)* | Enable HTTPS when both are set. |
-
-## Connect from another device (LAN)
-
-The daemon binds to `0.0.0.0` (all interfaces) by default, so a phone or
-another computer on the LAN can reach it by IP. At startup it prints both the
-auth token and your machine's LAN address(es) (for example
-`http://192.168.1.20:4780`) — use those in the client.
-
-Keep the bearer token secret, and prefer HTTPS (`AIREMOTE_TLS_CERT` /
-`AIREMOTE_TLS_KEY`) or an SSH tunnel over plain HTTP on an untrusted network.
-To restrict access to the local machine only, run `airemote --host 127.0.0.1`.
-
-## Quick test with curl
+## 冒烟测试
 
 ```bash
 TOKEN=$(cat ~/.airemote/token)
-
-# is the daemon up + claude detected?
 curl -s http://127.0.0.1:4780/api/health
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4780/api/agent
-
-# run a prompt (SSE stream)
-curl -N -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"list the files in the current directory and summarize them"}' \
-  http://127.0.0.1:4780/api/chat
-
-# list sessions, then resume one
-curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4780/api/sessions
-curl -N -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"sessionId":"<session-id>","prompt":"now do the same but as a table"}' \
-  http://127.0.0.1:4780/api/chat
+curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"prompt":"列出当前目录的文件并总结"}' http://127.0.0.1:4780/api/chat
 ```
 
-## API surface
+浏览器打开 [client/index.html](client/index.html) 可得到一个零依赖的图形化测试客户端。
 
-| Method & path | Auth | Description |
-|---|---|---|
-| `GET /api/health` | no | Liveness + version. |
-| `GET /api/agent` | yes | Probe Claude Code (version / auth / capabilities). |
-| `GET /api/claude-sessions` | yes | List this machine's Claude Code sessions (including desktop-TUI ones). |
-| `GET /api/agents` | yes | List registered runtimes. |
-| `POST /api/chat` | yes | Start/resume a run; returns an SSE stream of normalized events. |
-| `POST /api/runs/:id/cancel` | yes | Cancel a running run. |
-| `POST /api/permissions/:id/decision` | yes | Answer a tool-permission request (`allow`/`deny`). |
-| `GET /api/sessions` | yes | List sessions. |
-| `GET /api/sessions/:id` | yes | Session + messages + runs. |
+## 开发
 
-### Resume a desktop Claude Code session
-
-Claude Code stores every session (desktop TUI and headless alike) under
-`~/.claude/projects/`, so the daemon can resume a conversation you started in
-the desktop terminal:
-
-1. `GET /api/claude-sessions` → pick a `sessionId` (and see its cwd + summary).
-2. `POST /api/chat` with `{ "claudeSessionId": "<id>", "prompt": "..." }`.
-
-This continues that conversation from any client. The reverse also works: an
-airemote session can be resumed on the desktop with `claude --resume <id>`.
-
-### SSE event stream
-
-Each frame is `{ runId, seq, event }`, where `event` is one of:
-
-```
-status | text_delta | thinking_delta | thinking_start | tool_use
-tool_result | usage | turn_end | error | permission_request
+```bash
+pnpm typecheck
+pnpm test             # Vitest
 ```
 
-`seq` is monotonic and stored, so a client can reconnect with `Last-Event-ID`
-and replay events it missed.
+- 接入新 agent：实现 `src/runtimes/types.ts` 的 `RuntimeAdapter`，在
+  `src/runtimes/registry.ts` 注册一行；路由 / 引擎 / 持久化 / 传输不动。
+- 改协议：先改 `src/types/api.ts`（跨端契约唯一真源），再同步 Android 侧
+  `lib-network` 的 `airemote/dto/`，最后更新 `docs/daemon.md`。
+- `dist/`、`node_modules/` 不入库，不要手改 `dist/`。
 
-## Architecture
+## 安全
 
+远程驱动一个带 shell 权限的 agent 本质等于远程代码执行。所有非 `/api/health` 路由都要
+Bearer token；默认权限模式为 `ask`，审批超时或断线默认拒绝；**`workspace` 只是 spawn cwd，
+不是沙箱**。公开网络使用请套 HTTPS（`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`）或反代 /
+SSH 隧道。详见 [docs/daemon.md](docs/daemon.md) §9。
+
+## 分发
+
+```bash
+# 在仓库根目录执行：build + pack + 上传 OSS daemon/
+.claude/skills/deploy/scripts/release-daemon.sh
 ```
-client ──HTTPS + bearer──▶ daemon
-                              ├─ auth / audit
-                              ├─ session store (SQLite)
-                              └─ runtime engine
-                                   └─ spawn('claude', ...)  ←── RuntimeAdapter
-```
 
-- `src/runtimes/types.ts` — the `RuntimeAdapter` interface (the extension point).
-- `src/runtimes/engine.ts` — generic spawn/lifecycle/cancel, runtime-agnostic.
-- `src/runtimes/claude/` — the Claude Code adapter (detect / stream parser / args).
-- `src/routes/` — HTTP/SSE boundaries.
-- `src/types/api.ts` — transport contract (the "contracts" layer).
+版本号取自 `package.json` 的 `version`（semver，手改递增），`--version`、`/api/health`
+与产物文件名同源。
 
-Adding a new agent = implement `RuntimeAdapter` + register it in
-`src/runtimes/registry.ts`. Nothing else changes.
+## License
 
-## Security notes
-
-Remote-driving an agent with shell access **is remote code execution**. This
-daemon therefore:
-
-- requires a bearer token on every non-health `/api` route;
-- defaults to the conservative `acceptEdits` permission mode and never
-  `bypassPermissions`;
-- routes tool-permission asks to the remote client (via an injected
-  `PreToolUse` hook) and denies by default on timeout;
-- runs the agent inside the configured `--workspace` directory;
-- appends every chat / cancel / permission action to an audit log.
-
-For real remote use, put it behind HTTPS (or set `AIREMOTE_TLS_*`) and a
-reverse proxy with access control. See `docs/design.md` for the full plan and
-the permission-hook design.
+Apache-2.0，见 [LICENSE](../LICENSE)。
