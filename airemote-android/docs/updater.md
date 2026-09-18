@@ -344,12 +344,12 @@ android {
             dimension "channel"
             applicationIdSuffix ".alpha"          // 测试包与正式包可共存一台手机
             buildConfigField "String", "UPDATE_CHANNEL", "\"alpha\""
-            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://<oss>/alpha/manifest.json\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"${updaterUrl('alphaManifestUrl')}\""
         }
         prod {
             dimension "channel"
             buildConfigField "String", "UPDATE_CHANNEL", "\"prod\""
-            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://<oss>/prod/manifest.json\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"${updaterUrl('prodManifestUrl')}\""
         }
     }
     buildFeatures { compose = true }  // buildConfig 对 app 默认开启，直接加 buildConfigField 即可
@@ -361,6 +361,26 @@ android {
 > 所以 Android Studio 直接构建 release 包也不会再显示 `0.0.0-*`。
 
 产生的变体：`alphaDebug` / `alphaRelease` / `prodDebug` / `prodRelease`。
+
+### 7.0 manifest 地址来自本地配置，不入库
+
+`UPDATE_MANIFEST_URL` 的实际值放在 `airemote-android/updater.properties`（**gitignored**），
+不在 `build.gradle` 里写字面量 —— 这样公开仓库（和公开构建出的 APK）里不含任何 bucket 域名。
+模板见 `updater.properties.example`：
+
+```properties
+alphaManifestUrl=https://<your-bucket>.oss-cn-hangzhou.aliyuncs.com/android/alpha/manifest.json
+prodManifestUrl=https://<your-bucket>.oss-cn-hangzhou.aliyuncs.com/android/prod/manifest.json
+```
+
+优先级：`-P<key>=...` > `updater.properties` > 空串。取值为空时不启用更新通道：
+
+- `AppUpdater.enabled` 为 `false`，设置页不渲染「检查更新」入口；
+- 即使被调用，`ManifestFetcher` 的 URL 校验会抛 `ManifestInvalid`，由 `UpdateEvent.Failed`
+  兜住，不会崩。
+
+因为缺省是「静默关闭」，`release-android.sh` 在打包前会校验对应通道的 key 存在 ——
+否则会发出一个装上去再也收不到更新的正式包。
 
 > 桌面名称区分：alpha 通过 `app/src/alpha/res/values/strings.xml` 覆盖 `app_name` 为
 > 「AIRemote-Beta」，prod 沿用 `main` 里的「AIRemote」，避免两个应用在桌面上分不清。

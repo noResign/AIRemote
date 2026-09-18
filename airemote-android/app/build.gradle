@@ -34,6 +34,20 @@ def localVersionName = "0.0.0-" + utcTimestamp()
 // 正式版本号源；release variant 会自动读取，不再要求必须由 release-android.sh 注入 -P。
 def versionFile = rootProject.file("version.txt")
 
+// 应用内更新通道 URL 不入库：从 updater.properties（gitignored，模板见 updater.properties.example）
+// 读取，缺失则为空串 —— 构建出的包没有更新通道，设置页自动隐藏「检查更新」入口。
+// 支持 -P<key>=... 覆盖（优先级更高），发布脚本据此注入。
+def updaterPropertiesFile = rootProject.file("updater.properties")
+def updaterProperties = new Properties()
+if (updaterPropertiesFile.exists()) {
+    updaterPropertiesFile.withInputStream { updaterProperties.load(it) }
+}
+def updaterUrl = { String key ->
+    def fromFlag = project.findProperty(key)?.toString()?.trim()
+    def fromFile = updaterProperties.getProperty(key)?.trim()
+    fromFlag ?: fromFile ?: ""
+}
+
 android {
     namespace 'com.airemote.airemote'
     compileSdk 36
@@ -82,12 +96,12 @@ android {
             dimension "channel"
             applicationIdSuffix ".alpha"
             buildConfigField "String", "UPDATE_CHANNEL", "\"alpha\""
-            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/android/alpha/manifest.json\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"${updaterUrl('alphaManifestUrl')}\""
         }
         prod {
             dimension "channel"
             buildConfigField "String", "UPDATE_CHANNEL", "\"prod\""
-            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"https://your-bucket.oss-cn-hangzhou.aliyuncs.com/android/prod/manifest.json\""
+            buildConfigField "String", "UPDATE_MANIFEST_URL", "\"${updaterUrl('prodManifestUrl')}\""
         }
     }
     compileOptions {

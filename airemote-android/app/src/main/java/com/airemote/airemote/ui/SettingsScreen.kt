@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.BuildConfig
 import com.airemote.airemote.data.local.SettingsStore
+import com.airemote.airemote.data.update.AppUpdater
 import com.airemote.airemote.viewmodel.DirectoryPickerUiState
 import com.airemote.airemote.viewmodel.SettingsUiState
 import com.airemote.airemote.viewmodel.SettingsViewModel
@@ -128,11 +129,14 @@ fun SettingsScreen(
                         )
                     }
 
-                    SectionTitle("客户端更新")
-                    OutlinedButton(
-                        onClick = onCheckUpdate,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text("检查更新") }
+                    // 没有配置更新通道（公开构建）时不显示入口
+                    if (AppUpdater.enabled) {
+                        SectionTitle("客户端更新")
+                        OutlinedButton(
+                            onClick = onCheckUpdate,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("检查更新") }
+                    }
                 }
             }
 
