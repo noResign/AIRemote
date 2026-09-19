@@ -15,14 +15,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,12 +41,17 @@ import com.airemote.airemote.data.SavedConnection
 import com.airemote.airemote.ui.theme.Brand
 import com.airemote.airemote.viewmodel.ConnectUiState
 import com.airemote.airemote.viewmodel.ConnectViewModel
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.ArrowDropDown
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.VisibilityOff
@@ -65,6 +71,13 @@ fun ConnectScreen(
     val baseUrl by viewModel.baseUrl.collectAsState()
     val token by viewModel.token.collectAsState()
     val savedConnections by viewModel.savedConnections.collectAsState()
+    val name by viewModel.name.collectAsState()
+
+    // 连接成功即直接进入会话；失败才留在本页让 StatusCard 展示原因
+    LaunchedEffect(uiState) {
+        val success = uiState as? ConnectUiState.Success ?: return@LaunchedEffect
+        onConnectSuccess(success.baseUrl)
+    }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
         Column(
@@ -105,12 +118,70 @@ fun ConnectScreen(
                 )
             }
 
+            var nameMenuOpen by remember { mutableStateOf(false) }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val menuWidth = maxWidth
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = viewModel::onNameChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("名称") },
+                    // placeholder 必须锁成一行：singleLine 只约束输入文本，长 placeholder 换行会把输入框撑高
+                    placeholder = { Text("如：家里的 Mac mini", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                    trailingIcon = {
+                        if (savedConnections.isNotEmpty()) {
+                            IconButton(onClick = { nameMenuOpen = true }) {
+                                Icon(
+                                    imageVector = Icons.Rounded.ArrowDropDown,
+                                    contentDescription = "选择已保存的连接",
+                                )
+                            }
+                        }
+                    },
+                )
+                DropdownMenu(
+                    expanded = nameMenuOpen,
+                    onDismissRequest = { nameMenuOpen = false },
+                    // 和输入框等宽
+                    modifier = Modifier.width(menuWidth),
+                    // 默认是灰色 surfaceContainer + tonalElevation，改成干净的 surface
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 6.dp,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    savedConnections.forEach { connection ->
+                        // 用自定义 Row 而不是 DropdownMenuItem：后者的默认行高偏大
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    nameMenuOpen = false
+                                    viewModel.fillSaved(connection)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = connection.name.ifBlank { connection.baseUrl },
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = baseUrl,
                 onValueChange = viewModel::onBaseUrlChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("daemon 地址") },
-                placeholder = { Text("http://192.168.1.5:4780") },
+                placeholder = { Text("http://192.168.1.5:4780", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Uri,
@@ -124,7 +195,7 @@ fun ConnectScreen(
                 onValueChange = viewModel::onTokenChange,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("token") },
-                placeholder = { Text("粘贴 ~/.airemote/token 的内容") },
+                placeholder = { Text("粘贴 ~/.airemote/token 的内容", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 singleLine = true,
                 visualTransformation = if (tokenVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
@@ -157,10 +228,10 @@ fun ConnectScreen(
                     )
                     Spacer(modifier = Modifier.size(8.dp))
                 }
-                Text(if (uiState is ConnectUiState.Connecting) "连接中…" else "测试连接")
+                Text(if (uiState is ConnectUiState.Connecting) "连接中…" else "连接")
             }
 
-            StatusCard(uiState = uiState, onConnectSuccess = onConnectSuccess)
+            StatusCard(uiState = uiState)
 
             if (savedConnections.isNotEmpty()) {
                 SavedConnectionsSection(
@@ -207,15 +278,17 @@ private fun SavedConnectionsSection(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                     Text(
-                        text = connection.baseUrl,
+                        text = connection.name.ifBlank { connection.baseUrl },
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "token ••••••••",
+                        text = connection.baseUrl,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -226,7 +299,7 @@ private fun SavedConnectionsSection(
         AlertDialog(
             onDismissRequest = { pendingForget = null },
             title = { Text("移除记录") },
-            text = { Text("确定移除「${connection.baseUrl}」吗？") },
+            text = { Text("确定移除「${connection.name.ifBlank { connection.baseUrl }}」吗？") },
             confirmButton = {
                 TextButton(onClick = {
                     onForget(connection.baseUrl)
@@ -240,60 +313,28 @@ private fun SavedConnectionsSection(
     }
 }
 
+/** 连接失败时的原因卡片；成功会直接跳会话，不在这里展示。 */
 @Composable
-private fun StatusCard(
-    uiState: ConnectUiState,
-    onConnectSuccess: (String) -> Unit
-) {
-    when (uiState) {
-        is ConnectUiState.Idle -> Unit
-        is ConnectUiState.Connecting -> Unit
-        is ConnectUiState.Success -> {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.primary
-                        ) {
-                            Text(
-                                text = "✓ 已连接",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        }
-                    }
-                    Text(text = "服务：${uiState.data.service}", style = MaterialTheme.typography.bodyMedium)
-                    Text(text = "版本：${uiState.data.version}", style = MaterialTheme.typography.bodyMedium)
-                    Text(text = "已有会话数：${uiState.data.sessionCount}", style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    OutlinedButton(onClick = { onConnectSuccess(uiState.baseUrl) }) {
-                        Text("进入会话")
-                    }
+private fun StatusCard(uiState: ConnectUiState) {
+    if (uiState !is ConnectUiState.Error) return
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.error
+                ) {
+                    Text(
+                        text = "连接失败",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onError
+                    )
                 }
             }
-        }
-        is ConnectUiState.Error -> {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.error
-                        ) {
-                            Text(
-                                text = "连接失败",
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onError
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = uiState.message, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(text = uiState.message, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

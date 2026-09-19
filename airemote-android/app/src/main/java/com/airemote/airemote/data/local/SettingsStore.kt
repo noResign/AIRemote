@@ -13,6 +13,7 @@ object SettingsStore {
 
     private const val KEY_BASE_URL = "daemon_base_url"
     private const val KEY_TOKEN = "daemon_token"
+    private const val KEY_NAME = "daemon_name"
     private const val KEY_WORKSPACE = "daemon_workspace"
     private const val KEY_SELECTED_WORKSPACE_ID = "selected_workspace_id"
     private const val KEY_SELECTED_WORKSPACE_PATH = "selected_workspace_path"
@@ -32,6 +33,13 @@ object SettingsStore {
         get() = kv.decodeString(KEY_TOKEN)
         set(value) {
             if (value.isNullOrBlank()) kv.removeValueForKey(KEY_TOKEN) else kv.encode(KEY_TOKEN, value)
+        }
+
+    /** 上次使用的可读名称（连接成功后写入，用于连接页预填与列表展示）。 */
+    var name: String?
+        get() = kv.decodeString(KEY_NAME)
+        set(value) {
+            if (value.isNullOrBlank()) kv.removeValueForKey(KEY_NAME) else kv.encode(KEY_NAME, value)
         }
 
     /** daemon 默认 Workspace 根目录（连接成功后写入，仅作兼容/兜底展示）。 */
@@ -60,6 +68,9 @@ object SettingsStore {
      *
      * 存成一条字符串（条目用 `\n`、字段用 `\t` 分隔）而不是 MMKV 的 StringSet：
      * 顺序即"最近优先"，必须保留。
+     *
+     * 字段顺序：`name\tbaseUrl\ttoken`。旧版本只存 `baseUrl\ttoken`（两段），
+     * 解析时按段数兼容，旧记录 name 视为空。
      */
     val savedConnections: List<SavedConnection>
         get() = kv.decodeString(KEY_SAVED_CONNECTIONS)
@@ -67,19 +78,23 @@ object SettingsStore {
             .split(ENTRY_SEPARATOR)
             .mapNotNull { entry ->
                 val parts = entry.split(FIELD_SEPARATOR)
-                if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) {
-                    null
-                } else {
-                    SavedConnection(baseUrl = parts[0], token = parts[1])
+                when {
+                    parts.size == 3 && parts[1].isNotBlank() && parts[2].isNotBlank() ->
+                        SavedConnection(baseUrl = parts[1], token = parts[2], name = parts[0])
+                    parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank() ->
+                        SavedConnection(baseUrl = parts[0], token = parts[1])
+                    else -> null
                 }
             }
 
-    /** 记录一次成功的连接：同一地址只保留最新一条（token 轮换后自动覆盖）。 */
-    fun rememberConnection(baseUrl: String, token: String) {
+    /** 记录一次成功的连接：同一地址只保留最新一条（token 轮换或改名后自动覆盖）。 */
+    fun rememberConnection(name: String, baseUrl: String, token: String) {
+        val nm = sanitizeField(name)
         val url = baseUrl.trim()
         val tk = token.trim()
         if (url.isEmpty() || tk.isEmpty()) return
-        val updated = listOf(SavedConnection(url, tk)) + savedConnections.filterNot { it.baseUrl == url }
+        val updated = listOf(SavedConnection(url, tk, nm)) +
+            savedConnections.filterNot { it.baseUrl == url }
         writeSavedConnections(updated.take(MAX_SAVED_CONNECTIONS))
     }
 
@@ -89,7 +104,7 @@ object SettingsStore {
 
     private fun writeSavedConnections(connections: List<SavedConnection>) {
         val encoded = connections.joinToString(ENTRY_SEPARATOR) {
-            "${it.baseUrl}$FIELD_SEPARATOR${it.token}"
+            "${sanitizeField(it.name)}$FIELD_SEPARATOR${it.baseUrl}$FIELD_SEPARATOR${it.token}"
         }
         if (encoded.isBlank()) {
             kv.removeValueForKey(KEY_SAVED_CONNECTIONS)
@@ -97,4 +112,8 @@ object SettingsStore {
             kv.encode(KEY_SAVED_CONNECTIONS, encoded)
         }
     }
+
+    /** name 是自由输入，不能混入分隔符，否则会破坏编码。 */
+    private fun sanitizeField(value: String): String =
+        value.replace(ENTRY_SEPARATOR, " ").replace(FIELD_SEPARATOR, " ").trim()
 }

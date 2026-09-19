@@ -30,6 +30,9 @@ class ConnectViewModel(
     private val _uiState = MutableStateFlow<ConnectUiState>(ConnectUiState.Idle)
     val uiState = _uiState.asStateFlow()
 
+    private val _name = MutableStateFlow(settings.name ?: "")
+    val name = _name.asStateFlow()
+
     private val _baseUrl = MutableStateFlow(settings.baseUrl ?: "")
     val baseUrl = _baseUrl.asStateFlow()
 
@@ -39,17 +42,30 @@ class ConnectViewModel(
     private val _savedConnections = MutableStateFlow(settings.savedConnections)
     val savedConnections = _savedConnections.asStateFlow()
 
-    /** 选中「最近连接」里的某条：填入地址与 token 并直接发起连接。 */
+    /** 选中「最近连接」里的某条：回填后直接发起连接。 */
     fun selectSaved(connection: SavedConnection) {
+        fillSaved(connection)
+        connect()
+    }
+
+    /** 名称下拉框选中某条：只回填三个输入框，不自动连接，方便先改再连。 */
+    fun fillSaved(connection: SavedConnection) {
+        _name.value = connection.name
         _baseUrl.value = connection.baseUrl
         _token.value = connection.token
         _uiState.value = ConnectUiState.Idle
-        connect()
     }
 
     fun forgetSaved(baseUrl: String) {
         settings.forgetConnection(baseUrl)
         _savedConnections.value = settings.savedConnections
+    }
+
+    fun onNameChange(value: String) {
+        _name.value = value
+        if (_uiState.value !is ConnectUiState.Connecting) {
+            _uiState.value = ConnectUiState.Idle
+        }
     }
 
     fun onBaseUrlChange(value: String) {
@@ -67,6 +83,7 @@ class ConnectViewModel(
     }
 
     fun connect() {
+        val nm = _name.value.trim()
         val url = _baseUrl.value.trim()
         val tk = _token.value.trim()
         when {
@@ -84,10 +101,11 @@ class ConnectViewModel(
         viewModelScope.launch {
             when (val result = repository.testConnection(url, tk)) {
                 is NetworkResult.Success -> {
+                    settings.name = nm
                     settings.baseUrl = url
                     settings.token = tk
                     settings.workspace = result.data.workspace
-                    settings.rememberConnection(url, tk)
+                    settings.rememberConnection(nm, url, tk)
                     _savedConnections.value = settings.savedConnections
                     val workspaces = workspaceRepository.listWorkspaces()
                     if (workspaces is NetworkResult.Success) {
