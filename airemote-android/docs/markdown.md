@@ -118,7 +118,7 @@ private fun rememberSampledText(text: String, intervalMs: Long = 200L): String {
 ### 3.4 配色（跟随 Design Token）
 
 ```kotlin
-/** Markdown 配色：跟随设计 token（链接/行内代码主色，代码与表格用 code-bg）。 */
+/** Markdown 配色：跟随设计 token（代码/行内代码/表格统一 code-bg 底；行内代码与链接用主色文字）。 */
 @Composable
 private fun chatMarkdownColors() = markdownColor(
     text = MaterialTheme.colorScheme.onSurface,
@@ -126,7 +126,7 @@ private fun chatMarkdownColors() = markdownColor(
     inlineCodeText = MaterialTheme.colorScheme.primary,
     linkText = MaterialTheme.colorScheme.primary,
     codeBackground = MaterialTheme.colorScheme.surfaceVariant,
-    inlineCodeBackground = MaterialTheme.colorScheme.primaryContainer,
+    inlineCodeBackground = MaterialTheme.colorScheme.surfaceVariant,
     dividerColor = MaterialTheme.colorScheme.outlineVariant,
     tableText = MaterialTheme.colorScheme.onSurface,
     tableBackground = MaterialTheme.colorScheme.surfaceVariant,
