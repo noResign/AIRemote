@@ -15,33 +15,24 @@ class UpdateDecisionTest {
         fileProviderAuthority = "com.airemote.airemote.fileprovider",
     )
 
-    private fun manifest(versionCode: Long, minVersionCode: Long? = null) = UpdateManifest(
+    private fun manifest(versionCode: Long) = UpdateManifest(
         channel = "alpha",
         versionCode = versionCode,
         versionName = versionCode.toString(),
         apkUrl = "https://example.com/app.apk",
         apkSize = 100,
         sha256 = "a".repeat(64),
-        minVersionCode = minVersionCode,
     )
 
     @Test
     fun `newer version is available`() {
         val decision = UpdateDecisionHelper.decide(config, manifest(11))
         assertTrue(decision.updateAvailable)
-        assertFalse(decision.forced)
     }
 
     @Test
     fun `same or older version is not available`() {
         assertFalse(UpdateDecisionHelper.decide(config, manifest(10)).updateAvailable)
         assertFalse(UpdateDecisionHelper.decide(config, manifest(9)).updateAvailable)
-    }
-
-    @Test
-    fun `below min version is forced`() {
-        val decision = UpdateDecisionHelper.decide(config, manifest(11, minVersionCode = 12))
-        assertTrue(decision.updateAvailable)
-        assertTrue(decision.forced)
     }
 }

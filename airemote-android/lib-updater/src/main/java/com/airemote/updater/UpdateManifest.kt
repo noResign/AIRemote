@@ -11,6 +11,5 @@ data class UpdateManifest(
     val apkSize: Long,
     val sha256: String,
     val changelog: String? = null,
-    val minVersionCode: Long? = null,
     val publishedAt: String? = null,
 )

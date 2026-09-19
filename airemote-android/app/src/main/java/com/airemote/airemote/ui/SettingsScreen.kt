@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -34,19 +35,23 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.BuildConfig
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.update.AppUpdater
+import com.airemote.airemote.ui.update.UpdateHost
 import com.airemote.airemote.viewmodel.DirectoryPickerUiState
 import com.airemote.airemote.viewmodel.SettingsUiState
 import com.airemote.airemote.viewmodel.SettingsViewModel
+import com.airemote.airemote.viewmodel.UpdateUiState
+import com.airemote.airemote.viewmodel.UpdateViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onReconnect: () -> Unit,
     onManageWorkspaces: () -> Unit,
-    onCheckUpdate: () -> Unit,
     viewModel: SettingsViewModel = viewModel(),
+    updateViewModel: UpdateViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val updateState by updateViewModel.uiState.collectAsState()
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
     val permissionModeError by viewModel.permissionModeError.collectAsState()
     val baseUrl = SettingsStore.baseUrl ?: ""
@@ -132,10 +137,23 @@ fun SettingsScreen(
                     // 没有配置更新通道（公开构建）时不显示入口
                     if (AppUpdater.enabled) {
                         SectionTitle("客户端更新")
+                        val checking = updateState is UpdateUiState.Checking
                         OutlinedButton(
-                            onClick = onCheckUpdate,
+                            onClick = { updateViewModel.check() },
+                            enabled = !checking,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("检查更新") }
+                        ) {
+                            if (checking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("正在检查…")
+                            } else {
+                                Text("检查更新")
+                            }
+                        }
                     }
                 }
             }
@@ -146,6 +164,13 @@ fun SettingsScreen(
         }
     }
 
+    UpdateHost(
+        state = updateState,
+        onDownload = updateViewModel::download,
+        onInstall = updateViewModel::install,
+        onRetry = updateViewModel::retry,
+        onDismiss = updateViewModel::dismiss,
+    )
 }
 
 @Composable

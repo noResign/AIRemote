@@ -30,7 +30,7 @@ class Updater(private val config: UpdaterConfig) {
         val manifest = manifestFetcher.fetch()
         val decision = UpdateDecisionHelper.decide(config, manifest)
         if (decision.updateAvailable) {
-            emit(UpdateEvent.UpdateAvailable(manifest, decision.forced))
+            emit(UpdateEvent.UpdateAvailable(manifest))
         } else {
             emit(UpdateEvent.NoUpdate)
         }
@@ -46,7 +46,7 @@ class Updater(private val config: UpdaterConfig) {
         if (!decision.updateAvailable) {
             emit(UpdateEvent.NoUpdate)
         } else {
-            emit(UpdateEvent.UpdateAvailable(manifest, decision.forced))
+            emit(UpdateEvent.UpdateAvailable(manifest))
             download(manifest, destDir).collect { emit(it) }
         }
     }.catch { throwable ->

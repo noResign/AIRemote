@@ -77,7 +77,6 @@
   "apkSize": 25165824,
   "sha256": "a3f1…",
   "changelog": "修复 xxx & 新增 yyy",
-  "minVersionCode": 30,
   "publishedAt": "2026-09-13T08:00:00Z"
 }
 ```
@@ -91,7 +90,6 @@
 | `apkSize` | long | ✅ | 字节数，用于进度与预展示 |
 | `sha256` | string | ✅ | APK 文件 SHA-256（hex，小写），下载后校验 |
 | `changelog` | string | ⬜ | 更新说明，纯文本/简短 markdown |
-| `minVersionCode` | long | ⬜ | 低于此版本的客户端**强制更新**（本期只留字段，见 §10-6） |
 | `publishedAt` | string | ⬜ | 发布时刻，展示用 |
 
 **OSS 目录布局**：
@@ -200,7 +198,7 @@ class Updater(private val config: UpdaterConfig) {
 sealed interface UpdateEvent {
     data object Checking : UpdateEvent
     data object NoUpdate : UpdateEvent
-    data class UpdateAvailable(val manifest: UpdateManifest, val forced: Boolean) : UpdateEvent
+    data class UpdateAvailable(val manifest: UpdateManifest) : UpdateEvent
     data class DownloadProgress(val downloadedBytes: Long, val totalBytes: Long) : UpdateEvent
     data class Downloaded(val apkFile: File, val manifest: UpdateManifest) : UpdateEvent
     data class Failed(val error: UpdateException) : UpdateEvent
@@ -233,13 +231,9 @@ data class UpdateManifest(
     val apkSize: Long,
     val sha256: String,
     val changelog: String? = null,
-    val minVersionCode: Long? = null,
     val publishedAt: String? = null,
 )
 ```
-
-> `forced` 判定（`UpdateDecision.kt`，纯函数可单测）：
-> `forced = manifest.minVersionCode?.let { config.currentVersionCode < it } == true`
 
 ---
 
@@ -532,7 +526,7 @@ versionName 比发布包大、弹窗信息误导的情况。因此约定：正�
 | 3 | keystore 管理 | **统一一个 keystore，本地 keystore.properties + CI secret** / alpha 用 debug 签名、prod 另签（不推荐，跨包更新会断） |
 | 4 | cleartext 收敛 | **引入 `network_security_config.xml`，只对本地 daemon 放行明文，对外 https** / 暂不动 `usesCleartextTraffic` |
 | 5 | 检查时机 | **仅手动「检查更新」按钮**（已实现，不做启动自动检查） / 启动自动检查 + 手动 |
-| 6 | 强制更新 | **本期只留 `minVersionCode` 字段，不做强制 UI** / 低版本阻断 + 强更弹窗 |
+| 6 | 强制更新 | **不做强制更新机制**（已移除 `minVersionCode` / `forced`） / 低版本阻断 + 强更弹窗 |
 
 ---
 

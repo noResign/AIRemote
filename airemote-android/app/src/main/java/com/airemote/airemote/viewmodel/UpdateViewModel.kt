@@ -17,9 +17,9 @@ import kotlinx.coroutines.launch
 
 sealed interface UpdateUiState {
     data object Idle : UpdateUiState
-    data class Checking(val manual: Boolean) : UpdateUiState
-    data class NoUpdate(val manual: Boolean, val currentVersionName: String) : UpdateUiState
-    data class Available(val manifest: UpdateManifest, val forced: Boolean) : UpdateUiState
+    data object Checking : UpdateUiState
+    data class NoUpdate(val currentVersionName: String) : UpdateUiState
+    data class Available(val manifest: UpdateManifest) : UpdateUiState
     data class Downloading(
         val manifest: UpdateManifest,
         val downloadedBytes: Long,
@@ -32,7 +32,7 @@ sealed interface UpdateUiState {
         val apkVersionCode: Long?,
         val apkVersionName: String?,
     ) : UpdateUiState
-    data class Error(val manual: Boolean, val message: String) : UpdateUiState
+    data class Error(val message: String) : UpdateUiState
 }
 
 class UpdateViewModel(application: Application) : AndroidViewModel(application) {
@@ -42,22 +42,19 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     private val _uiState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
     val uiState = _uiState.asStateFlow()
 
-    fun check(manual: Boolean = true) {
+    fun check() {
         viewModelScope.launch {
-            _uiState.value = UpdateUiState.Checking(manual)
+            _uiState.value = UpdateUiState.Checking
             updater.check().collect { event ->
                 when (event) {
-                    is UpdateEvent.Checking -> _uiState.value = UpdateUiState.Checking(manual)
+                    is UpdateEvent.Checking -> _uiState.value = UpdateUiState.Checking
                     is UpdateEvent.NoUpdate -> _uiState.value = UpdateUiState.NoUpdate(
-                        manual = manual,
                         currentVersionName = AppUpdater.config.currentVersionName,
                     )
                     is UpdateEvent.UpdateAvailable -> _uiState.value = UpdateUiState.Available(
                         manifest = event.manifest,
-                        forced = event.forced,
                     )
                     is UpdateEvent.Failed -> _uiState.value = UpdateUiState.Error(
-                        manual = manual,
                         message = event.error.message ?: "检查更新失败",
                     )
                     else -> Unit
@@ -93,7 +90,6 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                     is UpdateEvent.Failed -> _uiState.value = UpdateUiState.Error(
-                        manual = true,
                         message = event.error.message ?: "下载更新失败",
                     )
                     else -> Unit
@@ -108,12 +104,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             updater.install(getApplication(), downloaded.apkFile)
             _uiState.value = UpdateUiState.Idle
         } catch (e: UpdateException) {
-            _uiState.value = UpdateUiState.Error(manual = true, message = e.message ?: "安装失败")
+            _uiState.value = UpdateUiState.Error(message = e.message ?: "安装失败")
         }
     }
 
     fun retry() {
-        check(manual = true)
+        check()
     }
 
     fun dismiss() {
