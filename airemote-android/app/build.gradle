@@ -162,6 +162,7 @@ dependencies {
 
     implementation libs.androidx.navigation.compose
     implementation libs.mmkv
+    implementation libs.markdown.renderer.m3
 
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.ui.graphics

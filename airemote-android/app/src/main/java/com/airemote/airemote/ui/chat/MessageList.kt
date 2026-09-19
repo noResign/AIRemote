@@ -173,7 +173,7 @@ internal fun AssistantBlock(
         message.blocks.forEach { block ->
             when (block) {
                 is ContentBlock.Thinking -> ThinkingBlock(block.text)
-                is ContentBlock.Text -> TextBlock(block.text)
+                is ContentBlock.Text -> TextBlock(block.text, streaming = !message.done)
                 is ContentBlock.ToolUse -> ToolCardView(block)
                 is ContentBlock.Question -> QuestionCard(block, streaming, onAnswer)
             }

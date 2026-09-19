@@ -1,6 +1,8 @@
 package com.airemote.airemote.ui.chat
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,30 +30,127 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.ui.theme.CodeBody
 import com.airemote.airemote.ui.theme.LocalSemanticColors
+import com.mikepenz.markdown.compose.LocalMarkdownColors
+import com.mikepenz.markdown.compose.LocalMarkdownDimens
+import com.mikepenz.markdown.compose.components.MarkdownComponentModel
+import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.m3.Markdown
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.markdownAnimations
+import com.mikepenz.markdown.utils.buildMarkdownAnnotatedString
+import kotlinx.coroutines.delay
+import org.intellij.markdown.flavours.gfm.GFMElementTypes
+import org.intellij.markdown.flavours.gfm.GFMTokenTypes
 
 @Composable
-internal fun TextBlock(text: String) {
+internal fun TextBlock(text: String, streaming: Boolean) {
+    // 全程都用 Markdown 渲染：流式期间若先纯文本、结束再排版，会在结束时整体重排"闪一下"。
+    // 流式期间正文每帧都在变，所以按 ~200ms 采样，限制 Markdown 的重解析频率。
+    val content = if (streaming) rememberSampledText(text) else text
+    // 自定义表格组件；remember 住，避免每次重组都新建 MarkdownComponents 连累整棵树重组
+    val components = remember { markdownComponents(table = { model -> ChatMarkdownTable(model) }) }
+
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        // 设计规范：助手气泡用 surface（白）；代码/表格才用 code-bg
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = Modifier.widthIn(max = 320.dp),
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        Markdown(
+            content = content,
+            colors = chatMarkdownColors(),
+            typography = chatMarkdownTypography(),
+            // 默认会给内容挂 animateContentSize()，流式下每 200ms 触发一次尺寸动画，看起来一直在闪
+            animations = markdownAnimations(animateTextSize = { this }),
+            components = components,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
         )
     }
+}
+
+/** Markdown 配色：跟随设计 token（链接/行内代码主色，代码与表格用 code-bg）。 */
+@Composable
+private fun chatMarkdownColors() = markdownColor(
+    text = MaterialTheme.colorScheme.onSurface,
+    codeText = MaterialTheme.colorScheme.onSurface,
+    inlineCodeText = MaterialTheme.colorScheme.primary,
+    linkText = MaterialTheme.colorScheme.primary,
+    codeBackground = MaterialTheme.colorScheme.surfaceVariant,
+    inlineCodeBackground = MaterialTheme.colorScheme.primaryContainer,
+    dividerColor = MaterialTheme.colorScheme.outlineVariant,
+    tableText = MaterialTheme.colorScheme.onSurface,
+    tableBackground = MaterialTheme.colorScheme.surfaceVariant,
+)
+
+/** 聊天气泡里的 Markdown 排版：默认 h1 是 displayLarge(57sp)，手机上大得离谱，压到正文量级。
+ *  h1/h2 = 正文色加粗；h3 及以下 = 主色青绿。 */
+@Composable
+private fun chatMarkdownTypography() = markdownTypography(
+    h1 = MaterialTheme.typography.titleMedium.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.Bold,
+    ),
+    h2 = MaterialTheme.typography.titleMedium.copy(
+        color = MaterialTheme.colorScheme.onSurface,
+        fontWeight = FontWeight.Bold,
+    ),
+    h3 = MaterialTheme.typography.titleSmall.copy(color = MaterialTheme.colorScheme.primary),
+    h4 = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    ),
+    h5 = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    ),
+    h6 = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.primary,
+        fontWeight = FontWeight.SemiBold,
+    ),
+    text = MaterialTheme.typography.bodyMedium,
+    paragraph = MaterialTheme.typography.bodyMedium,
+    ordered = MaterialTheme.typography.bodyMedium,
+    bullet = MaterialTheme.typography.bodyMedium,
+    list = MaterialTheme.typography.bodyMedium,
+    code = CodeBody,
+    inlineCode = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+    quote = MaterialTheme.typography.bodyMedium,
+    link = MaterialTheme.typography.bodyMedium.copy(
+        color = MaterialTheme.colorScheme.primary,
+        textDecoration = TextDecoration.Underline,
+    ),
+)
+
+/** 每 [intervalMs] 采样一次最新文本；流式期间用它限制 Markdown 的解析频率。 */
+@Composable
+private fun rememberSampledText(text: String, intervalMs: Long = 200L): String {
+    val latest = rememberUpdatedState(text)
+    val sampled by produceState(initialValue = text) {
+        while (true) {
+            delay(intervalMs)
+            value = latest.value
+        }
+    }
+    return sampled
 }
 
 @Composable
@@ -166,5 +266,64 @@ internal fun UsageLine(usage: UsageInfo) {
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 自定义表格组件：库默认的单元格是单行 + 省略号（长内容只剩 "…"），且列宽固定不随内容，
+ * 这里改成单元格最多 4 行换行、列宽固定以便各行列对齐、整表可横向滚动。
+ */
+@Composable
+private fun ChatMarkdownTable(model: MarkdownComponentModel) {
+    val content = model.content
+    val baseStyle = model.typography.text
+    val cellPadding = LocalMarkdownDimens.current.tableCellPadding
+
+    Surface(
+        color = LocalMarkdownColors.current.tableBackground,
+        shape = RoundedCornerShape(LocalMarkdownDimens.current.tableCornerSize),
+    ) {
+        Column(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            model.node.children.forEach { section ->
+                when (section.type) {
+                    GFMElementTypes.HEADER, GFMElementTypes.ROW -> {
+                        val header = section.type == GFMElementTypes.HEADER
+                        Row(
+                            modifier = if (header) {
+                                // 表头用 primary-subtle 底色，和正文行区分开
+                                Modifier.background(MaterialTheme.colorScheme.primaryContainer)
+                            } else {
+                                Modifier
+                            },
+                        ) {
+                            section.children.forEach { cell ->
+                                if (cell.type != GFMTokenTypes.CELL) return@forEach
+                                Text(
+                                    text = content.buildMarkdownAnnotatedString(cell, baseStyle),
+                                    style = if (header) {
+                                        baseStyle.copy(fontWeight = FontWeight.Bold)
+                                    } else {
+                                        baseStyle
+                                    },
+                                    color = if (header) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        LocalMarkdownColors.current.tableText
+                                    },
+                                    maxLines = 4,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .width(160.dp)
+                                        .padding(cellPadding),
+                                )
+                            }
+                        }
+                    }
+                    GFMTokenTypes.TABLE_SEPARATOR -> HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                }
+            }
+        }
     }
 }
