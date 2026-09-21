@@ -278,7 +278,7 @@ private fun RootBar(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .clickable { onDismissError() }
-                        .padding(start = 8.dp, vertical = 4.dp),
+                        .padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
                 )
             }
         }
