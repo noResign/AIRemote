@@ -177,6 +177,15 @@ export class Db {
         PRIMARY KEY (workspace_id, path)
       );
 
+      -- 浏览快捷方式：纯粹是文件 Tab 的书签，**不授予 agent 任何权限**。
+      -- 与 workspace_dirs（授权）刻意分开存，避免两者语义混淆。
+      CREATE TABLE IF NOT EXISTS workspace_shortcut_dirs (
+        workspace_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (workspace_id, path)
+      );
+
       CREATE TABLE IF NOT EXISTS session_permission_grants (
         session_id TEXT NOT NULL,
         tool_name TEXT NOT NULL,
@@ -383,6 +392,7 @@ export class Db {
 
   deleteWorkspace(id: string): void {
     this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ?`).run(id);
+    this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
   }
 
@@ -420,6 +430,42 @@ export class Db {
 
   removeWorkspaceDir(workspaceId: string, dir: string): void {
     this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ? AND path = ?`).run(workspaceId, dir);
+  }
+
+  // ---- workspace shortcut dirs (文件 Tab 的浏览书签, 不授权) ----
+
+  listWorkspaceShortcuts(workspaceId: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT path FROM workspace_shortcut_dirs WHERE workspace_id = ? ORDER BY created_at ASC, path ASC`)
+      .all(workspaceId) as unknown as { path: string }[];
+    return rows.map((r) => r.path);
+  }
+
+  /** All workspaces' shortcuts in one query, so the list endpoint avoids N+1. */
+  listAllWorkspaceShortcuts(): Map<string, string[]> {
+    const rows = this.db
+      .prepare(`SELECT workspace_id, path FROM workspace_shortcut_dirs ORDER BY created_at ASC, path ASC`)
+      .all() as unknown as { workspace_id: string; path: string }[];
+    const byWorkspace = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = byWorkspace.get(row.workspace_id);
+      if (list) list.push(row.path);
+      else byWorkspace.set(row.workspace_id, [row.path]);
+    }
+    return byWorkspace;
+  }
+
+  addWorkspaceShortcut(workspaceId: string, dir: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO workspace_shortcut_dirs (workspace_id, path, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(workspace_id, path) DO NOTHING`,
+      )
+      .run(workspaceId, dir, Date.now());
+  }
+
+  removeWorkspaceShortcut(workspaceId: string, dir: string): void {
+    this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ? AND path = ?`).run(workspaceId, dir);
   }
 
   countSessionsByWorkspace(): Map<string, number> {

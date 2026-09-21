@@ -96,6 +96,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `sessions` | 会话：`id`、`runtime`、`claude_session_id`、`workspace_id`、`permission_mode`、`cwd`、`title`、时间戳 |
 | `workspaces` | 工作区**主目录**：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
 | `workspace_dirs` | 工作区**附加目录**（agent 可读写、该工作区所有会话继承）：`workspace_id`、`path`、`created_at`；随工作区级联删除 |
+| `workspace_shortcut_dirs` | 文件 Tab 的**浏览书签**（`workspace_id`、`path`、`created_at`；随工作区级联删除）。与 `workspace_dirs` 刻意分开：书签**不授予 agent 任何权限**，只多一个可切换的 tab |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
@@ -119,6 +120,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止；级联删附加目录） |
 | `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」 |
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
+| `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |
+| `DELETE /api/workspaces/:id/shortcuts` | 是 | 移除浏览书签，`{path}`；只删书签，不动任何授权 |
 | `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
 | `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>` |
 | `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>` |
@@ -169,6 +172,15 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 给了 `root` 时只校验「存在 + 是目录」，**不要求落在工作区内**——文件 Tab 因此能浏览工作区之外
 的目录。这条能力是显式决定的（见 §9「workspace 不是沙箱」），非默认 `root` 会写 `browse_root`
 审计日志。响应回显 `root`，客户端据此把相对路径配对到正确的根。
+
+`/api/files` 与 `/api/changes` 还回显 `roots`（该工作区的全部根，主目录在前）与
+`shortcutDirs`（浏览书签）——客户端渲染的 tab 行因此能**跟随每次列表加载自动同步**，不必
+自己轮询工作区状态（否则在工作区管理页或审批流里新增的目录，要等切一次工作区才会出现）。
+
+**注意 `roots` 与 `shortcutDirs` 的语义差别**：`roots` 里的目录对 agent 是可达的（主目录是
+spawn cwd，附加目录走 `--add-dir`），而 `shortcutDirs` **只是文件 Tab 的书签**，不进
+`--add-dir`、不进 `AIREMOTE_ALLOWED_DIRS`、不参与任何越界判定。两者分开存就是为了让
+「我想在这儿留个入口」和「我允许 agent 碰这里」不会互相污染。
 
 **附加目录（`workspace_dirs`）与 `--add-dir`**：一个工作区 = 主目录 + N 个附加目录。
 附加目录有两个来源、**同一份存储**：

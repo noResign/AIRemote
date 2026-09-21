@@ -20,6 +20,10 @@ data class FilesResponse(
     val workspacePath: String = "",
     /** 实际列出的目录树；未传 `root` 时等于 `workspacePath`。 */
     val root: String = "",
+    /** 该工作区的全部根（主目录在前，其后是附加目录）；用于渲染根切换器。 */
+    val roots: List<String> = emptyList(),
+    /** 浏览书签（不属于 roots，不授予 agent 权限），同样作为可切换 tab 渲染。 */
+    val shortcutDirs: List<String> = emptyList(),
     val path: String = "",
     val parent: String? = null,
     val entries: List<FileEntryDto> = emptyList(),

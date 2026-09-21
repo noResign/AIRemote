@@ -70,14 +70,29 @@ class FilesViewModel(
     private val _root = MutableStateFlow<String?>(null)
     val root = _root.asStateFlow()
 
-    /** 可一键切换的根：工作区主目录 + 它的附加目录。 */
+    /** 工作区的根：主目录 + 它的附加目录（后者对 agent 是授权目录）。 */
     private val _knownRoots = MutableStateFlow<List<String>>(emptyList())
     val knownRoots = _knownRoots.asStateFlow()
+
+    /**
+     * 浏览书签。和 [knownRoots] 一起构成 tab 行，但**不授予 agent 权限**，
+     * 只是「我想在这里留个入口」；由用户增删，存后端（`workspace_shortcut_dirs`）。
+     */
+    private val _shortcuts = MutableStateFlow<List<String>>(emptyList())
+    val shortcuts = _shortcuts.asStateFlow()
 
     /** 选根对话框：走绝对路径浏览（`/api/fs/directories`），因此能到工作区之外。 */
     private val _rootPicker = MutableStateFlow<DirectoryPickerUiState?>(null)
     val rootPicker = _rootPicker.asStateFlow()
     private var rootPickerHidden = false
+
+    /** 对话框确认后是「切过去看看」还是「加为浏览书签」；由打开它的入口决定，UI 据此换文案。 */
+    private val _addingShortcut = MutableStateFlow(false)
+    val addingShortcut = _addingShortcut.asStateFlow()
+
+    /** 加书签失败（比如那个目录已经在 tab 行上了）时的提示。 */
+    private val _rootError = MutableStateFlow<String?>(null)
+    val rootError = _rootError.asStateFlow()
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -101,26 +116,31 @@ class FilesViewModel(
                 // 换工作区就回到它的主目录，否则会拿着上一个工作区的根不放。
                 _root.value = null
                 _rootPicker.value = null
-                loadKnownRoots(workspaceId)
+                _rootError.value = null
+                _knownRoots.value = emptyList()
+                _shortcuts.value = emptyList()
                 loadChanges(workspaceId)
                 if (_mode.value == FilesMode.All) browse(null)
             }
         }
     }
 
-    private suspend fun loadKnownRoots(workspaceId: String?) {
-        val workspaces = when (val r = workspaceRepository.listWorkspaces()) {
-            is NetworkResult.Success -> r.data
-            is NetworkResult.Error -> return
-        }
-        val selected = workspaces.firstOrNull { it.id == workspaceId } ?: return
-        _knownRoots.value = listOf(selected.path) + selected.dirs
+    /**
+     * 两组 chip 都由每次列表响应回显（`roots` + `shortcutDirs`），不再单独拉工作区列表——
+     * 这样附加目录无论从哪加的（工作区管理页、聊天里的越界审批）、书签从哪加的，都会自动反映。
+     */
+    private fun syncChips(roots: List<String>, shortcuts: List<String>) {
+        if (roots.isNotEmpty()) _knownRoots.value = roots
+        _shortcuts.value = shortcuts
     }
 
-    /** 切根：改动列表与文件路径都是相对根的，所以一并重置。 */
-    fun selectRoot(root: String?) {
+    /**
+     * 切根：改动列表与文件路径都是相对根的，所以一并重置。
+     * [force] 用于「根没变但数据需要重载」的场景（比如刚把一个已是当前根的目录加成附加目录）。
+     */
+    fun selectRoot(root: String?, force: Boolean = false) {
         val normalized = root?.takeIf { it.isNotBlank() }
-        if (_root.value == normalized) return
+        if (!force && _root.value == normalized) return
         _root.value = normalized
         _diffState.value = null
         _fileContent.value = null
@@ -141,8 +161,21 @@ class FilesViewModel(
         selectRoot(if (base.endsWith("/")) "$base$relativePath" else "$base/$relativePath")
     }
 
+    /** 「切换」：选一个目录只是切过去看，不动任何配置。 */
     fun openRootPicker() {
         rootPickerHidden = false
+        _addingShortcut.value = false
+        loadRootDirs(_root.value, false)
+    }
+
+    /**
+     * 「＋ 目录」：把选中的目录加成一个**浏览书签**（tab）。它不写授权目录，
+     * 所以 agent 不会因此获得任何权限——想授权请走工作区管理页的「+ 附加目录」
+     * 或聊天里的越界读取审批。
+     */
+    fun openAddShortcutPicker() {
+        rootPickerHidden = false
+        _addingShortcut.value = true
         loadRootDirs(_root.value, false)
     }
 
@@ -163,7 +196,41 @@ class FilesViewModel(
     fun confirmRootPick() {
         val picked = (_rootPicker.value as? DirectoryPickerUiState.Ready)?.path ?: return
         _rootPicker.value = null
-        selectRoot(picked)
+        if (_addingShortcut.value) addShortcut(picked) else selectRoot(picked)
+    }
+
+    private fun addShortcut(dir: String) {
+        val workspaceId = WorkspaceSelection.current() ?: return
+        _rootError.value = null
+        viewModelScope.launch {
+            when (val r = workspaceRepository.addShortcut(workspaceId, dir)) {
+                is NetworkResult.Success -> {
+                    _shortcuts.value = r.data
+                    // 加完直接切过去看它。force 绕过「根没变就返回」，以便重载数据。
+                    selectRoot(dir, force = true)
+                }
+                // 409 shortcut_exists 等都要说清楚，否则用户不知道为何没加上。
+                is NetworkResult.Error -> _rootError.value = friendlyError(r)
+            }
+        }
+    }
+
+    /** 移除一个浏览书签。若正看着它，退回工作区主目录，避免停在一个没有 tab 的目录上。 */
+    fun removeShortcut(dir: String) {
+        val workspaceId = WorkspaceSelection.current() ?: return
+        viewModelScope.launch {
+            when (val r = workspaceRepository.removeShortcut(workspaceId, dir)) {
+                is NetworkResult.Success -> {
+                    _shortcuts.value = r.data
+                    if (_root.value == dir) selectRoot(null)
+                }
+                is NetworkResult.Error -> _rootError.value = friendlyError(r)
+            }
+        }
+    }
+
+    fun dismissRootError() {
+        _rootError.value = null
     }
 
     private fun loadRootDirs(path: String?, showHidden: Boolean) {
@@ -206,6 +273,7 @@ class FilesViewModel(
     private suspend fun loadChanges(workspaceId: String?) {
         when (val r = repository.changes(workspaceId, _root.value)) {
             is NetworkResult.Success -> {
+                syncChips(r.data.roots, r.data.shortcutDirs)
                 _uiState.value = FilesUiState.Content(
                     isGitRepo = r.data.isGitRepo,
                     repos = r.data.repos,
@@ -273,6 +341,7 @@ class FilesViewModel(
             showIgnored = current.showIgnored,
         )) {
             is NetworkResult.Success -> {
+                syncChips(r.data.roots, r.data.shortcutDirs)
                 val entries = if (append) current.entries + r.data.entries else r.data.entries
                 _fileBrowser.value = current.copy(
                     loading = false,

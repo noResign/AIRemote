@@ -104,4 +104,21 @@ class WorkspaceRepository(
             is NetworkResult.Error -> r
         }
     }
+
+    /** 浏览快捷方式：只多一个文件 Tab 的 tab，不授予 agent 权限。返回更新后的完整列表。 */
+    suspend fun addShortcut(workspaceId: String, path: String): NetworkResult<List<String>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.addWorkspaceShortcut(workspaceId, WorkspaceDirsRequest(path)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.shortcutDirs)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun removeShortcut(workspaceId: String, path: String): NetworkResult<List<String>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.removeWorkspaceShortcut(workspaceId, WorkspaceDirsRequest(path)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.shortcutDirs)
+            is NetworkResult.Error -> r
+        }
+    }
 }

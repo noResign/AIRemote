@@ -111,3 +111,31 @@ describe('workspace extra dirs', () => {
     expect(existingDirs([`${cwd}/definitely-not-here`])).toEqual([]);
   });
 });
+
+describe('workspace browse shortcuts', () => {
+  it('stores shortcuts separately from granted dirs and cascades on delete', () => {
+    const db = openDb();
+    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
+
+    db.addWorkspaceShortcut(ws.id, '/srv/bookmark');
+    db.addWorkspaceShortcut(ws.id, '/srv/bookmark'); // idempotent
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/bookmark']);
+    expect(db.listAllWorkspaceShortcuts().get(ws.id)).toEqual(['/srv/bookmark']);
+
+    // 书签不是授权，授权也不是书签：两张表互不影响。
+    expect(db.listWorkspaceDirs(ws.id)).toEqual([]);
+    db.addWorkspaceDir(ws.id, '/srv/granted');
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/bookmark']);
+    expect(db.listWorkspaceDirs(ws.id)).toEqual(['/srv/granted']);
+
+    db.removeWorkspaceShortcut(ws.id, '/srv/bookmark');
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
+    expect(db.listWorkspaceDirs(ws.id)).toEqual(['/srv/granted']);
+
+    db.addWorkspaceShortcut(ws.id, '/srv/bookmark');
+    db.deleteWorkspace(ws.id);
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
+    expect(db.listAllWorkspaceShortcuts().size).toBe(0);
+  });
+});

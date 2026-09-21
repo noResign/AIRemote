@@ -15,6 +15,9 @@ fun friendlyError(error: NetworkResult.Error, fallbackPrefix: String = "请求�
     "directory_not_found" -> "目录不存在或已被删除"
     "not_a_directory" -> "所选路径不是文件夹"
     "directory_not_accessible" -> "目录无法访问（权限不足）"
+    "shortcut_exists" -> "该目录已经在 tab 上了"
+    "dir_exists" -> "该目录已在本工作区的附加目录里"
+    "primary_dir" -> "该目录已经是工作区主目录了"
     else -> when (error.code) {
         401 -> "token 无效或未授权（401）"
         -1 -> "无法连接 daemon，请检查网络与地址"

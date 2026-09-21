@@ -89,6 +89,12 @@ export interface WorkspaceDto {
    * edited from the workspace management page.
    */
   dirs: string[];
+  /**
+   * Browse-only bookmarks for the file tab. Unlike `dirs` these grant the agent
+   * nothing — they only add a switchable tab, and are stored separately so the
+   * two can never be confused.
+   */
+  shortcutDirs: string[];
   isDefault: boolean;
   enabled: boolean;
   sessionCount: number;
@@ -186,6 +192,10 @@ export interface ChangesResponse {
   workspacePath: string;
   /** Directory tree actually inspected; equals `workspacePath` unless `root` was passed. */
   root: string;
+  /** Every root of this workspace (primary first, then extra dirs); see `FilesResponse.roots`. */
+  roots: string[];
+  /** Browse-only bookmarks; not roots, grant nothing. See `WorkspaceDto.shortcutDirs`. */
+  shortcutDirs: string[];
   isGitRepo: boolean;
   gitRoot: string | null;
   /** Git repos among `dir`'s direct children; only filled when `isGitRepo` is false. */
@@ -220,6 +230,14 @@ export interface FilesResponse {
   workspacePath: string;
   /** Directory tree actually listed; equals `workspacePath` unless `root` was passed. */
   root: string;
+  /**
+   * Every root of this workspace (primary first, then extra dirs). Echoed so a
+   * client that renders a root switcher can refresh it alongside the listing it
+   * already fetched, instead of polling workspace state on its own schedule.
+   */
+  roots: string[];
+  /** Browse-only bookmarks; not roots, grant nothing. See `WorkspaceDto.shortcutDirs`. */
+  shortcutDirs: string[];
   path: string;
   parent: string | null;
   entries: FileEntryDto[];

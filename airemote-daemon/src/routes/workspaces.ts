@@ -4,12 +4,13 @@ import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspace-service.js';
 
-function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = []) {
+function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
   return {
     id: w.id,
     name: w.name,
     path: w.path,
     dirs,
+    shortcutDirs,
     isDefault: w.is_default === 1,
     enabled: w.enabled === 1,
     sessionCount,
@@ -30,10 +31,18 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/workspaces', (_req, res) => {
     const counts = ctx.db.countSessionsByWorkspace();
     const dirsByWorkspace = ctx.db.listAllWorkspaceDirs();
+    const shortcutsByWorkspace = ctx.db.listAllWorkspaceShortcuts();
     res.json({
       workspaces: ctx.db
         .listWorkspaces()
-        .map((w) => workspaceDto(w, counts.get(w.id) ?? 0, dirsByWorkspace.get(w.id) ?? [])),
+        .map((w) =>
+          workspaceDto(
+            w,
+            counts.get(w.id) ?? 0,
+            dirsByWorkspace.get(w.id) ?? [],
+            shortcutsByWorkspace.get(w.id) ?? [],
+          ),
+        ),
     });
   });
 
@@ -107,7 +116,12 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     const counts = ctx.db.countSessionsByWorkspace();
     res.json({
       ok: true,
-      workspace: workspaceDto(updated, counts.get(updated.id) ?? 0, ctx.db.listWorkspaceDirs(updated.id)),
+      workspace: workspaceDto(
+        updated,
+        counts.get(updated.id) ?? 0,
+        ctx.db.listWorkspaceDirs(updated.id),
+        ctx.db.listWorkspaceShortcuts(updated.id),
+      ),
     });
   });
 
@@ -163,6 +177,54 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     ctx.db.removeWorkspaceDir(workspace.id, stored);
     ctx.db.audit('remove_workspace_dir', JSON.stringify({ workspaceId: workspace.id, path: stored }));
     res.json({ ok: true, dirs: ctx.db.listWorkspaceDirs(workspace.id) });
+  });
+
+  // 浏览快捷方式：文件 Tab 的书签。**不授予 agent 任何权限**，只多一个可切换的 tab，
+  // 所以校验比 dirs 宽松（不看是否与授权目录重叠，只看「不是重复的 tab」）。
+  app.post('/api/workspaces/:id/shortcuts', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params.id);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as { path?: unknown };
+    const rawPath = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!rawPath) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    try {
+      const realPath = canonicalizeExistingDirectory(rawPath);
+      // 去重：已经在 tab 行上的目录（主目录、附加目录、已有快捷方式）不再加一次。
+      const existing = [workspace.path, ...ctx.db.listWorkspaceDirs(workspace.id), ...ctx.db.listWorkspaceShortcuts(workspace.id)];
+      if (existing.includes(realPath)) {
+        res.status(409).json({ error: 'already a tab of this workspace', code: 'shortcut_exists' });
+        return;
+      }
+      ctx.db.addWorkspaceShortcut(workspace.id, realPath);
+      ctx.db.audit('add_workspace_shortcut', JSON.stringify({ workspaceId: workspace.id, path: realPath }));
+      res.status(201).json({ ok: true, shortcutDirs: ctx.db.listWorkspaceShortcuts(workspace.id) });
+    } catch (err) {
+      sendValidationError(res, err);
+    }
+  });
+
+  app.delete('/api/workspaces/:id/shortcuts', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params.id);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as { path?: unknown };
+    const rawPath = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!rawPath) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    const stored = existingDirs([rawPath])[0] ?? path.resolve(rawPath);
+    ctx.db.removeWorkspaceShortcut(workspace.id, stored);
+    ctx.db.audit('remove_workspace_shortcut', JSON.stringify({ workspaceId: workspace.id, path: stored }));
+    res.json({ ok: true, shortcutDirs: ctx.db.listWorkspaceShortcuts(workspace.id) });
   });
 
   app.delete('/api/workspaces/:id', (req, res) => {

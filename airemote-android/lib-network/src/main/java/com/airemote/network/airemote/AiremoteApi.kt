@@ -26,6 +26,7 @@ import com.airemote.network.airemote.dto.UpdateWorkspaceRequest
 import com.airemote.network.airemote.dto.WorkspaceDirsRequest
 import com.airemote.network.airemote.dto.WorkspaceDirsResponse
 import com.airemote.network.airemote.dto.WorkspaceResponse
+import com.airemote.network.airemote.dto.WorkspaceShortcutsResponse
 import com.airemote.network.airemote.dto.WorkspacesResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -107,6 +108,19 @@ interface AiremoteApi {
         @Path("id") id: String,
         @Body body: WorkspaceDirsRequest,
     ): WorkspaceDirsResponse
+
+    /** 文件 Tab 的浏览书签：只多一个 tab，不授予 agent 权限。 */
+    @POST("api/workspaces/{id}/shortcuts")
+    suspend fun addWorkspaceShortcut(
+        @Path("id") id: String,
+        @Body body: WorkspaceDirsRequest,
+    ): WorkspaceShortcutsResponse
+
+    @HTTP(method = "DELETE", path = "api/workspaces/{id}/shortcuts", hasBody = true)
+    suspend fun removeWorkspaceShortcut(
+        @Path("id") id: String,
+        @Body body: WorkspaceDirsRequest,
+    ): WorkspaceShortcutsResponse
 
     /** `root` 省略时用工作区主目录；给了就能浏览工作区之外的目录。 */
     @GET("api/changes")

@@ -83,7 +83,10 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val root by viewModel.root.collectAsState()
     val knownRoots by viewModel.knownRoots.collectAsState()
+    val shortcuts by viewModel.shortcuts.collectAsState()
     val rootPicker by viewModel.rootPicker.collectAsState()
+    val addingShortcut by viewModel.addingShortcut.collectAsState()
+    val rootError by viewModel.rootError.collectAsState()
     var fileBrowserQuery by remember { mutableStateOf("") }
     val currentRoot = root ?: selectedWorkspacePath.orEmpty()
 
@@ -126,8 +129,13 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                 RootBar(
                     root = currentRoot,
                     knownRoots = knownRoots,
+                    shortcuts = shortcuts,
+                    error = rootError,
                     onSelectRoot = viewModel::selectRoot,
                     onPickOther = viewModel::openRootPicker,
+                    onAddRoot = viewModel::openAddShortcutPicker,
+                    onRemoveShortcut = viewModel::removeShortcut,
+                    onDismissError = viewModel::dismissRootError,
                 )
                 when (mode) {
                     FilesMode.Changes -> ChangesContent(
@@ -153,27 +161,39 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     }
 
     // 选根走绝对路径浏览（复用工作区管理页的选择器），所以能切到工作区之外。
+    // 同一个对话框两种用途：只是看看（切换），或加一个浏览书签（＋）。后者不改权限。
     rootPicker?.let { picker ->
+        val adding = addingShortcut
         DirectoryPickerDialog(
             state = picker,
             onDismiss = viewModel::closeRootPicker,
             onBrowse = viewModel::pickupRootDir,
             onToggleHidden = viewModel::toggleRootPickerHidden,
             onSelect = viewModel::confirmRootPick,
-            title = "选择浏览目录",
-            selectLabel = "浏览此文件夹",
+            title = if (adding) "添加浏览目录" else "选择浏览目录",
+            selectLabel = if (adding) "加为快捷（不改权限）" else "浏览此文件夹",
             selectEnabled = true,
         )
     }
 }
 
-/** 当前浏览根：绝对路径在前，工作区已知根可一键切，另有任意目录入口。 */
+/**
+ * 当前浏览根 + tab 行。tab 有两类，视觉上区别对待：
+ * - **工作区的根**（主目录、附加目录）——只在别处管理，这里不可删；
+ * - **浏览书签**（`shortcuts`）——纯便利入口，带「×」可就地移除，不涉及 agent 权限。
+ * 末尾「＋」加一个书签；右上「切换」只是临时去别的目录看一眼，什么都不改。
+ */
 @Composable
 private fun RootBar(
     root: String,
     knownRoots: List<String>,
+    shortcuts: List<String>,
+    error: String?,
     onSelectRoot: (String?) -> Unit,
     onPickOther: () -> Unit,
+    onAddRoot: () -> Unit,
+    onRemoveShortcut: (String) -> Unit,
+    onDismissError: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -194,24 +214,72 @@ private fun RootBar(
                     .padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
             )
         }
-        if (knownRoots.size > 1) {
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                knownRoots.forEach { candidate ->
-                    val active = candidate == root
+        // 始终渲染：即使还没有附加目录或书签，也要有地方点「＋」加第一个。
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            knownRoots.forEach { candidate ->
+                Text(
+                    rootLabel(candidate),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (candidate == root) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .clickable { onSelectRoot(candidate) }
+                        .padding(vertical = 4.dp),
+                )
+            }
+            // 书签：带「×」可就地移除，所以和上面的「根」在视觉上分开。
+            shortcuts.forEach { candidate ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         rootLabel(candidate),
                         style = MaterialTheme.typography.labelSmall,
-                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (candidate == root) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         modifier = Modifier
                             .clickable { onSelectRoot(candidate) }
                             .padding(vertical = 4.dp),
                     )
+                    Text(
+                        "×",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .clickable { onRemoveShortcut(candidate) }
+                            .padding(start = 3.dp, top = 4.dp, bottom = 4.dp),
+                    )
                 }
+            }
+            Text(
+                "＋ 目录",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                modifier = Modifier
+                    .clickable { onAddRoot() }
+                    .padding(vertical = 4.dp),
+            )
+        }
+        error?.let { message ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "知道了",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .clickable { onDismissError() }
+                        .padding(start = 8.dp, vertical = 4.dp),
+                )
             }
         }
     }

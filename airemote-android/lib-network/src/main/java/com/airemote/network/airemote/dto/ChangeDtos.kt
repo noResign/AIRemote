@@ -23,6 +23,10 @@ data class ChangesResponse(
     val workspacePath: String = "",
     /** 实际检查的目录树；未传 `root` 时等于 `workspacePath`。 */
     val root: String = "",
+    /** 该工作区的全部根（主目录在前，其后是附加目录）；用于渲染根切换器。 */
+    val roots: List<String> = emptyList(),
+    /** 浏览书签（不属于 roots，不授予 agent 权限），同样作为可切换 tab 渲染。 */
+    val shortcutDirs: List<String> = emptyList(),
     val isGitRepo: Boolean = false,
     val gitRoot: String? = null,
     /** `root` 直接子目录里的 git 仓库（`root` 相对路径），仅在非仓库目录下有值。 */

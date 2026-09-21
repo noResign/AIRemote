@@ -2,7 +2,12 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
 import { ChangesError, getDiff, listChanges } from '../changes.js';
-import { canonicalizeExistingDirectory, resolveWorkspaceForRequest, WorkspaceValidationError } from '../workspace-service.js';
+import {
+  canonicalizeExistingDirectory,
+  resolveWorkspaceForRequest,
+  workspaceRoots,
+  WorkspaceValidationError,
+} from '../workspace-service.js';
 
 function sendChangesError(res: import('express').Response, err: unknown): void {
   if (err instanceof ChangesError) {
@@ -46,6 +51,8 @@ export function registerChangesRoutes(app: Express, ctx: AppContext): void {
         workspaceId: workspace.id,
         workspacePath: workspace.path,
         root,
+        roots: workspaceRoots(ctx.db, workspace),
+        shortcutDirs: ctx.db.listWorkspaceShortcuts(workspace.id),
         ...result,
       });
     } catch (err) {
