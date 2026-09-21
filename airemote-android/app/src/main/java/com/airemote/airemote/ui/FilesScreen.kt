@@ -80,9 +80,12 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val diffState by viewModel.diffState.collectAsState()
     val fileBrowser by viewModel.fileBrowser.collectAsState()
     val fileContent by viewModel.fileContent.collectAsState()
-    val pickingDir by viewModel.pickingDir.collectAsState()
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
+    val root by viewModel.root.collectAsState()
+    val knownRoots by viewModel.knownRoots.collectAsState()
+    val rootPicker by viewModel.rootPicker.collectAsState()
     var fileBrowserQuery by remember { mutableStateOf("") }
+    val currentRoot = root ?: selectedWorkspacePath.orEmpty()
 
     when {
         fileContent != null -> FileContentScreen(state = fileContent!!, onBack = viewModel::closeFile)
@@ -120,25 +123,19 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     .padding(innerPadding),
             ) {
                 SegmentedTabs(mode = mode, onSelect = viewModel::selectMode)
+                RootBar(
+                    root = currentRoot,
+                    knownRoots = knownRoots,
+                    onSelectRoot = viewModel::selectRoot,
+                    onPickOther = viewModel::openRootPicker,
+                )
                 when (mode) {
-                    FilesMode.Changes -> if (pickingDir) {
-                        DirPickerContent(
-                            state = fileBrowser,
-                            onBrowse = viewModel::browse,
-                            onLoadMore = viewModel::loadMore,
-                            onConfirm = viewModel::confirmPickDir,
-                            onCancel = viewModel::cancelPickDir,
-                            onRetry = viewModel::refresh,
-                        )
-                    } else {
-                        ChangesContent(
-                            state = uiState,
-                            onRetry = viewModel::refresh,
-                            onOpen = viewModel::openDiff,
-                            onSelectScope = viewModel::selectScope,
-                            onPickDir = viewModel::startPickDir,
-                        )
-                    }
+                    FilesMode.Changes -> ChangesContent(
+                        state = uiState,
+                        onRetry = viewModel::refresh,
+                        onOpen = viewModel::openDiff,
+                        onOpenRepo = viewModel::openChildDir,
+                    )
                     FilesMode.All -> FileBrowserContent(
                         state = fileBrowser,
                         query = fileBrowserQuery,
@@ -154,7 +151,73 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
             }
     }
     }
+
+    // 选根走绝对路径浏览（复用工作区管理页的选择器），所以能切到工作区之外。
+    rootPicker?.let { picker ->
+        DirectoryPickerDialog(
+            state = picker,
+            onDismiss = viewModel::closeRootPicker,
+            onBrowse = viewModel::pickupRootDir,
+            onToggleHidden = viewModel::toggleRootPickerHidden,
+            onSelect = viewModel::confirmRootPick,
+            title = "选择浏览目录",
+            selectLabel = "浏览此文件夹",
+            selectEnabled = true,
+        )
+    }
 }
+
+/** 当前浏览根：绝对路径在前，工作区已知根可一键切，另有任意目录入口。 */
+@Composable
+private fun RootBar(
+    root: String,
+    knownRoots: List<String>,
+    onSelectRoot: (String?) -> Unit,
+    onPickOther: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "根：" + root.ifBlank { "(未选择工作区)" },
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "切换",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clickable { onPickOther() }
+                    .padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
+            )
+        }
+        if (knownRoots.size > 1) {
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                knownRoots.forEach { candidate ->
+                    val active = candidate == root
+                    Text(
+                        rootLabel(candidate),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .clickable { onSelectRoot(candidate) }
+                            .padding(vertical = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun rootLabel(path: String): String = path.substringAfterLast('/').ifBlank { path }
 
 @Composable
 private fun SegmentedTabs(mode: FilesMode, onSelect: (FilesMode) -> Unit) {
@@ -190,8 +253,7 @@ private fun ChangesContent(
     state: FilesUiState,
     onRetry: () -> Unit,
     onOpen: (ChangedFileDto) -> Unit,
-    onSelectScope: (String) -> Unit,
-    onPickDir: () -> Unit,
+    onOpenRepo: (String) -> Unit,
 ) {
     when (state) {
         is FilesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -199,12 +261,11 @@ private fun ChangesContent(
         }
         is FilesUiState.Error -> ErrorContent(state.message, onRetry)
         is FilesUiState.Content -> Column(modifier = Modifier.fillMaxSize()) {
-            ScopeBar(scopePath = state.scopePath, onPickDir = onPickDir)
             when {
-                !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onSelectScope)
+                !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onOpenRepo)
                 !state.isGitRepo -> EmptyHint(
                     title = "此目录不是 Git 仓库",
-                    body = "它下面的仓库会列在这里；更深的目录请点上方选择。",
+                    body = "它下面的仓库会列在这里；更深的目录请点上方「切换」。",
                 )
                 state.files.isEmpty() -> EmptyHint(
                     title = "当前没有未提交的改动",
@@ -231,34 +292,8 @@ private fun ChangesContent(
     }
 }
 
-/** 改动视图作用于哪个目录；点一下进选目录模式。 */
 @Composable
-private fun ScopeBar(scopePath: String, onPickDir: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onPickDir() }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "目录：" + scopePath.ifBlank { "工作区根目录" },
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        Text(
-            "选择",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun RepoList(repos: List<String>, onSelectScope: (String) -> Unit) {
+private fun RepoList(repos: List<String>, onOpenRepo: (String) -> Unit) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
@@ -276,7 +311,7 @@ private fun RepoList(repos: List<String>, onSelectScope: (String) -> Unit) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onSelectScope(repo) }
+                    .clickable { onOpenRepo(repo) }
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -289,83 +324,6 @@ private fun RepoList(repos: List<String>, onSelectScope: (String) -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-            }
-        }
-    }
-}
-
-/** 选目录模式：点行 = 进入该目录，选中靠「用此目录」。 */
-@Composable
-private fun DirPickerContent(
-    state: FileBrowserUiState,
-    onBrowse: (String?) -> Unit,
-    onLoadMore: () -> Unit,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-    onRetry: () -> Unit,
-) {
-    val directories = remember(state.entries) { state.entries.filter { it.type == "directory" } }
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onCancel) { Text("取消") }
-            Text(
-                "选择要查看改动的目录",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onConfirm) { Text("用此目录") }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-                .horizontalScroll(rememberScrollState()),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            breadcrumbs(state.path).forEachIndexed { index, crumb ->
-                if (index > 0) Text(" / ", color = IdeMuted, style = MaterialTheme.typography.labelSmall)
-                Text(
-                    crumb.label,
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = if (index == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .clickable { onBrowse(crumb.path) }
-                        .padding(horizontal = 2.dp, vertical = 4.dp),
-                )
-            }
-        }
-        Row(modifier = Modifier.padding(horizontal = 12.dp)) {
-            if (state.parent != null) {
-                TextButton(onClick = { onBrowse(state.parent) }) { Text("上一级") }
-            }
-        }
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            if (state.loading && state.entries.isEmpty()) {
-                item { Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
-            }
-            state.error?.let { message -> item { ErrorContent(message, onRetry) } }
-            if (directories.isEmpty() && !state.loading && state.error == null) {
-                item { Text("此目录下没有子目录", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-            items(directories, key = { it.path }) { entry ->
-                FileEntryRow(entry = entry, onOpen = {}, onBrowse = onBrowse)
-            }
-            if (state.nextCursor != null) {
-                item {
-                    OutlinedButton(
-                        onClick = onLoadMore,
-                        enabled = !state.loadingMore,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) { Text(if (state.loadingMore) "加载中…" else "加载更多") }
-                }
             }
         }
     }
@@ -508,7 +466,8 @@ private fun FileBrowserContent(
 private data class Breadcrumb(val label: String, val path: String?)
 
 private fun breadcrumbs(path: String): List<Breadcrumb> {
-    val items = mutableListOf(Breadcrumb("workspace", null))
+    // 根不一定是工作区（可以切到任意目录），所以第一段用中性名；绝对路径在 RootBar 里。
+    val items = mutableListOf(Breadcrumb("根目录", null))
     var current = ""
     for (part in path.split('/').filter { it.isNotBlank() }) {
         current = if (current.isEmpty()) part else "$current/$part"

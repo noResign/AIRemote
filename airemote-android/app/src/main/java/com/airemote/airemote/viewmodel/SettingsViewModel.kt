@@ -52,6 +52,10 @@ class SettingsViewModel(
     private val _directoryPicker = MutableStateFlow<DirectoryPickerUiState?>(null)
     val directoryPicker = _directoryPicker.asStateFlow()
 
+    /** 目录选择器的落点：null = 新增工作区；非空 = 给该工作区加一个附加目录。 */
+    private val _dirTargetWorkspaceId = MutableStateFlow<String?>(null)
+    val dirTargetWorkspaceId = _dirTargetWorkspaceId.asStateFlow()
+
     /** 改默认权限失败的提示：选项已乐观选中，失败时回滚，这里说明为什么弹回去了。 */
     private val _permissionModeError = MutableStateFlow<String?>(null)
     val permissionModeError = _permissionModeError.asStateFlow()
@@ -178,12 +182,48 @@ class SettingsViewModel(
         }
     }
 
-    fun openDirectoryPicker() {
+    /** [workspaceId] 为 null 时是「新增工作区」，否则是给该工作区添加附加目录。 */
+    fun openDirectoryPicker(workspaceId: String? = null) {
+        _dirTargetWorkspaceId.value = workspaceId
         loadDirectories(null, false)
     }
 
     fun closeDirectoryPicker() {
         _directoryPicker.value = null
+        _dirTargetWorkspaceId.value = null
+    }
+
+    /** 目录选择器确认：按落点分派到「新增工作区」或「添加附加目录」。 */
+    fun confirmDirectoryPick() {
+        val current = _directoryPicker.value as? DirectoryPickerUiState.Ready ?: return
+        val target = _dirTargetWorkspaceId.value
+        if (target == null) {
+            createWorkspaceFromCurrentDirectory()
+        } else {
+            addWorkspaceDir(target, current.path)
+        }
+    }
+
+    fun addWorkspaceDir(workspaceId: String, path: String) {
+        viewModelScope.launch {
+            when (val r = workspaceRepository.addDir(workspaceId, path)) {
+                is NetworkResult.Success -> {
+                    _directoryPicker.value = null
+                    _dirTargetWorkspaceId.value = null
+                    load()
+                }
+                is NetworkResult.Error -> _directoryPicker.value = DirectoryPickerUiState.Error(friendlyError(r))
+            }
+        }
+    }
+
+    fun removeWorkspaceDir(workspaceId: String, path: String) {
+        viewModelScope.launch {
+            when (val r = workspaceRepository.removeDir(workspaceId, path)) {
+                is NetworkResult.Success -> load()
+                is NetworkResult.Error -> _uiState.value = SettingsUiState.Error(friendlyError(r))
+            }
+        }
     }
 
     fun loadDirectories(path: String?, showHidden: Boolean = false) {

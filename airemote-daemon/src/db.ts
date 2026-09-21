@@ -170,6 +170,13 @@ export class Db {
         last_used_at INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS workspace_dirs (
+        workspace_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (workspace_id, path)
+      );
+
       CREATE TABLE IF NOT EXISTS session_permission_grants (
         session_id TEXT NOT NULL,
         tool_name TEXT NOT NULL,
@@ -375,7 +382,44 @@ export class Db {
   }
 
   deleteWorkspace(id: string): void {
+    this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ?`).run(id);
     this.db.prepare(`DELETE FROM workspaces WHERE id = ?`).run(id);
+  }
+
+  // ---- workspace dirs (额外允许 agent 访问的目录, 工作区级) ----
+
+  listWorkspaceDirs(workspaceId: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT path FROM workspace_dirs WHERE workspace_id = ? ORDER BY created_at ASC, path ASC`)
+      .all(workspaceId) as unknown as { path: string }[];
+    return rows.map((r) => r.path);
+  }
+
+  /** All workspaces' extra dirs in one query, so the list endpoint avoids N+1. */
+  listAllWorkspaceDirs(): Map<string, string[]> {
+    const rows = this.db
+      .prepare(`SELECT workspace_id, path FROM workspace_dirs ORDER BY created_at ASC, path ASC`)
+      .all() as unknown as { workspace_id: string; path: string }[];
+    const byWorkspace = new Map<string, string[]>();
+    for (const row of rows) {
+      const list = byWorkspace.get(row.workspace_id);
+      if (list) list.push(row.path);
+      else byWorkspace.set(row.workspace_id, [row.path]);
+    }
+    return byWorkspace;
+  }
+
+  addWorkspaceDir(workspaceId: string, dir: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO workspace_dirs (workspace_id, path, created_at) VALUES (?, ?, ?)
+         ON CONFLICT(workspace_id, path) DO NOTHING`,
+      )
+      .run(workspaceId, dir, Date.now());
+  }
+
+  removeWorkspaceDir(workspaceId: string, dir: string): void {
+    this.db.prepare(`DELETE FROM workspace_dirs WHERE workspace_id = ? AND path = ?`).run(workspaceId, dir);
   }
 
   countSessionsByWorkspace(): Map<string, number> {

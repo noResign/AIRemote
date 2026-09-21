@@ -8,8 +8,18 @@
  *   {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow"|"deny","permissionDecisionReason":"..."}}
  *
  * The daemon passes itself in via env (set by the engine at spawn time):
- * AIREMOTE_DAEMON_URL, AIREMOTE_TOKEN, AIREMOTE_RUN_ID.
+ * AIREMOTE_DAEMON_URL, AIREMOTE_TOKEN, AIREMOTE_RUN_ID, AIREMOTE_ALLOWED_DIRS.
+ *
+ * Read/Grep are gated so a read outside the workspace can be approved remotely
+ * (and then remembered). That means this hook runs on a very hot path, so a
+ * read that is *already* in scope is answered here, offline — no daemon
+ * round-trip. Everything else falls through to the daemon.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { gatedTargetFor } from './permission-paths.js';
+import { resolveWorkspaceCwd } from './workspace.js';
+
 const POLL_INTERVAL_MS = 250;
 // daemon 决策窗口由 engine spawn 时下发；轮询兜底超时在此之上加缓冲，保证 hook 一定
 // 等到 daemon 先定论（timed_out），只有 daemon 不可达时才走兜底 deny。
@@ -18,6 +28,47 @@ const DAEMON_TIMEOUT_MS = (() => {
   return Number.isFinite(raw) && raw > 0 ? raw : 120_000;
 })();
 const POLL_TIMEOUT_MS = DAEMON_TIMEOUT_MS + 15_000;
+
+/**
+ * Roots this run may touch without asking, canonicalized at spawn time.
+ * Index 0 is always the session cwd (engine sends `[cwd, ...extraDirs]`), which
+ * also gives us the base for resolving relative paths — the hook is handed tool
+ * input only, not a cwd.
+ */
+const ALLOWED_DIRS: string[] = (() => {
+  const raw = process.env.AIREMOTE_ALLOWED_DIRS;
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((d): d is string => typeof d === 'string' && d.length > 0);
+  } catch {
+    return [];
+  }
+})();
+
+function insideAllowed(target: string): boolean {
+  let resolved: string;
+  try {
+    resolved = fs.realpathSync(target);
+  } catch {
+    // Not on disk (yet) — compare the plain resolved form rather than failing open.
+    resolved = path.resolve(target);
+  }
+  return ALLOWED_DIRS.some((root) => resolveWorkspaceCwd(resolved, root) !== null);
+}
+
+/**
+ * Answer offline when the call is provably in scope, so the common case costs
+ * one process spawn instead of spawn + HTTP. Returns null to defer to the
+ * daemon (out of scope, or a shape we don't recognise).
+ */
+function localAllowReason(toolName: string, toolInput: unknown): string | null {
+  if (ALLOWED_DIRS.length === 0) return null;
+  const target = gatedTargetFor(toolName, toolInput, ALLOWED_DIRS[0]);
+  if (!target) return null;
+  return insideAllowed(target.path) ? 'inside workspace' : null;
+}
 
 async function readAllStdin(): Promise<string> {
   let data = '';
@@ -99,6 +150,13 @@ async function main(): Promise<void> {
         ? input.toolName
         : 'unknown';
   const toolInput = input.tool_input ?? input.toolInput ?? input.input ?? {};
+
+  const localReason = localAllowReason(toolName, toolInput);
+  if (localReason) {
+    emit('allow', localReason);
+    return;
+  }
+
   const result = await requestDecision(toolName, toolInput);
   emit(result.decision, result.reason);
 }

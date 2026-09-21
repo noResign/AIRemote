@@ -1,14 +1,31 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
+import type { WorkspaceRow } from '../db.js';
 import { ChangesError, getDiff, listChanges } from '../changes.js';
-import { resolveWorkspaceForRequest } from '../workspace-service.js';
+import { canonicalizeExistingDirectory, resolveWorkspaceForRequest, WorkspaceValidationError } from '../workspace-service.js';
 
 function sendChangesError(res: import('express').Response, err: unknown): void {
   if (err instanceof ChangesError) {
     res.status(err.httpStatus).json({ error: err.message, code: err.code });
     return;
   }
+  if (err instanceof WorkspaceValidationError) {
+    res.status(err.code === 'directory_not_found' ? 404 : 400).json({ error: err.message, code: err.code });
+    return;
+  }
   res.status(500).json({ error: err instanceof Error ? err.message : String(err), code: 'internal_error' });
+}
+
+/**
+ * Which tree to inspect for git changes. An explicit `root` wins over the
+ * workspace's primary dir and is only checked for existing and being a
+ * directory — inspecting repos outside the workspace is deliberate, matching
+ * the Files tab (see daemon.md §9).
+ */
+function resolveRoot(workspace: WorkspaceRow, requested: unknown): string {
+  const raw = typeof requested === 'string' ? requested.trim() : '';
+  if (!raw) return workspace.path;
+  return canonicalizeExistingDirectory(raw);
 }
 
 export function registerChangesRoutes(app: Express, ctx: AppContext): void {
@@ -19,12 +36,16 @@ export function registerChangesRoutes(app: Express, ctx: AppContext): void {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
-    const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
     try {
-      const result = await listChanges(workspace.path, dir);
+      const root = resolveRoot(workspace, req.query.root);
+      if (root !== workspace.path) {
+        ctx.db.audit('browse_root', JSON.stringify({ workspaceId: workspace.id, root, endpoint: 'changes' }));
+      }
+      const result = await listChanges(root);
       res.json({
         workspaceId: workspace.id,
         workspacePath: workspace.path,
+        root,
         ...result,
       });
     } catch (err) {
@@ -44,10 +65,10 @@ export function registerChangesRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'path is required', code: 'bad_request' });
       return;
     }
-    const dir = typeof req.query.dir === 'string' ? req.query.dir : '';
     try {
-      const result = await getDiff(workspace.path, relativePath, dir);
-      res.json(result);
+      const root = resolveRoot(workspace, req.query.root);
+      const result = await getDiff(root, relativePath);
+      res.json({ ...result, root });
     } catch (err) {
       sendChangesError(res, err);
     }

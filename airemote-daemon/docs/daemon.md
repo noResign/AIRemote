@@ -94,7 +94,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | 表 | 内容 |
 |---|---|
 | `sessions` | 会话：`id`、`runtime`、`claude_session_id`、`workspace_id`、`permission_mode`、`cwd`、`title`、时间戳 |
-| `workspaces` | 工作区根目录：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
+| `workspaces` | 工作区**主目录**：`id`、`name`、`path`、`is_default`、`enabled`、时间戳 |
+| `workspace_dirs` | 工作区**附加目录**（agent 可读写、该工作区所有会话继承）：`workspace_id`、`path`、`created_at`；随工作区级联删除 |
 | `session_permission_grants` | Session 级「允许全部」授权：`session_id`、`tool_name`（普通工具名，或 MCP 的 `mcp__<server>__*`）、`created_at` |
 | `settings` | 运行期可变配置：`key`、`value`、`updated_at` |
 | `messages` | 对话转录：user prompt + assistant 聚合后的可见文本 |
@@ -112,15 +113,17 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/health` | 否 | 存活 + 版本 + 默认 workspace 根目录 |
 | `GET /api/config` | 是 | 全局默认权限模式、默认 Workspace、只读/重启级配置 |
 | `PATCH /api/config` | 是 | 更新 `defaultPermissionMode` / `defaultWorkspaceId` |
-| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount） |
+| `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`） |
 | `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区） |
 | `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
-| `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止） |
-| `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=` |
-| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&dir=<relative>`（`dir` 默认工作区根） |
-| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&path=<relative>&dir=<relative>` |
-| `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&path=&cursor=&limit=&showHidden=&showIgnored=` |
-| `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&path=<relative>`；有大小限制与二进制检测 |
+| `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止；级联删附加目录） |
+| `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」 |
+| `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
+| `GET /api/fs/directories` | 是 | 目录选择器，`?path=<abs>&showHidden=`；**只列目录名，不读文件内容**，无工作区限制 |
+| `GET /api/changes` | 是 | 某目录的 Git 未提交改动，`?workspaceId=&root=<abs>` |
+| `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>` |
+| `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=` |
+| `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&root=<abs>&path=<relative>`；有大小限制与二进制检测 |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'all'}` |
@@ -150,16 +153,34 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回单文件 patch。
 详见 `docs/files_tab_design.md`。
 
-**目录作用域（`dir`）**：`git rev-parse --show-toplevel` 只向上找仓库，所以工作区根目录自身不在
-任何仓库时（如 `~/OpenProject` 下面平铺着一堆仓库），根目录看改动会直接 `isGitRepo=false`。
-为此两个端点都接受 `dir`（workspace 相对路径，默认 `''` = 根）：
+**非仓库目录返回 `repos`**：`git rev-parse --show-toplevel` 只向上找仓库，所以根目录自身不在任何
+仓库时（如 `~/OpenProject` 下面平铺着一堆仓库），根目录看改动会直接 `isGitRepo=false`。
+此时额外返回 `repos`：**只看直接子目录一层**（跳过 `.git`/`node_modules` 等 `IGNORED_DIRS`，
+命中仓库不再下钻），返回的是相对当前根的路径，空数组表示该目录下没有仓库。
+客户端点其中一个仓库 = **把根换成那个仓库**（见下面的「浏览根」）。
 
-- `dir` 必须落在 workspace 内（`resolveScopeDir` 做 realpath 后再判包含，防 symlink 逃逸），
-  越界/不存在/非目录分别报 `path_outside_workspace` / `directory_not_found` / `not_a_directory`；
-- git 命令的 cwd 是 `dir`，但**返回的文件路径始终是 workspace 相对**——客户端既有链路
-  （diff、文件内容）因此不需要区分作用域；
-- 非仓库目录额外返回 `repos`：**只看直接子目录一层**（跳过 `.git`/`node_modules` 等 `IGNORED_DIRS`，
-  命中仓库不再下钻），更深的层级由客户端选目录进去。返回空数组表示该目录下没有仓库。
+> 曾经另有一个 `dir` 参数，用来「在根之内缩窄到某个子目录」。它已被移除：`root` 完全覆盖了它
+> 的表达能力——原来「根=`~/OpenProject` + `dir=repoA`」等价于「根=`~/OpenProject/repoA`」——
+> 而两个并列的「选目录」入口在实践中只会造成混淆。`resolveScopeDir` 保留，但只做
+> 「存在 + 是目录」校验（不存在/非目录报 `directory_not_found` / `not_a_directory`）。
+
+**浏览根（`root`）**：`/api/files`、`/api/files/content`、`/api/changes`、`/api/changes/diff`
+都接受可选的 `root=<绝对路径>`，**缺省 = 工作区主目录**（此时行为与加该参数前完全一致）。
+给了 `root` 时只校验「存在 + 是目录」，**不要求落在工作区内**——文件 Tab 因此能浏览工作区之外
+的目录。这条能力是显式决定的（见 §9「workspace 不是沙箱」），非默认 `root` 会写 `browse_root`
+审计日志。响应回显 `root`，客户端据此把相对路径配对到正确的根。
+
+**附加目录（`workspace_dirs`）与 `--add-dir`**：一个工作区 = 主目录 + N 个附加目录。
+附加目录有两个来源、**同一份存储**：
+
+1. agent 越界读取被远程批准（见 §7）时写入；
+2. 手机在「工作区管理」里手动增删。
+
+spawn 时把「主目录 + 附加目录」中**除 cwd 之外**的部分逐个传给 `claude --add-dir`，
+并把完整列表通过 `AIREMOTE_ALLOWED_DIRS` 传给 PreToolUse hook 做本地判定。
+`--add-dir <directories...>` 是**变长参数**，因此它必须排在 argv 最末；prompt 走 stdin
+（`--input-format stream-json`），不是位置参数，这一点不能改。
+存储在磁盘上已消失的目录在 spawn 时被过滤掉（`existingDirs`），但**不**从配置里静默删除。
 
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 
@@ -197,8 +218,41 @@ bypass       -> bypassPermissions
 ```
 
 `ask` 模式下 PreToolUse hook 的 matcher 为
-`Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*`；`acceptEdits` 匹配 `Bash|mcp__.*`；
-`bypass` 不注入 hook。
+`Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|mcp__.*`；`acceptEdits` 匹配
+`Bash|Read|Grep|mcp__.*`；`bypass` 不注入 hook。
+
+`Glob` **不纳入**：它只返回文件名、不返回内容，却是探索阶段最频繁的调用，
+每加一个受门禁的工具就多一次 hook 进程 spawn。
+
+### 7.1 越界读取：审批 + 目录授权
+
+`Read` / `Grep` 的「可达范围」就是路径本身，所以它们按**目录**门禁，而不是按工具门禁：
+
+| 情况 | 行为 |
+|---|---|
+| 落在工作区某个根（主目录或附加目录）内 | **hook 本地直接放行**，不打 daemon、不弹框 |
+| 落在所有根之外 | 打 daemon → 广播到手机 → 用户决定 |
+
+本地快路径是性能设计：hook 的允许列表由 spawn 时下发的 `AIREMOTE_ALLOWED_DIRS` 提供
+（realpath 后的 `[cwd, ...附加目录]`，位置 0 恒为 cwd，同时用作相对路径的解析基准）。
+命中就返回 `permissionDecision: allow`，省掉 HTTP 往返。实测编译产物启动约 27ms，
+这是每次受门禁调用的固定成本。
+
+判定用的路径解析在 `permission-paths.ts`（纯字符串运算，不碰文件系统，hook 与路由共用）：
+`Read` 取 `file_path`（批准的粒度是**其父目录**——agent 一个目录下往往连读多文件，
+按文件记会导致反复询问）；`Grep` 取 `path`（缺省 = cwd）、并检查 `glob` 含 `..` 时转人工；
+`pattern` 是内容正则、不是路径，不参与判定。hook 侧再做一次 `realpath` 防 symlink 逃逸。
+
+批准后的落点是**工作区级**（`workspace_dirs`，见 §6）：批准一次，该工作区所有会话
+（含正在跑的与以后新建的）都不再询问。手机审批卡片必须写明这个作用域。
+
+生效时机（spawn 参数改不了正在跑的进程）：
+
+- **当前 run**：`AIREMOTE_ALLOWED_DIRS` 是 spawn 时固定的，看不到新批准的目录，所以仍会打
+  daemon——但 daemon 查 `workspace_dirs` 后直接放行、不弹框。同一工作区的其他并发会话同理；
+- **下一个 run**：`--add-dir` 才真正下发，此后该目录连 hook 都不触发。
+
+撤销：在「工作区管理」里移除该附加目录即可，`--add-dir` 与允许列表都会随之收回。
 
 **MCP 工具**（`mcp__<server>__<tool>`）与 Bash/Write/Edit 是平级的顶层工具，不属于其中任何
 一类，但**在 `ask` 和 `acceptEdits` 下都纳入远程审批**：MCP 工具能调用外部服务、产生任意副
@@ -224,6 +278,15 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
   普通工具是 toolName 本身（`Bash`、`Write`…），**MCP 工具是 server 级通配**
   `mcp__<server>__*`——一个 server 往往暴露几十个工具，逐个批准没法用；key 映射见
   `tool-grants.ts`（`toGrantKey` / `grantKeyCandidates`）；
+- **`Read` / `Grep` 不接受 `allow_all`**：对它们来说那等于「本 Session 内读任意路径」——
+  比「允许此目录」大得多，而且走过之后 daemon 会在 `hasPermissionGrant` 那一步直接
+  `auto-allowed`，**目录授权再也不会被写入**，整套目录机制静默失效。两层防护：
+  1. 客户端不提供该按钮（`ui_design.md` §6.7）；
+  2. daemon 收到针对目录门禁工具的 `allow_all` 返回 **400 `allow_all_unsupported`**，
+     并记 `log.warn`；请求保持 pending，客户端改发 `allow` 仍可通过。不做降级兼容——
+     这类「全盘读取」的授权一旦存在就会架空目录机制，宁可显式失败。
+  同理，**目录门禁工具不吃 Session 级 tool 授权**：`create` 里的 `hasPermissionGrant`
+  自动放行会跳过它们，否则一个遗留的 `Read` 授权就能让全盘读取静默复活；
 - 查 grant 时 MCP 工具会同时匹配 server 级通配与早期写入的精确名字，旧 grant 继续有效；
 - 「允许全部」会把当前已 pending 的、同一 grant key 覆盖的请求一并放行，并广播最终状态；
 - grant 持久化到 SQLite，daemon 重启/App 重连后仍有效；
@@ -256,7 +319,8 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见 §7）。
 - **工作目录**：daemon 启动时把 `--workspace` 注册为第一个 Workspace；手机可新增/切换 Workspace。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
-  否则 400 `cwd_not_allowed`。
+  否则 400 `cwd_not_allowed`。**注意**：这条校验针对工作区**主目录**（新 Session 的 cwd 就取自主目录）；
+  工作区还可能有附加目录（§6），它们不参与 cwd 校验，只扩大 agent 的可达范围。
 - **Workspace 嵌套**：允许父子包含关系（典型场景：daemon `--workspace` 指向根目录，之后把其下的
   子目录注册成独立 Workspace）。Session 的归属靠自身 `workspace_id`，不从路径前缀推导；前缀只用于
   校验 cwd 位于所属 Workspace 内，因此嵌套不影响归属正确性。唯一的语义放宽：查询外层 Workspace 的
@@ -268,16 +332,37 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 ### ⚠️ 重要边界：`workspace` 不是沙箱
 
 `workspace` 只决定 **Claude 进程从哪个目录启动（spawn cwd）**，**不是文件系统沙箱**。
-Claude 启动后，访问别的目录由「工具权限」决定，与 workspace 无关：
+Claude 启动后，访问别的目录由「工具权限」决定，与 workspace 无关。
+下表为**实测**行为（2026-09，Claude Code 当前版本）：
 
 | 工具 | 行为 |
 |---|---|
-| Read / Write / Edit | acceptEdits 下**直接放行**，可读写任意路径（含 workspace 外） |
-| Bash 只读（`cat`/`ls`/…） | 自动放行，不看目录 |
+| Read / Grep | 落在工作区内 → 自动放行；区外 → 弹审批，批准后该目录记入工作区（§7.1） |
+| Glob | 不受 AIRemote 门禁（matcher 不含它），只返回文件名 |
+| Write / Edit / MultiEdit | `ask` 下弹审批；`acceptEdits` / `bypass` 下**直接放行**，可写任意路径 |
+| Bash 只读（`cat`/`ls`/`grep`…） | 自动放行，**完全不看路径**——`cat <工作区外文件>` 一样放行 |
 | Bash 有副作用 | 弹审批（审批的是命令本身，不专门按目录拦截） |
+
+**因此 §7.1 的读取审批是「解除 Claude Code 拦截」的便利机制，不是隔离边界**：
+同一条越界读取，走 `Read` 会被问、走 `cat` 从来不会被问，两者终点一致，差别只在于是否经过用户。
+曾评估给只读 Bash 白名单补路径校验以堵住这条，**已决定不做**——读命令放行的影响可接受，
+而 agent 本就有 Bash 权限，堵住 `cat` 收益有限。（`env` 泄露 `AIREMOTE_TOKEN` 同理：
+`cat <data-dir>/token` 一直可达且两者是同一个值，摘掉 `env` 只是装饰。）
 
 要做到文件级物理隔离，需要 OS 层沙箱（bwrap / firejail / 容器 / sandbox-exec），纯靠 Claude
 Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**」，不是「只能碰哪些目录」。
+
+### 目录授权的作用域
+
+两个「允许」的作用域**刻意不同**，不要当成不一致：
+
+| 授权 | 作用域 | 落点 | 撤销入口 |
+|---|---|---|---|
+| 工具授权（「允许全部」） | Session + toolName | `session_permission_grants` | Session 权限页 |
+| 目录授权（越界读取批准） | **工作区** | `workspace_dirs` | 工作区管理页 |
+
+理由：目录本来就是工作区的属性（工作区 = 从哪个目录干活），批准一次就该校内所有会话复用，
+否则同一个工作区每开一个新会话都要重批一遍；而工具授权的风险随会话场景变化，跟着 Session 更合适。
 
 ## 10. 配置参数参考
 

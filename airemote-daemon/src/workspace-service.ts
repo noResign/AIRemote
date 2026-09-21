@@ -37,10 +37,33 @@ export function workspaceContains(workspacePath: string, candidate: string): boo
   return resolveWorkspaceCwd(candidate, workspacePath) !== null;
 }
 
-export function findContainingWorkspace(workspaces: WorkspaceRow[], candidate: string): WorkspaceRow | undefined {
-  return workspaces
-    .filter((w) => w.enabled === 1 && workspaceContains(w.path, candidate))
-    .sort((a, b) => b.path.length - a.path.length)[0];
+/** Every root a session in this workspace may touch: primary first, then extra dirs. */
+export function workspaceRoots(db: Db, workspace: WorkspaceRow): string[] {
+  return [workspace.path, ...db.listWorkspaceDirs(workspace.id)];
+}
+
+/** True when `candidate` is inside any of the workspace's roots. */
+export function workspaceContainsAny(roots: string[], candidate: string): boolean {
+  return roots.some((root) => workspaceContains(root, candidate));
+}
+
+/**
+ * realpath + drop entries that vanished or stopped being directories, so a
+ * deleted extra dir degrades to "the agent simply can't see it" instead of
+ * failing the spawn. Used when building `--add-dir`; never written back to the
+ * stored config, so a temporarily-unmounted dir isn't silently forgotten.
+ */
+export function existingDirs(paths: string[]): string[] {
+  const alive: string[] = [];
+  for (const p of paths) {
+    try {
+      const real = fs.realpathSync(p);
+      if (fs.statSync(real).isDirectory()) alive.push(real);
+    } catch {
+      // gone between approval and spawn
+    }
+  }
+  return alive;
 }
 
 export function resolveWorkspaceForRequest(db: Db, workspaceId?: string): WorkspaceRow | null {

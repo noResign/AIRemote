@@ -23,11 +23,14 @@ import com.airemote.network.airemote.dto.SessionsResponse
 import com.airemote.network.airemote.dto.UpdateConfigRequest
 import com.airemote.network.airemote.dto.UpdateSessionPermissionsRequest
 import com.airemote.network.airemote.dto.UpdateWorkspaceRequest
+import com.airemote.network.airemote.dto.WorkspaceDirsRequest
+import com.airemote.network.airemote.dto.WorkspaceDirsResponse
 import com.airemote.network.airemote.dto.WorkspaceResponse
 import com.airemote.network.airemote.dto.WorkspacesResponse
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -91,22 +94,38 @@ interface AiremoteApi {
         @Query("showHidden") showHidden: Boolean? = null,
     ): DirectoriesResponse
 
+    /** 额外目录授予工作区；同一份列表也可由聊天里的越界读取审批写入。 */
+    @POST("api/workspaces/{id}/dirs")
+    suspend fun addWorkspaceDir(
+        @Path("id") id: String,
+        @Body body: WorkspaceDirsRequest,
+    ): WorkspaceDirsResponse
+
+    // Retrofit 的 @DELETE 不允许带 body，故用 @HTTP。
+    @HTTP(method = "DELETE", path = "api/workspaces/{id}/dirs", hasBody = true)
+    suspend fun removeWorkspaceDir(
+        @Path("id") id: String,
+        @Body body: WorkspaceDirsRequest,
+    ): WorkspaceDirsResponse
+
+    /** `root` 省略时用工作区主目录；给了就能浏览工作区之外的目录。 */
     @GET("api/changes")
     suspend fun changes(
         @Query("workspaceId") workspaceId: String? = null,
-        @Query("dir") dir: String? = null,
+        @Query("root") root: String? = null,
     ): ChangesResponse
 
     @GET("api/changes/diff")
     suspend fun changeDiff(
         @Query("workspaceId") workspaceId: String? = null,
+        @Query("root") root: String? = null,
         @Query("path") path: String,
-        @Query("dir") dir: String? = null,
     ): DiffResponse
 
     @GET("api/files")
     suspend fun files(
         @Query("workspaceId") workspaceId: String? = null,
+        @Query("root") root: String? = null,
         @Query("path") path: String? = null,
         @Query("cursor") cursor: String? = null,
         @Query("limit") limit: Int? = null,
@@ -117,6 +136,7 @@ interface AiremoteApi {
     @GET("api/files/content")
     suspend fun fileContent(
         @Query("workspaceId") workspaceId: String? = null,
+        @Query("root") root: String? = null,
         @Query("path") path: String,
     ): FileContentDto
 

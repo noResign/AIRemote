@@ -36,6 +36,12 @@ export const claudeAdapter: RuntimeAdapter = {
     if (ctx.permissionHook) {
       args.push('--settings', ctx.permissionHook.settingsJson);
     }
+    // `--add-dir <directories...>` is variadic and swallows whatever follows it,
+    // so it must stay the last thing we push. Safe today because the prompt is
+    // delivered over stdin, never as a positional arg — keep it that way.
+    if (c.addDir) {
+      for (const dir of ctx.extraDirs ?? []) args.push('--add-dir', dir);
+    }
     return args;
   },
 

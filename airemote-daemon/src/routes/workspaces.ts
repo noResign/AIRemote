@@ -2,13 +2,14 @@ import path from 'node:path';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
-import { canonicalizeExistingDirectory, WorkspaceValidationError } from '../workspace-service.js';
+import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspace-service.js';
 
-function workspaceDto(w: WorkspaceRow, sessionCount = 0) {
+function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = []) {
   return {
     id: w.id,
     name: w.name,
     path: w.path,
+    dirs,
     isDefault: w.is_default === 1,
     enabled: w.enabled === 1,
     sessionCount,
@@ -28,7 +29,12 @@ function sendValidationError(res: import('express').Response, err: unknown): voi
 export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
   app.get('/api/workspaces', (_req, res) => {
     const counts = ctx.db.countSessionsByWorkspace();
-    res.json({ workspaces: ctx.db.listWorkspaces().map((w) => workspaceDto(w, counts.get(w.id) ?? 0)) });
+    const dirsByWorkspace = ctx.db.listAllWorkspaceDirs();
+    res.json({
+      workspaces: ctx.db
+        .listWorkspaces()
+        .map((w) => workspaceDto(w, counts.get(w.id) ?? 0, dirsByWorkspace.get(w.id) ?? [])),
+    });
   });
 
   app.post('/api/workspaces', (req, res) => {
@@ -99,7 +105,64 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     ctx.db.audit('update_workspace', JSON.stringify({ id: workspace.id, update }));
     const updated = ctx.db.getWorkspace(workspace.id) as WorkspaceRow;
     const counts = ctx.db.countSessionsByWorkspace();
-    res.json({ ok: true, workspace: workspaceDto(updated, counts.get(updated.id) ?? 0) });
+    res.json({
+      ok: true,
+      workspace: workspaceDto(updated, counts.get(updated.id) ?? 0, ctx.db.listWorkspaceDirs(updated.id)),
+    });
+  });
+
+  // Extra dirs granted to a workspace. Written either here by the user or by
+  // the Read/Grep approval path (routes/permissions.ts) — same store, so a dir
+  // approved from a chat shows up in the management page and vice versa.
+  app.post('/api/workspaces/:id/dirs', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params.id);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as { path?: unknown };
+    const rawPath = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!rawPath) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    try {
+      const realPath = canonicalizeExistingDirectory(rawPath);
+      if (realPath === workspace.path) {
+        res.status(400).json({ error: 'path is already the workspace primary dir', code: 'primary_dir' });
+        return;
+      }
+      if (ctx.db.listWorkspaceDirs(workspace.id).includes(realPath)) {
+        res.status(409).json({ error: 'dir already granted', code: 'dir_exists' });
+        return;
+      }
+      ctx.db.addWorkspaceDir(workspace.id, realPath);
+      ctx.db.audit('add_workspace_dir', JSON.stringify({ workspaceId: workspace.id, path: realPath, via: 'client' }));
+      res.status(201).json({ ok: true, dirs: ctx.db.listWorkspaceDirs(workspace.id) });
+    } catch (err) {
+      sendValidationError(res, err);
+    }
+  });
+
+  app.delete('/api/workspaces/:id/dirs', (req, res) => {
+    const workspace = ctx.db.getWorkspace(req.params.id);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const body = (req.body ?? {}) as { path?: unknown };
+    const rawPath = typeof body.path === 'string' ? body.path.trim() : '';
+    if (!rawPath) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    // Match however the stored entry is spelled: canonicalize when the dir still
+    // exists, else fall back to the resolved form so an already-deleted dir can
+    // still be cleaned out of the list.
+    const stored = existingDirs([rawPath])[0] ?? path.resolve(rawPath);
+    ctx.db.removeWorkspaceDir(workspace.id, stored);
+    ctx.db.audit('remove_workspace_dir', JSON.stringify({ workspaceId: workspace.id, path: stored }));
+    res.json({ ok: true, dirs: ctx.db.listWorkspaceDirs(workspace.id) });
   });
 
   app.delete('/api/workspaces/:id', (req, res) => {

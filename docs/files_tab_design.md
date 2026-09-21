@@ -59,51 +59,55 @@ src/utils/rename.ts      R
 - 支持大文件截断；
 - 二进制显示“暂不支持预览”。
 
-### 2.2 非 Git Workspace（目录作用域）
+### 2.2 非 Git 目录（仓库列表）
 
-`git rev-parse --show-toplevel` 只向上找仓库，所以 Workspace 根目录自身不在任何仓库时
+> ⚠️ **本节已随「目录作用域（`dir`）移除」改写**。原设计里改动 Tab 另有一个「选择目录」
+> 控件，在根之内缩窄到某个子目录；它与后来加入的「根切换器」重复，已删除。
+> 权威描述见 `daemon.md` §6 与 `ui_design.md` §6.5.1.1。
+
+`git rev-parse --show-toplevel` 只向上找仓库，所以根目录自身不在任何仓库时
 （典型场景：`~/OpenProject`，下面平铺着一堆各自 `git init` 的仓库），根目录看改动必然是
 `isGitRepo = false`。
 
-改动 Tab 因此带一个**目录作用域**：
+处理方式：
 
-- 顶部显示当前检查的目录（空 = 工作区根目录），点一下进**选目录模式**；
-- 选目录模式复用「全部文件」的目录导航（面包屑 + 上一级），点行只用于浏览，选中靠
-  「用此目录」确认；
-- 当前目录不是仓库时，列出它**直接子目录**里的仓库供直接点选；更深的层级靠选目录进去；
-- 子目录里的仓库没有任何子仓库时，显示空态提示。
+- 根不是仓库时，列出它**直接子目录**里的仓库（`repos`，相对当前根）；
+- **点击其中一个仓库 = 把当前根换成那个仓库**（相对路径由客户端拼成绝对路径）；
+- 换根后 `isGitRepo = true`，`files` 里的路径相对该仓库；
+- 想回到上一层看别的仓库：点工作区目录 chip，或「切换」里「返回上一级」。
 
-作用域始终限制在 Workspace 内，不放开边界。
+没有单独的「作用域」概念——根就是唯一的观察点。
 
 ### 2.3 子模块 / 嵌套仓库
 
 - 子模块仍不特殊处理（显示为普通目录/untracked 目录）；
 - 嵌套仓库只在**直接子目录**这一层被识别（用于上面的仓库列表），不递归展开；
-- 仓库根在 Workspace 之上时，改动仍按 Workspace 边界过滤，只显示范围内的文件。
+- 仓库根在当前根之上时，`rev-parse --show-toplevel` 会向上找到它，改动按该仓库报出，
+  但 `files` 只列出落在当前根内的文件。
 
 ## 3. daemon 技术设计
 
 ### 3.1 Git 探测
 
-请求时对**作用域目录**（`dir`，缺省为 Workspace 根）执行：
+请求时对**当前根**（`root`，缺省为 Workspace 主目录）执行：
 
 ```bash
-git -C <scopeDir> rev-parse --show-toplevel
+git -C <root> rev-parse --show-toplevel
 ```
 
 结果：
 
 - 成功：得到 `gitRoot`；
-- 失败：`isGitRepo = false`，并扫描 `scopeDir` 的直接子目录填 `repos`；
+- 失败：`isGitRepo = false`，并扫描 `root` 的直接子目录填 `repos`；
 - 命令不存在：返回 `git_unavailable`。
 
 约束：
 
-- `workspacePath` 必须来自已注册且启用的 Workspace；
-- `dir` 必须是相对 Workspace 的路径，且解析后（含 realpath）仍落在 Workspace 内，
-  否则 `path_outside_workspace`；
-- 所有 path 参数必须是相对 Workspace 的路径；
-- 禁止直接把客户端传入的绝对路径交给 git。
+- `workspaceId` 必须来自已注册且启用的 Workspace；
+- `root` 是绝对路径，只校验「存在 + 是目录」（不存在/非目录报
+  `directory_not_found` / `not_a_directory`）；**不要求落在 Workspace 内**；
+- 除 `root` 外，所有 path 参数必须是相对 `root` 的路径；
+- 禁止直接把客户端传入的相对路径当绝对路径交给 git。
 
 ### 3.2 改动列表
 
@@ -158,7 +162,7 @@ git -C <gitRoot> diff --no-ext-diff --no-textconv -M --unified=3 -- <relativePat
 ### 4.1 改动列表
 
 ```http
-GET /api/changes?workspaceId=<id>
+GET /api/changes?workspaceId=<id>&root=<abs>
 ```
 
 响应：
@@ -167,7 +171,7 @@ GET /api/changes?workspaceId=<id>
 {
   "workspaceId": "ws-1",
   "workspacePath": "/home/me/project",
-  "dir": "",
+  "root": "/home/me/project",
   "isGitRepo": true,
   "gitRoot": "/home/me/project",
   "repos": [],
@@ -183,12 +187,12 @@ GET /api/changes?workspaceId=<id>
 }
 ```
 
-非 Git 目录，但直接子目录里有仓库（`dir` 缺省 = 根）：
+非 Git 目录，但直接子目录里有仓库：
 
 ```json
 {
   "workspaceId": "ws-1",
-  "dir": "",
+  "root": "/home/me/project",
   "isGitRepo": false,
   "gitRoot": null,
   "repos": ["AIRemote", "llama.cpp"],
@@ -196,18 +200,20 @@ GET /api/changes?workspaceId=<id>
 }
 ```
 
-`dir` 指向子仓库时，`files` 里的路径仍是 **workspace 相对**（形如 `AIRemote/src/foo.kt`）。
+`repos` 里的路径相对 `root`。点其中一个仓库时客户端把根换成 `root + "/" + repo`，
+此后 `files` 里的路径相对那个仓库。
 
 ### 4.2 文件 diff
 
 ```http
-GET /api/changes/diff?workspaceId=<id>&path=src/auth/token.ts
+GET /api/changes/diff?workspaceId=<id>&root=<abs>&path=src/auth/token.ts
 ```
 
 响应：
 
 ```json
 {
+  "root": "/home/me/project",
   "path": "src/auth/token.ts",
   "status": "modified",
   "binary": false,
@@ -221,21 +227,23 @@ GET /api/changes/diff?workspaceId=<id>&path=src/auth/token.ts
 | code | 场景 |
 |---|---|
 | `workspace_not_found` | Workspace 不存在/禁用 |
-| `not_git_repo` | Workspace 不是 Git 仓库 |
+| `not_git_repo` | 当前根不是 Git 仓库 |
 | `file_not_changed` | path 不在当前改动集合 |
-| `path_outside_workspace` | 路径越界 |
+| `path_outside_workspace` | 相对路径越出当前根 |
+| `directory_not_found` / `not_a_directory` | `root` 不存在 / 不是目录 |
 | `git_unavailable` | daemon 所在机器没有 git |
 | `diff_too_large` | diff 超过限制 |
 
 ## 5. 安全边界
 
-- 只接受相对路径；
-- 服务端对 path 做 `path.resolve` + 越界校验；
+- 除 `root`（绝对路径，只校验存在 + 是目录）外，只接受相对路径；
+- 服务端对 path 做 `path.resolve` + 越界校验（相对当前根）；
+- `root` 允许指向工作区之外——这是显式产品能力，非默认 `root` 会记 `browse_root` 审计；
 - `git` 调用使用 `execFile`，不拼 shell 字符串；
 - 禁用 external diff / textconv；
 - 只读操作，不提供文件写接口；
 - diff 输出有大小上限；
-- 所有 Workspace 访问都带鉴权。
+- 所有访问都带鉴权。
 
 ## 6. Android 设计
 

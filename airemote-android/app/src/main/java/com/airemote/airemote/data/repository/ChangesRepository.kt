@@ -20,18 +20,23 @@ class ChangesRepository(
         return AiremoteClient.create(url, token)
     }
 
-    suspend fun changes(workspaceId: String?, dir: String = ""): NetworkResult<ChangesResponse> {
+    suspend fun changes(workspaceId: String?, root: String? = null): NetworkResult<ChangesResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.changes(workspaceId, dir) }
+        return safeApiCall { api.changes(workspaceId, root) }
     }
 
-    suspend fun diff(workspaceId: String?, path: String, dir: String = ""): NetworkResult<DiffResponse> {
+    suspend fun diff(
+        workspaceId: String?,
+        path: String,
+        root: String? = null,
+    ): NetworkResult<DiffResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.changeDiff(workspaceId, path, dir) }
+        return safeApiCall { api.changeDiff(workspaceId, root, path) }
     }
 
     suspend fun files(
         workspaceId: String?,
+        root: String? = null,
         path: String? = null,
         cursor: String? = null,
         limit: Int? = null,
@@ -39,11 +44,15 @@ class ChangesRepository(
         showIgnored: Boolean = false,
     ): NetworkResult<FilesResponse> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.files(workspaceId, path, cursor, limit, showHidden, showIgnored) }
+        return safeApiCall { api.files(workspaceId, root, path, cursor, limit, showHidden, showIgnored) }
     }
 
-    suspend fun fileContent(workspaceId: String?, path: String): NetworkResult<FileContentDto> {
+    suspend fun fileContent(
+        workspaceId: String?,
+        path: String,
+        root: String? = null,
+    ): NetworkResult<FileContentDto> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return safeApiCall { api.fileContent(workspaceId, path) }
+        return safeApiCall { api.fileContent(workspaceId, root, path) }
     }
 }

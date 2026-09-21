@@ -1,11 +1,16 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
+import type { WorkspaceRow } from '../db.js';
 import { FileBrowserError, listFiles, readFileContent } from '../file-browser.js';
-import { resolveWorkspaceForRequest } from '../workspace-service.js';
+import { canonicalizeExistingDirectory, resolveWorkspaceForRequest, WorkspaceValidationError } from '../workspace-service.js';
 
 function sendFileError(res: import('express').Response, err: unknown): void {
   if (err instanceof FileBrowserError) {
     res.status(err.httpStatus).json({ error: err.message, code: err.code });
+    return;
+  }
+  if (err instanceof WorkspaceValidationError) {
+    res.status(err.code === 'directory_not_found' ? 404 : 400).json({ error: err.message, code: err.code });
     return;
   }
   res.status(500).json({ error: err instanceof Error ? err.message : String(err), code: 'internal_error' });
@@ -13,6 +18,18 @@ function sendFileError(res: import('express').Response, err: unknown): void {
 
 function boolQuery(value: unknown): boolean {
   return value === true || value === 'true' || value === '1';
+}
+
+/**
+ * Which directory tree to browse. An explicit `root` wins over the workspace's
+ * primary dir; it is only checked for existing and being a directory, not for
+ * being inside the workspace — browsing anywhere is deliberate (see daemon.md
+ * §9: the workspace is not a sandbox, and the token holder owns the machine).
+ */
+function resolveRoot(workspace: WorkspaceRow, requested: unknown): string {
+  const raw = typeof requested === 'string' ? requested.trim() : '';
+  if (!raw) return workspace.path;
+  return canonicalizeExistingDirectory(raw);
 }
 
 export function registerFileRoutes(app: Express, ctx: AppContext): void {
@@ -25,7 +42,11 @@ export function registerFileRoutes(app: Express, ctx: AppContext): void {
     }
     const relativePath = typeof req.query.path === 'string' ? req.query.path : '';
     try {
-      const result = listFiles(workspace.path, relativePath, {
+      const root = resolveRoot(workspace, req.query.root);
+      if (root !== workspace.path) {
+        ctx.db.audit('browse_root', JSON.stringify({ workspaceId: workspace.id, root }));
+      }
+      const result = listFiles(root, relativePath, {
         cursor: req.query.cursor,
         limit: req.query.limit,
         showHidden: boolQuery(req.query.showHidden),
@@ -34,6 +55,7 @@ export function registerFileRoutes(app: Express, ctx: AppContext): void {
       res.json({
         workspaceId: workspace.id,
         workspacePath: workspace.path,
+        root,
         ...result,
       });
     } catch (err) {
@@ -54,8 +76,9 @@ export function registerFileRoutes(app: Express, ctx: AppContext): void {
       return;
     }
     try {
-      const result = readFileContent(workspace.path, relativePath);
-      res.json(result);
+      const root = resolveRoot(workspace, req.query.root);
+      const result = readFileContent(root, relativePath);
+      res.json({ ...result, root });
     } catch (err) {
       sendFileError(res, err);
     }

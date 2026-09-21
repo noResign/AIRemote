@@ -81,7 +81,14 @@ export interface SessionDto {
 export interface WorkspaceDto {
   id: string;
   name: string;
+  /** Primary dir; also the spawn cwd of a new session. */
   path: string;
+  /**
+   * Extra dirs granted to this workspace (agent may read/write there, and every
+   * session in the workspace inherits them). Grown by Read/Grep approvals or
+   * edited from the workspace management page.
+   */
+  dirs: string[];
   isDefault: boolean;
   enabled: boolean;
   sessionCount: number;
@@ -175,9 +182,10 @@ export interface ChangedFileDto {
 
 export interface ChangesResponse {
   workspaceId: string;
+  /** The workspace's primary dir, for display. */
   workspacePath: string;
-  /** Directory inspected, relative to the workspace ('' = workspace root). */
-  dir: string;
+  /** Directory tree actually inspected; equals `workspacePath` unless `root` was passed. */
+  root: string;
   isGitRepo: boolean;
   gitRoot: string | null;
   /** Git repos among `dir`'s direct children; only filled when `isGitRepo` is false. */
@@ -186,6 +194,8 @@ export interface ChangesResponse {
 }
 
 export interface DiffResponse {
+  /** Directory tree the paths are relative to. */
+  root: string;
   path: string;
   oldPath: string | null;
   status: ChangeStatus;
@@ -206,7 +216,10 @@ export interface FileEntryDto {
 
 export interface FilesResponse {
   workspaceId: string;
+  /** The workspace's primary dir, for display. */
   workspacePath: string;
+  /** Directory tree actually listed; equals `workspacePath` unless `root` was passed. */
+  root: string;
   path: string;
   parent: string | null;
   entries: FileEntryDto[];
@@ -214,6 +227,8 @@ export interface FilesResponse {
 }
 
 export interface FileContentDto {
+  /** Directory tree this path is relative to. */
+  root: string;
   path: string;
   size: number;
   binary: boolean;

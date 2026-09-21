@@ -8,12 +8,26 @@ import kotlinx.serialization.Serializable
 data class WorkspaceDto(
     val id: String,
     val name: String = "",
+    /** 主目录，也是新会话的 spawn cwd。 */
     val path: String = "",
+    /** 额外授予该工作区的目录；该工作区所有会话都继承。 */
+    val dirs: List<String> = emptyList(),
     val isDefault: Boolean = false,
     val enabled: Boolean = true,
     val sessionCount: Int = 0,
     val createdAt: Long = 0,
     val lastUsedAt: Long = 0,
+)
+
+@Serializable
+data class WorkspaceDirsRequest(
+    val path: String,
+)
+
+@Serializable
+data class WorkspaceDirsResponse(
+    val ok: Boolean = false,
+    val dirs: List<String> = emptyList(),
 )
 
 @Serializable

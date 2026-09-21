@@ -1,6 +1,7 @@
+import fs from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Db } from '../src/db';
-import { workspaceContains } from '../src/workspace-service';
+import { existingDirs, workspaceContains, workspaceContainsAny, workspaceRoots } from '../src/workspace-service';
 
 const dbs: Db[] = [];
 
@@ -64,5 +65,49 @@ describe('Db workspaces + permissions', () => {
     db.addPermissionGrant('s-1', 'Bash');
     db.deleteSession('s-1');
     expect(db.listPermissionGrants('s-1')).toEqual([]);
+  });
+});
+
+describe('workspace extra dirs', () => {
+  it('stores extra dirs per workspace, idempotently, and cascades on delete', () => {
+    const db = openDb();
+    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    expect(db.listWorkspaceDirs(ws.id)).toEqual([]);
+
+    db.addWorkspaceDir(ws.id, '/srv/extra');
+    db.addWorkspaceDir(ws.id, '/srv/extra'); // idempotent
+    db.addWorkspaceDir(ws.id, '/srv/other');
+    expect(db.listWorkspaceDirs(ws.id)).toEqual(['/srv/extra', '/srv/other']);
+    expect(db.listAllWorkspaceDirs().get(ws.id)).toEqual(['/srv/extra', '/srv/other']);
+
+    db.removeWorkspaceDir(ws.id, '/srv/extra');
+    expect(db.listWorkspaceDirs(ws.id)).toEqual(['/srv/other']);
+
+    db.deleteWorkspace(ws.id);
+    expect(db.listWorkspaceDirs(ws.id)).toEqual([]);
+    expect(db.listAllWorkspaceDirs().size).toBe(0);
+  });
+
+  it('keeps granted dirs scoped to their own workspace', () => {
+    const db = openDb();
+    const a = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const b = db.createWorkspace({ name: 'b', path: `${a.path}/child` });
+    db.addWorkspaceDir(a.id, '/srv/extra');
+
+    const rootsA = workspaceRoots(db, db.getWorkspace(a.id)!);
+    const rootsB = workspaceRoots(db, db.getWorkspace(b.id)!);
+    expect(rootsA).toEqual([a.path, '/srv/extra']);
+    expect(rootsB).toEqual([b.path]);
+
+    // The whole point of workspace scope: a grant serves every session under
+    // its own workspace, and nothing else.
+    expect(workspaceContainsAny(rootsA, '/srv/extra/pkg')).toBe(true);
+    expect(workspaceContainsAny(rootsB, '/srv/extra/pkg')).toBe(false);
+  });
+
+  it('drops vanished dirs at spawn time without forgetting them in config', () => {
+    const cwd = fs.realpathSync(process.cwd());
+    expect(existingDirs([process.cwd()])).toEqual([cwd]);
+    expect(existingDirs([`${cwd}/definitely-not-here`])).toEqual([]);
   });
 });

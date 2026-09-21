@@ -8,6 +8,7 @@ import com.airemote.network.airemote.dto.CreateWorkspaceRequest
 import com.airemote.network.airemote.dto.DirectoriesResponse
 import com.airemote.network.airemote.dto.UpdateConfigRequest
 import com.airemote.network.airemote.dto.UpdateWorkspaceRequest
+import com.airemote.network.airemote.dto.WorkspaceDirsRequest
 import com.airemote.network.airemote.dto.WorkspaceDto
 import com.airemote.network.http.NetworkResult
 import com.airemote.network.http.safeApiCall
@@ -83,6 +84,23 @@ class WorkspaceRepository(
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
         return when (val r = safeApiCall { api.deleteWorkspace(workspaceId) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    /** 授予工作区一个额外目录；返回更新后的完整列表。 */
+    suspend fun addDir(workspaceId: String, path: String): NetworkResult<List<String>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.addWorkspaceDir(workspaceId, WorkspaceDirsRequest(path)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.dirs)
+            is NetworkResult.Error -> r
+        }
+    }
+
+    suspend fun removeDir(workspaceId: String, path: String): NetworkResult<List<String>> {
+        val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
+        return when (val r = safeApiCall { api.removeWorkspaceDir(workspaceId, WorkspaceDirsRequest(path)) }) {
+            is NetworkResult.Success -> NetworkResult.Success(r.data.dirs)
             is NetworkResult.Error -> r
         }
     }

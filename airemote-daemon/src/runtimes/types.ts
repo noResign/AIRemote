@@ -66,6 +66,12 @@ export interface SpawnContext {
   permissionMode: string;
   env: NodeJS.ProcessEnv;
   capabilities: RuntimeCapabilities;
+  /**
+   * Extra dirs beyond `cwd` the runtime should also be allowed to touch
+   * (Claude Code: `--add-dir`). The engine also exports these to the
+   * permission hook so in-scope reads skip the daemon round-trip.
+   */
+  extraDirs?: string[];
   /** When set, the adapter wires tool-permission asks to a PreToolUse hook. */
   permissionHook?: { settingsJson: string };
 }

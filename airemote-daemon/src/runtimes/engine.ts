@@ -22,6 +22,8 @@ export interface RunRequest {
   permissionMode: string;
   capabilities: RuntimeCapabilities;
   env: NodeJS.ProcessEnv;
+  /** Extra dirs beyond `cwd` this run may touch (workspace's granted dirs). */
+  extraDirs?: string[];
   /** Wiring for the PreToolUse permission hook (ignored when unsupported). */
   permissionHook?: { hookPath: string; daemonUrl: string; token: string; timeoutMs: number; matcher: string };
   /** Idle watchdog: cancel the run after this many ms with no events (0 = off). */
@@ -98,6 +100,17 @@ export function startRun(req: RunRequest): ActiveRun {
     spawnEnv.AIREMOTE_TOKEN = req.permissionHook.token;
     spawnEnv.AIREMOTE_RUN_ID = req.id;
     spawnEnv.AIREMOTE_PERMISSION_TIMEOUT_MS = String(req.permissionHook.timeoutMs);
+    // The hook consults this list locally so a read inside an already-granted
+    // root costs no HTTP round-trip. Fixed at spawn time: a dir granted later
+    // (mid-run) is caught by the daemon's own grant lookup instead.
+    spawnEnv.AIREMOTE_ALLOWED_DIRS = JSON.stringify([req.cwd, ...(req.extraDirs ?? [])]);
+  }
+
+  // `--add-dir` support is probed from `--help`; on a CLI without it the extra
+  // dirs are silently dropped, which would look like a dir the user approved
+  // being mysteriously ignored — so say it out loud.
+  if (req.extraDirs?.length && !req.capabilities.addDir) {
+    log.warn(`[${req.adapter.id}] no --add-dir support; ignoring ${req.extraDirs.length} extra dir(s) for run ${req.id}`);
   }
 
   const ctx: SpawnContext = {
@@ -109,6 +122,7 @@ export function startRun(req: RunRequest): ActiveRun {
     permissionMode: req.permissionMode,
     env: spawnEnv,
     capabilities: req.capabilities,
+    extraDirs: req.extraDirs,
     permissionHook: hookSettings,
   };
 

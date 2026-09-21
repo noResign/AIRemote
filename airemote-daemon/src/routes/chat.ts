@@ -8,7 +8,7 @@ import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
 import { getDefaultPermissionMode, isProductPermissionMode, toClaudePermissionMode, type ProductPermissionMode } from '../permission-mode.js';
-import { resolveWorkspaceForRequest, workspaceContains } from '../workspace-service.js';
+import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
 
 interface ChatBody {
   sessionId?: string;
@@ -170,6 +170,18 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const daemonHost = ['0.0.0.0', '::'].includes(ctx.config.host) ? '127.0.0.1' : ctx.config.host;
     const daemonUrl = `${ctx.config.tls ? 'https' : 'http'}://${daemonHost}:${ctx.config.port}`;
 
+    // Roots this session may touch without an ask: the workspace's primary dir
+    // plus every dir granted to it. `--add-dir` covers the ones that aren't the
+    // spawn cwd (an imported TUI session can have a subdir as its cwd, leaving
+    // the primary to be granted explicitly). The engine also exports the same
+    // set to the hook as its spawn-time allowlist.
+    const wanted = workspaceRoots(ctx.db, workspace).filter((root) => root !== session.cwd);
+    const extraDirs = existingDirs(wanted);
+    if (extraDirs.length < wanted.length) {
+      const dropped = wanted.filter((root) => !extraDirs.includes(root));
+      log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
+    }
+
     const active = startRun({
       id: runId,
       adapter,
@@ -181,6 +193,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       permissionMode: toClaudePermissionMode(sessionPermissionMode),
       capabilities: detection.capabilities,
       env: process.env,
+      extraDirs,
       permissionHook: sessionPermissionMode === 'bypass'
         ? undefined
         : {
@@ -189,8 +202,8 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
             token: ctx.config.token,
             timeoutMs: ctx.config.permissionTimeoutMs,
             matcher: sessionPermissionMode === 'ask'
-              ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
-              : 'Bash|mcp__.*',
+              ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|mcp__.*'
+              : 'Bash|Read|Grep|mcp__.*',
           },
       idleTimeoutMs: ctx.config.runIdleTimeoutMs,
       onEvent: send,

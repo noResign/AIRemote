@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.ChangesRepository
+import com.airemote.airemote.data.repository.WorkspaceRepository
 import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.dto.ChangedFileDto
 import com.airemote.network.airemote.dto.DiffResponse
@@ -18,12 +19,10 @@ enum class FilesMode { Changes, All }
 
 sealed class FilesUiState {
     object Loading : FilesUiState()
+    /** 当前根由 `root` StateFlow 持有，UI 显示用的是它，所以这里不再重复带一份。 */
     data class Content(
-        val workspacePath: String,
-        /** 本次检查的目录（workspace 相对路径，"" = 工作区根目录）。 */
-        val scopePath: String,
         val isGitRepo: Boolean,
-        /** `scopePath` 直接子目录里的仓库；非仓库目录下才有值。 */
+        /** `root` 直接子目录里的仓库（相对当前根）；非仓库目录下才有值。 */
         val repos: List<String>,
         val files: List<ChangedFileDto>,
     ) : FilesUiState()
@@ -56,10 +55,29 @@ sealed class FileContentUiState {
 
 class FilesViewModel(
     private val repository: ChangesRepository = ChangesRepository(),
+    private val workspaceRepository: WorkspaceRepository = WorkspaceRepository(),
 ) : ViewModel() {
 
     private val _mode = MutableStateFlow(FilesMode.Changes)
     val mode = _mode.asStateFlow()
+
+    /**
+     * 当前浏览/检查的根目录；null = 工作区主目录。
+     *
+     * 两个 Tab 的相对路径都以它为基准，所以它可以是工作区之外的任意目录
+     * （daemon 侧 `/api/files`、`/api/changes` 的 `root` 参数）。
+     */
+    private val _root = MutableStateFlow<String?>(null)
+    val root = _root.asStateFlow()
+
+    /** 可一键切换的根：工作区主目录 + 它的附加目录。 */
+    private val _knownRoots = MutableStateFlow<List<String>>(emptyList())
+    val knownRoots = _knownRoots.asStateFlow()
+
+    /** 选根对话框：走绝对路径浏览（`/api/fs/directories`），因此能到工作区之外。 */
+    private val _rootPicker = MutableStateFlow<DirectoryPickerUiState?>(null)
+    val rootPicker = _rootPicker.asStateFlow()
+    private var rootPickerHidden = false
 
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState = _uiState.asStateFlow()
@@ -73,14 +91,6 @@ class FilesViewModel(
     private val _fileContent = MutableStateFlow<FileContentUiState?>(null)
     val fileContent = _fileContent.asStateFlow()
 
-    /** 改动视图当前检查的目录（workspace 相对路径，"" = 工作区根目录）。 */
-    private val _scope = MutableStateFlow("")
-    val scope = _scope.asStateFlow()
-
-    /** 选目录模式：借用 `fileBrowser` 的列表与导航，点行只用于浏览，选中靠确认按钮。 */
-    private val _pickingDir = MutableStateFlow(false)
-    val pickingDir = _pickingDir.asStateFlow()
-
     init {
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
@@ -88,10 +98,87 @@ class FilesViewModel(
                 _fileContent.value = null
                 _uiState.value = FilesUiState.Loading
                 _fileBrowser.value = FileBrowserUiState()
-                _scope.value = ""
-                _pickingDir.value = false
+                // 换工作区就回到它的主目录，否则会拿着上一个工作区的根不放。
+                _root.value = null
+                _rootPicker.value = null
+                loadKnownRoots(workspaceId)
                 loadChanges(workspaceId)
                 if (_mode.value == FilesMode.All) browse(null)
+            }
+        }
+    }
+
+    private suspend fun loadKnownRoots(workspaceId: String?) {
+        val workspaces = when (val r = workspaceRepository.listWorkspaces()) {
+            is NetworkResult.Success -> r.data
+            is NetworkResult.Error -> return
+        }
+        val selected = workspaces.firstOrNull { it.id == workspaceId } ?: return
+        _knownRoots.value = listOf(selected.path) + selected.dirs
+    }
+
+    /** 切根：改动列表与文件路径都是相对根的，所以一并重置。 */
+    fun selectRoot(root: String?) {
+        val normalized = root?.takeIf { it.isNotBlank() }
+        if (_root.value == normalized) return
+        _root.value = normalized
+        _diffState.value = null
+        _fileContent.value = null
+        _uiState.value = FilesUiState.Loading
+        _fileBrowser.value = FileBrowserUiState()
+        viewModelScope.launch {
+            loadChanges(WorkspaceSelection.current())
+            if (_mode.value == FilesMode.All) browse(null)
+        }
+    }
+
+    /**
+     * 从「此目录不是 Git 仓库」下的仓库列表进入某个仓库：把当前根换成它。
+     * 相对路径拼成绝对路径，于是不再需要单独的「作用域」概念。
+     */
+    fun openChildDir(relativePath: String) {
+        val base = _root.value ?: WorkspaceSelection.selectedPath.value ?: return
+        selectRoot(if (base.endsWith("/")) "$base$relativePath" else "$base/$relativePath")
+    }
+
+    fun openRootPicker() {
+        rootPickerHidden = false
+        loadRootDirs(_root.value, false)
+    }
+
+    fun closeRootPicker() {
+        _rootPicker.value = null
+    }
+
+    fun toggleRootPickerHidden() {
+        rootPickerHidden = !rootPickerHidden
+        val path = (_rootPicker.value as? DirectoryPickerUiState.Ready)?.path ?: _root.value
+        loadRootDirs(path, rootPickerHidden)
+    }
+
+    fun pickupRootDir(path: String) {
+        loadRootDirs(path, rootPickerHidden)
+    }
+
+    fun confirmRootPick() {
+        val picked = (_rootPicker.value as? DirectoryPickerUiState.Ready)?.path ?: return
+        _rootPicker.value = null
+        selectRoot(picked)
+    }
+
+    private fun loadRootDirs(path: String?, showHidden: Boolean) {
+        _rootPicker.value = DirectoryPickerUiState.Loading(path)
+        viewModelScope.launch {
+            when (val r = workspaceRepository.directories(path, showHidden)) {
+                is NetworkResult.Success -> _rootPicker.value = DirectoryPickerUiState.Ready(
+                    path = r.data.path,
+                    parent = r.data.parent,
+                    entries = r.data.entries,
+                    showHidden = showHidden,
+                    // 选浏览根不受「已是工作区」限制：同一个目录也可以直接看。
+                    isWorkspace = false,
+                )
+                is NetworkResult.Error -> _rootPicker.value = DirectoryPickerUiState.Error(friendlyError(r))
             }
         }
     }
@@ -111,19 +198,15 @@ class FilesViewModel(
     fun selectMode(mode: FilesMode) {
         if (_mode.value == mode) return
         _mode.value = mode
-        _pickingDir.value = false
         if (mode == FilesMode.All && _fileBrowser.value.entries.isEmpty() && !_fileBrowser.value.loading) {
             browse(null)
         }
     }
 
-    private suspend fun loadChanges(workspaceId: String?, dir: String = _scope.value) {
-        when (val r = repository.changes(workspaceId, dir)) {
+    private suspend fun loadChanges(workspaceId: String?) {
+        when (val r = repository.changes(workspaceId, _root.value)) {
             is NetworkResult.Success -> {
-                _scope.value = r.data.dir
                 _uiState.value = FilesUiState.Content(
-                    workspacePath = r.data.workspacePath,
-                    scopePath = r.data.dir,
                     isGitRepo = r.data.isGitRepo,
                     repos = r.data.repos,
                     files = r.data.files,
@@ -133,34 +216,11 @@ class FilesViewModel(
         }
     }
 
-    /** 切到某个目录看它的 git（"" = 工作区根目录）。 */
-    fun selectScope(dir: String) {
-        _pickingDir.value = false
-        _diffState.value = null
-        _fileContent.value = null
-        _scope.value = dir
-        _uiState.value = FilesUiState.Loading
-        viewModelScope.launch { loadChanges(WorkspaceSelection.current(), dir) }
-    }
-
-    fun startPickDir() {
-        _pickingDir.value = true
-        browse(_scope.value.ifBlank { null })
-    }
-
-    fun cancelPickDir() {
-        _pickingDir.value = false
-    }
-
-    fun confirmPickDir() {
-        selectScope(_fileBrowser.value.path)
-    }
-
     fun openDiff(file: ChangedFileDto) {
         if (file.isDirectory) return
         _diffState.value = DiffUiState.Loading(file.path)
         viewModelScope.launch {
-            when (val r = repository.diff(WorkspaceSelection.current(), file.path, _scope.value)) {
+            when (val r = repository.diff(WorkspaceSelection.current(), file.path, _root.value)) {
                 is NetworkResult.Success -> _diffState.value = DiffUiState.Ready(r.data)
                 is NetworkResult.Error -> _diffState.value = DiffUiState.Error(file.path, friendlyError(r))
             }
@@ -205,6 +265,7 @@ class FilesViewModel(
         val current = _fileBrowser.value
         when (val r = repository.files(
             workspaceId = workspaceId,
+            root = _root.value,
             path = path,
             cursor = cursor,
             limit = 200,
@@ -246,7 +307,7 @@ class FilesViewModel(
     private fun openFileContent(path: String) {
         _fileContent.value = FileContentUiState.Loading(path)
         viewModelScope.launch {
-            when (val r = repository.fileContent(WorkspaceSelection.current(), path)) {
+            when (val r = repository.fileContent(WorkspaceSelection.current(), path, _root.value)) {
                 is NetworkResult.Success -> _fileContent.value = FileContentUiState.Ready(r.data)
                 is NetworkResult.Error -> _fileContent.value = FileContentUiState.Error(path, friendlyError(r))
             }

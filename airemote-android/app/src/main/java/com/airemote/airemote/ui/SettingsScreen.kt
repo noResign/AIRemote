@@ -180,12 +180,15 @@ internal fun DirectoryPickerDialog(
     onBrowse: (String) -> Unit,
     onToggleHidden: () -> Unit,
     onSelect: () -> Unit,
+    title: String = "选择工作区目录",
+    selectLabel: String? = null,
+    selectEnabled: Boolean? = null,
 ) {
     when (state) {
         is DirectoryPickerUiState.Loading -> {
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text("选择工作区目录") },
+                title = { Text(title) },
                 text = { CircularProgressIndicator() },
                 confirmButton = {},
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
@@ -200,9 +203,12 @@ internal fun DirectoryPickerDialog(
             )
         }
         is DirectoryPickerUiState.Ready -> {
+            // 默认文案面向「新增工作区」；浏览根等其它用途可覆盖（见 FilesScreen）。
+            val label = selectLabel ?: if (state.isWorkspace) "已是工作区" else "选择当前文件夹"
+            val enabled = selectEnabled ?: !state.isWorkspace
             AlertDialog(
                 onDismissRequest = onDismiss,
-                title = { Text("选择工作区目录") },
+                title = { Text(title) },
                 text = {
                     Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                         Text(
@@ -245,9 +251,7 @@ internal fun DirectoryPickerDialog(
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = onSelect, enabled = !state.isWorkspace) {
-                        Text(if (state.isWorkspace) "已是工作区" else "选择当前文件夹")
-                    }
+                    TextButton(onClick = onSelect, enabled = enabled) { Text(label) }
                 },
                 dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
             )

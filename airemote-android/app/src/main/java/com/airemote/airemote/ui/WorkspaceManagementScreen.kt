@@ -1,6 +1,7 @@
 package com.airemote.airemote.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -55,6 +57,7 @@ fun WorkspaceManagementScreen(
     val uiState by viewModel.uiState.collectAsState()
     val selectedWorkspaceId by viewModel.selectedWorkspaceId.collectAsState()
     val directoryPicker by viewModel.directoryPicker.collectAsState()
+    val dirTargetWorkspaceId by viewModel.dirTargetWorkspaceId.collectAsState()
 
     var renameTarget by remember { mutableStateOf<WorkspaceDto?>(null) }
     var renameText by remember { mutableStateOf("") }
@@ -70,7 +73,8 @@ fun WorkspaceManagementScreen(
                     }
                 },
                 actions = {
-                    TextButton(onClick = viewModel::openDirectoryPicker) { Text("+ 新增") }
+                    // 方法引用不套用默认参数，这里必须用 lambda 才能落到「新增工作区」。
+                    TextButton(onClick = { viewModel.openDirectoryPicker() }) { Text("+ 新增") }
                 },
             )
         },
@@ -107,6 +111,8 @@ fun WorkspaceManagementScreen(
                                 renameText = workspace.name
                             },
                             onDelete = { deleteTarget = workspace },
+                            onAddDir = { viewModel.openDirectoryPicker(workspace.id) },
+                            onRemoveDir = { path -> viewModel.removeWorkspaceDir(workspace.id, path) },
                         )
                     }
                 }
@@ -115,12 +121,17 @@ fun WorkspaceManagementScreen(
     }
 
     directoryPicker?.let { state ->
+        // 落点是「附加目录」时不禁用「已是工作区」——同一个目录也可以被工作区引用。
+        val addingDir = dirTargetWorkspaceId != null
         DirectoryPickerDialog(
             state = state,
             onDismiss = viewModel::closeDirectoryPicker,
             onBrowse = { viewModel.loadDirectories(it) },
             onToggleHidden = viewModel::toggleDirectoryHidden,
-            onSelect = viewModel::createWorkspaceFromCurrentDirectory,
+            onSelect = viewModel::confirmDirectoryPick,
+            title = if (addingDir) "选择附加目录" else "选择工作区目录",
+            selectLabel = if (addingDir) "添加此文件夹" else null,
+            selectEnabled = if (addingDir) true else null,
         )
     }
 
@@ -182,6 +193,8 @@ private fun WorkspaceCard(
     onToggleEnabled: () -> Unit,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    onAddDir: () -> Unit,
+    onRemoveDir: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onSelect),
@@ -234,12 +247,31 @@ private fun WorkspaceCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // 附加目录是这个工作区所有会话共用的允许列表；聊天里批准越界读取
+                    // 也会写到这里，所以这里既是查看处也是撤销处。
+                    workspace.dirs.forEach { dir ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "＋ $dir",
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { onRemoveDir(dir) }) { Text("移除") }
+                        }
+                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 TextButton(onClick = onSetDefault, enabled = !workspace.isDefault) { Text("设为默认") }
                 TextButton(onClick = onToggleEnabled) { Text(if (workspace.enabled) "禁用" else "启用") }
                 TextButton(onClick = onRename) { Text("重命名") }
+                TextButton(onClick = onAddDir) { Text("+ 附加目录") }
                 TextButton(onClick = onDelete) { Text("删除", color = MaterialTheme.colorScheme.error) }
             }
         }
