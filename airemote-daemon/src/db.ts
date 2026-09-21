@@ -202,6 +202,20 @@ export class Db {
     this.ensureColumn('sessions', 'workspace_id', 'TEXT');
     this.ensureColumn('sessions', 'permission_mode', "TEXT NOT NULL DEFAULT 'ask'");
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions (workspace_id, last_active_at DESC);`);
+
+    // 一次性清理：早期版本只在「加快捷」时去重，反向（先有书签、后把同一目录授权）
+    // 会留下重复行，tab 行上于是出现两个相同目录。`addWorkspaceDir` 现在顺手删书签，
+    // 但已经写进去的重复行得在这里抹掉。幂等，之后每次都查不到东西。
+    this.db.exec(`
+      DELETE FROM workspace_shortcut_dirs
+      WHERE EXISTS (
+        SELECT 1 FROM workspaces w WHERE w.id = workspace_shortcut_dirs.workspace_id
+          AND w.path = workspace_shortcut_dirs.path
+      ) OR EXISTS (
+        SELECT 1 FROM workspace_dirs d WHERE d.workspace_id = workspace_shortcut_dirs.workspace_id
+          AND d.path = workspace_shortcut_dirs.path
+      );
+    `);
   }
 
   /** SQLite has no `ADD COLUMN IF NOT EXISTS`; probe PRAGMA before altering. */
@@ -426,6 +440,10 @@ export class Db {
          ON CONFLICT(workspace_id, path) DO NOTHING`,
       )
       .run(workspaceId, dir, Date.now());
+    // 授权之后，指向同一目录的浏览书签就多余了（tab 行上会重复出现两次）。
+    // 反向（给已有的授权目录加书签）由路由拒掉；这里管的是「先有书签、后授权」。
+    // 放在数据层是因为两条写入路径（客户端加目录、聊天里批准越界读取）都走这里。
+    this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ? AND path = ?`).run(workspaceId, dir);
   }
 
   removeWorkspaceDir(workspaceId: string, dir: string): void {

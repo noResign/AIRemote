@@ -138,4 +138,21 @@ describe('workspace browse shortcuts', () => {
     expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
     expect(db.listAllWorkspaceShortcuts().size).toBe(0);
   });
+
+  // 先有书签、后把同一目录授权：书签变成多余的，否则 tab 行上会出现两个一样的目录。
+  it('drops a bookmark once the same dir gets granted', () => {
+    const db = openDb();
+    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    db.addWorkspaceShortcut(ws.id, '/srv/x');
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/x']);
+
+    db.addWorkspaceDir(ws.id, '/srv/x');
+    expect(db.listWorkspaceDirs(ws.id)).toEqual(['/srv/x']);
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
+
+    // 只是授权，别的书签不受影响。
+    db.addWorkspaceShortcut(ws.id, '/srv/y');
+    db.addWorkspaceDir(ws.id, '/srv/z');
+    expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/y']);
+  });
 });
