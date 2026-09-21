@@ -36,7 +36,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,8 +89,13 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val rootPicker by viewModel.rootPicker.collectAsState()
     val addingShortcut by viewModel.addingShortcut.collectAsState()
     val rootError by viewModel.rootError.collectAsState()
+    val refreshing by viewModel.refreshing.collectAsState()
     var fileBrowserQuery by remember { mutableStateOf("") }
     val currentRoot = root ?: selectedWorkspacePath.orEmpty()
+
+    // 每次进入文件 Tab 自动拉一次：agent 在后台改了文件、或别处动了 tab 行，
+    // 切回来就能看到，不用手点「刷新」。切走时本页会离开 composition，切回来再触发。
+    LaunchedEffect(Unit) { viewModel.refresh() }
 
     when {
         fileContent != null -> FileContentScreen(state = fileContent!!, onBack = viewModel::closeFile)
@@ -114,9 +121,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                             }
                         }
                     },
-                    actions = {
-                        TextButton(onClick = viewModel::refresh) { Text("刷新") }
-                    },
+                    // 没有「刷新」按钮：每次进入本 tab 会自动拉一次（见上面的 LaunchedEffect）。
                 )
             },
         ) { innerPadding ->
@@ -137,24 +142,31 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     onRemoveShortcut = viewModel::removeShortcut,
                     onDismissError = viewModel::dismissRootError,
                 )
-                when (mode) {
-                    FilesMode.Changes -> ChangesContent(
-                        state = uiState,
-                        onRetry = viewModel::refresh,
-                        onOpen = viewModel::openDiff,
-                        onOpenRepo = viewModel::openChildDir,
-                    )
-                    FilesMode.All -> FileBrowserContent(
-                        state = fileBrowser,
-                        query = fileBrowserQuery,
-                        onQueryChange = { fileBrowserQuery = it },
-                        onBrowse = { fileBrowserQuery = ""; viewModel.browse(it) },
-                        onLoadMore = viewModel::loadMore,
-                        onToggleHidden = viewModel::toggleShowHidden,
-                        onToggleIgnored = viewModel::toggleShowIgnored,
-                        onOpenFile = viewModel::openFile,
-                        onRetry = viewModel::refresh,
-                    )
+                // 下拉刷新只包住列表区：分段控制和根栏在它上面，不参与下拉手势。
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = viewModel::pullRefresh,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                ) {
+                    when (mode) {
+                        FilesMode.Changes -> ChangesContent(
+                            state = uiState,
+                            onRetry = viewModel::refresh,
+                            onOpen = viewModel::openDiff,
+                            onOpenRepo = viewModel::openChildDir,
+                        )
+                        FilesMode.All -> FileBrowserContent(
+                            state = fileBrowser,
+                            query = fileBrowserQuery,
+                            onQueryChange = { fileBrowserQuery = it },
+                            onBrowse = { fileBrowserQuery = ""; viewModel.browse(it) },
+                            onLoadMore = viewModel::loadMore,
+                            onToggleHidden = viewModel::toggleShowHidden,
+                            onToggleIgnored = viewModel::toggleShowIgnored,
+                            onOpenFile = viewModel::openFile,
+                            onRetry = viewModel::refresh,
+                        )
+                    }
                 }
             }
     }

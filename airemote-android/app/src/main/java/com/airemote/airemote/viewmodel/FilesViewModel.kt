@@ -94,6 +94,10 @@ class FilesViewModel(
     private val _rootError = MutableStateFlow<String?>(null)
     val rootError = _rootError.asStateFlow()
 
+    /** 下拉指示器。只由下拉刷新驱动——进入 tab 的自动刷新不显示它，否则每次切页都闪一下。 */
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing = _refreshing.asStateFlow()
+
     private val _uiState = MutableStateFlow<FilesUiState>(FilesUiState.Loading)
     val uiState = _uiState.asStateFlow()
 
@@ -250,15 +254,39 @@ class FilesViewModel(
         }
     }
 
+    /** 正在看 diff / 文件内容时页面显示的不是列表，刷新没有意义。 */
+    private fun listIsBehindOverlay(): Boolean = _fileContent.value != null || _diffState.value != null
+
+    /**
+     * 重新拉取当前分段的数据。页面每次进入 tab 都会调它（见 `FilesScreen` 的
+     * `LaunchedEffect`），所以 agent 在后台改了文件、或者别处动了 tab 行，切回来就能看到。
+     * 单层分页（≤200 条/次）成本很低。
+     */
     fun refresh() {
+        if (listIsBehindOverlay()) return
+        viewModelScope.launch { reload() }
+    }
+
+    /** 下拉刷新：与自动刷新走同一套加载，只是额外驱动下拉指示器。 */
+    fun pullRefresh() {
+        if (listIsBehindOverlay()) return
+        viewModelScope.launch {
+            _refreshing.value = true
+            try {
+                reload()
+            } finally {
+                _refreshing.value = false
+            }
+        }
+    }
+
+    private suspend fun reload() {
         when (_mode.value) {
             FilesMode.Changes -> {
-                viewModelScope.launch {
-                    _uiState.value = FilesUiState.Loading
-                    loadChanges(WorkspaceSelection.current())
-                }
+                _uiState.value = FilesUiState.Loading
+                loadChanges(WorkspaceSelection.current())
             }
-            FilesMode.All -> browse(_fileBrowser.value.path.ifBlank { null })
+            FilesMode.All -> browseAndWait(_fileBrowser.value.path.ifBlank { null })
         }
     }
 
@@ -300,11 +328,13 @@ class FilesViewModel(
     }
 
     fun browse(path: String?) {
-        val current = _fileBrowser.value
-        _fileBrowser.value = current.copy(loading = true, error = null)
-        viewModelScope.launch {
-            loadFiles(WorkspaceSelection.current(), path, cursor = null, append = false)
-        }
+        viewModelScope.launch { browseAndWait(path) }
+    }
+
+    /** [browse] 的可等待版本，供下拉/自动刷新在加载结束后收起指示器。 */
+    private suspend fun browseAndWait(path: String?) {
+        _fileBrowser.value = _fileBrowser.value.copy(loading = true, error = null)
+        loadFiles(WorkspaceSelection.current(), path, cursor = null, append = false)
     }
 
     fun loadMore() {
