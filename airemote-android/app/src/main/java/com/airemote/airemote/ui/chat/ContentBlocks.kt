@@ -36,6 +36,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -270,14 +273,14 @@ internal fun UsageLine(usage: UsageInfo) {
 }
 
 /**
- * 自定义表格组件：库默认的单元格是单行 + 省略号（长内容只剩 "…"），且列宽固定不随内容，
- * 这里改成单元格最多 4 行换行、列宽固定以便各行列对齐、整表可横向滚动。
+ * 自定义表格组件：库默认的单元格是单行 + 省略号（长内容只剩 "…"），
+ * 这里改成按列宽换行、列宽固定以便各行列对齐、整表可横向滚动。
+ * 超长内容默认收起到 [COLLAPSED_CELL_LINES] 行，点单元格展开全文、再点收起。
  */
 @Composable
 private fun ChatMarkdownTable(model: MarkdownComponentModel) {
     val content = model.content
     val baseStyle = model.typography.text
-    val cellPadding = LocalMarkdownDimens.current.tableCellPadding
 
     Surface(
         color = LocalMarkdownColors.current.tableBackground,
@@ -298,7 +301,7 @@ private fun ChatMarkdownTable(model: MarkdownComponentModel) {
                         ) {
                             section.children.forEach { cell ->
                                 if (cell.type != GFMTokenTypes.CELL) return@forEach
-                                Text(
+                                ChatMarkdownTableCell(
                                     text = content.buildMarkdownAnnotatedString(cell, baseStyle),
                                     style = if (header) {
                                         baseStyle.copy(fontWeight = FontWeight.Bold)
@@ -310,11 +313,6 @@ private fun ChatMarkdownTable(model: MarkdownComponentModel) {
                                     } else {
                                         LocalMarkdownColors.current.tableText
                                     },
-                                    maxLines = 4,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .width(160.dp)
-                                        .padding(cellPadding),
                                 )
                             }
                         }
@@ -326,4 +324,44 @@ private fun ChatMarkdownTable(model: MarkdownComponentModel) {
             }
         }
     }
+}
+
+/** 收起状态下单元格显示的行数。 */
+private const val COLLAPSED_CELL_LINES = 4
+
+/**
+ * 单元格文本：默认收起到 [COLLAPSED_CELL_LINES] 行（超出的末尾显示 "…"），
+ * 点一下展开全文、再点收起。只有确实溢出的单元格才可点，短文本不劫持点击。
+ */
+@Composable
+private fun ChatMarkdownTableCell(
+    text: AnnotatedString,
+    style: TextStyle,
+    color: Color,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var overflowed by remember { mutableStateOf(false) }
+    val dimens = LocalMarkdownDimens.current
+
+    Text(
+        text = text,
+        style = style,
+        color = color,
+        maxLines = if (expanded) Int.MAX_VALUE else COLLAPSED_CELL_LINES,
+        overflow = TextOverflow.Ellipsis,
+        // 只在收起时重新测量：展开后 hasVisualOverflow 必然为 false，会把可点状态判丢
+        onTextLayout = { if (!expanded) overflowed = it.hasVisualOverflow },
+        modifier = Modifier
+            .width(dimens.tableCellWidth)
+            .then(
+                if (overflowed) {
+                    Modifier.clickable(onClickLabel = if (expanded) "收起" else "展开") {
+                        expanded = !expanded
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(dimens.tableCellPadding),
+    )
 }
