@@ -87,7 +87,6 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val knownRoots by viewModel.knownRoots.collectAsState()
     val shortcuts by viewModel.shortcuts.collectAsState()
     val rootPicker by viewModel.rootPicker.collectAsState()
-    val addingShortcut by viewModel.addingShortcut.collectAsState()
     val rootError by viewModel.rootError.collectAsState()
     val refreshing by viewModel.refreshing.collectAsState()
     var fileBrowserQuery by remember { mutableStateOf("") }
@@ -137,7 +136,6 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
                     shortcuts = shortcuts,
                     error = rootError,
                     onSelectRoot = viewModel::selectRoot,
-                    onPickOther = viewModel::openRootPicker,
                     onAddRoot = viewModel::openAddShortcutPicker,
                     onRemoveShortcut = viewModel::removeShortcut,
                     onDismissError = viewModel::dismissRootError,
@@ -172,18 +170,17 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     }
     }
 
-    // 选根走绝对路径浏览（复用工作区管理页的选择器），所以能切到工作区之外。
-    // 同一个对话框两种用途：只是看看（切换），或加一个浏览书签（＋）。后者不改权限。
+    // 目录选择器：绝对路径浏览（复用工作区管理页的那个），所以能选到工作区之外。
+    // 确认后加成浏览书签并切过去——不改权限，所以不禁用「已是工作区」的目录。
     rootPicker?.let { picker ->
-        val adding = addingShortcut
         DirectoryPickerDialog(
             state = picker,
             onDismiss = viewModel::closeRootPicker,
             onBrowse = viewModel::pickupRootDir,
             onToggleHidden = viewModel::toggleRootPickerHidden,
             onSelect = viewModel::confirmRootPick,
-            title = if (adding) "添加浏览目录" else "选择浏览目录",
-            selectLabel = if (adding) "加为快捷（不改权限）" else "浏览此文件夹",
+            title = "添加浏览目录",
+            selectLabel = "加为快捷（不改权限）",
             selectEnabled = true,
         )
     }
@@ -193,7 +190,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
  * 当前浏览根 + tab 行。tab 有两类，视觉上区别对待：
  * - **工作区的根**（主目录、附加目录）——只在别处管理，这里不可删；
  * - **浏览书签**（`shortcuts`）——纯便利入口，带「×」可就地移除，不涉及 agent 权限。
- * 末尾「＋」加一个书签；右上「切换」只是临时去别的目录看一眼，什么都不改。
+ * 末尾「＋ 目录」是**唯一的**新增入口：选中即加成书签并切过去（导航与收藏合一）。
  */
 @Composable
 private fun RootBar(
@@ -202,30 +199,18 @@ private fun RootBar(
     shortcuts: List<String>,
     error: String?,
     onSelectRoot: (String?) -> Unit,
-    onPickOther: () -> Unit,
     onAddRoot: () -> Unit,
     onRemoveShortcut: (String) -> Unit,
     onDismissError: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "根：" + root.ifBlank { "(未选择工作区)" },
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                "切换",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clickable { onPickOther() }
-                    .padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
-            )
-        }
+        Text(
+            "根：" + root.ifBlank { "(未选择工作区)" },
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         // 始终渲染：即使还没有附加目录或书签，也要有地方点「＋」加第一个。
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -345,7 +330,7 @@ private fun ChangesContent(
                 !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onOpenRepo)
                 !state.isGitRepo -> EmptyHint(
                     title = "此目录不是 Git 仓库",
-                    body = "它下面的仓库会列在这里；更深的目录请点上方「切换」。",
+                    body = "它下面的仓库会列在这里；想看别的目录请点上方「＋ 目录」。",
                 )
                 state.files.isEmpty() -> EmptyHint(
                     title = "当前没有未提交的改动",

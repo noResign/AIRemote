@@ -86,10 +86,6 @@ class FilesViewModel(
     val rootPicker = _rootPicker.asStateFlow()
     private var rootPickerHidden = false
 
-    /** 对话框确认后是「切过去看看」还是「加为浏览书签」；由打开它的入口决定，UI 据此换文案。 */
-    private val _addingShortcut = MutableStateFlow(false)
-    val addingShortcut = _addingShortcut.asStateFlow()
-
     /** 加书签失败（比如那个目录已经在 tab 行上了）时的提示。 */
     private val _rootError = MutableStateFlow<String?>(null)
     val rootError = _rootError.asStateFlow()
@@ -165,21 +161,18 @@ class FilesViewModel(
         selectRoot(if (base.endsWith("/")) "$base$relativePath" else "$base/$relativePath")
     }
 
-    /** 「切换」：选一个目录只是切过去看，不动任何配置。 */
-    fun openRootPicker() {
-        rootPickerHidden = false
-        _addingShortcut.value = false
-        loadRootDirs(_root.value, false)
-    }
-
     /**
-     * 「＋ 目录」：把选中的目录加成一个**浏览书签**（tab）。它不写授权目录，
-     * 所以 agent 不会因此获得任何权限——想授权请走工作区管理页的「+ 附加目录」
-     * 或聊天里的越界读取审批。
+     * 打开唯一的目录选择器：把选中的目录加成一个**浏览书签**（tab）并切过去。
+     *
+     * 这里没有「只切过去看一眼」的第二种模式——导航本来就能用 chip（回到已知的根）
+     * 和面包屑（在根内上下）完成，再加一个不入 tab 的入口就是两个几乎一样的控件，
+     * 所以去掉了。代价是「去看一眼」会留下一个 tab，不想要就点「×」。
+     *
+     * 注意它**不写授权目录**：agent 不会因此获得任何权限。要授权请走工作区管理页的
+     * 「+ 附加目录」或聊天里的越界读取审批。
      */
     fun openAddShortcutPicker() {
         rootPickerHidden = false
-        _addingShortcut.value = true
         loadRootDirs(_root.value, false)
     }
 
@@ -200,7 +193,7 @@ class FilesViewModel(
     fun confirmRootPick() {
         val picked = (_rootPicker.value as? DirectoryPickerUiState.Ready)?.path ?: return
         _rootPicker.value = null
-        if (_addingShortcut.value) addShortcut(picked) else selectRoot(picked)
+        addShortcut(picked)
     }
 
     private fun addShortcut(dir: String) {
