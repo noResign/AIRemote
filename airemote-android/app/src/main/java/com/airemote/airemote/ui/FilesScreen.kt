@@ -17,8 +17,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -203,6 +205,19 @@ private fun RootBar(
     onRemoveShortcut: (String) -> Unit,
     onDismissError: () -> Unit,
 ) {
+    val chipState = rememberLazyListState()
+    val chipCount = knownRoots.size + shortcuts.size
+    val activeIndex = knownRoots.indexOf(root).takeIf { it >= 0 }
+        ?: shortcuts.indexOf(root).let { if (it >= 0) knownRoots.size + it else -1 }
+
+    // 切根时把高亮的 chip 滚进视野，否则 tab 多了以后当前栏在屏幕外，看不出去在哪。
+    // 已经可见就不动，避免每次进入页面都平白滚一下。
+    LaunchedEffect(activeIndex, chipCount) {
+        if (activeIndex < 0) return@LaunchedEffect
+        val visible = chipState.layoutInfo.visibleItemsInfo.any { it.index == activeIndex }
+        if (!visible) chipState.animateScrollToItem(activeIndex)
+    }
+
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Text(
             "根：" + root.ifBlank { "(未选择工作区)" },
@@ -211,26 +226,16 @@ private fun RootBar(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        // 始终渲染：即使还没有附加目录或书签，也要有地方点「＋」加第一个。
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            knownRoots.forEach { candidate ->
-                Text(
-                    rootLabel(candidate),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (candidate == root) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .clickable { onSelectRoot(candidate) }
-                        .padding(vertical = 4.dp),
-                )
-            }
-            // 书签：带「×」可就地移除，所以和上面的「根」在视觉上分开。
-            shortcuts.forEach { candidate ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+        // chips 在左边滚动，「＋ 目录」钉在右边不参与滚动——否则 tab 一多它就被挤出屏幕，
+        // 想加新目录得先滑到底。行始终渲染，即使一个附加目录/书签都还没有。
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            LazyRow(
+                state = chipState,
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items(knownRoots) { candidate ->
                     Text(
                         rootLabel(candidate),
                         style = MaterialTheme.typography.labelSmall,
@@ -240,14 +245,28 @@ private fun RootBar(
                             .clickable { onSelectRoot(candidate) }
                             .padding(vertical = 4.dp),
                     )
-                    Text(
-                        "×",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier
-                            .clickable { onRemoveShortcut(candidate) }
-                            .padding(start = 3.dp, top = 4.dp, bottom = 4.dp),
-                    )
+                }
+                // 书签：带「×」可就地移除，所以和上面的「根」在视觉上分开。
+                items(shortcuts) { candidate ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            rootLabel(candidate),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (candidate == root) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            modifier = Modifier
+                                .clickable { onSelectRoot(candidate) }
+                                .padding(vertical = 4.dp),
+                        )
+                        Text(
+                            "×",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .clickable { onRemoveShortcut(candidate) }
+                                .padding(start = 3.dp, top = 4.dp, bottom = 4.dp),
+                        )
+                    }
                 }
             }
             Text(
@@ -257,7 +276,7 @@ private fun RootBar(
                 maxLines = 1,
                 modifier = Modifier
                     .clickable { onAddRoot() }
-                    .padding(vertical = 4.dp),
+                    .padding(start = 12.dp, top = 4.dp, bottom = 4.dp),
             )
         }
         error?.let { message ->
