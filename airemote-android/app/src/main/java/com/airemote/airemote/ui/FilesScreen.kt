@@ -340,37 +340,58 @@ private fun ChangesContent(
     onOpenRepo: (String) -> Unit,
 ) {
     when (state) {
-        is FilesUiState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        is FilesUiState.Loading -> ScrollableHint {
             CircularProgressIndicator()
         }
-        is FilesUiState.Error -> ErrorContent(state.message, onRetry)
-        is FilesUiState.Content -> Column(modifier = Modifier.fillMaxSize()) {
-            when {
-                !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onOpenRepo)
-                !state.isGitRepo -> EmptyHint(
+        is FilesUiState.Error -> ScrollableHint { ErrorContent(state.message, onRetry) }
+        is FilesUiState.Content -> when {
+            !state.isGitRepo && state.repos.isNotEmpty() -> RepoList(state.repos, onOpenRepo)
+            !state.isGitRepo -> ScrollableHint {
+                EmptyHint(
                     title = "此目录不是 Git 仓库",
                     body = "它下面的仓库会列在这里；想看别的目录请点上方「＋ 目录」。",
                 )
-                state.files.isEmpty() -> EmptyHint(
+            }
+            state.files.isEmpty() -> ScrollableHint {
+                EmptyHint(
                     title = "当前没有未提交的改动",
                     body = "Agent 修改文件后会出现在这里。",
                 )
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item {
-                        Text(
-                            "${state.files.size} 个文件改动 · 基于 git status",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    items(state.files, key = { it.path }) { file ->
-                        ChangeRow(file = file, onClick = { onOpen(file) })
-                    }
+            }
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item {
+                    Text(
+                        "${state.files.size} 个文件改动 · 基于 git status",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+                items(state.files, key = { it.path }) { file ->
+                    ChangeRow(file = file, onClick = { onOpen(file) })
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 把不能自己滚动的空态/错误态/加载态放进一个占满视口的滚动容器。
+ *
+ * 下拉刷新靠 nested scroll 拿手势，而手势只能由**可滚动节点**派发——直接放一个
+ * `Box`/`Column` 的话，列表为空时根本拉不动。用 LazyColumn 的单 item 而不是
+ * `verticalScroll`：`fillParentMaxSize` 给出**有界**高度，内容才能垂直居中
+ * （`verticalScroll` 会用无限高度测量子项，居中会失效）。
+ */
+@Composable
+private fun ScrollableHint(content: @Composable () -> Unit) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
+                content()
             }
         }
     }
