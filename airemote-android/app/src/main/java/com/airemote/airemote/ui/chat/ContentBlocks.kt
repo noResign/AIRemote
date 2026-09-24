@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -196,6 +197,13 @@ internal fun ToolCardView(card: ContentBlock.ToolUse) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 when {
                     card.running -> CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    // 「中断」（run 结束了工具还没返回）不是「失败」：没结果不代表出错
+                    card.interrupted -> Icon(
+                        Icons.Rounded.Remove,
+                        contentDescription = "已中断",
+                        tint = LocalSemanticColors.current.warning,
+                        modifier = Modifier.size(16.dp),
+                    )
                     card.isError -> Icon(
                         Icons.Rounded.Close,
                         contentDescription = "失败",
@@ -229,6 +237,13 @@ internal fun ToolCardView(card: ContentBlock.ToolUse) {
                 if (!card.result.isNullOrBlank()) {
                     Spacer(modifier = Modifier.height(8.dp))
                     CodeBlock(card.result)
+                } else if (card.interrupted) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "已中断，未返回结果",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

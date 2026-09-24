@@ -186,7 +186,7 @@ class ChatViewModel(
             }
             a = updateAssistant(a, e)
         }
-        return if (a.done) a else a.copy(done = true)
+        return finalizeAssistant(a)
     }
 
     fun send(text: String) {
@@ -447,7 +447,7 @@ class ChatViewModel(
             _messages.update { list ->
                 val lastIndex = list.lastIndex
                 list.mapIndexed { i, m ->
-                    if (i == lastIndex && m is ChatUiMessage.Assistant) m.copy(done = true) else m
+                    if (i == lastIndex && m is ChatUiMessage.Assistant) finalizeAssistant(m) else m
                 }
             }
         }
@@ -471,7 +471,7 @@ class ChatViewModel(
     }
 
     private fun updateAssistant(a: ChatUiMessage.Assistant, e: NormalizedEvent): ChatUiMessage.Assistant = when (e) {
-        is NormalizedEvent.Status -> if (e.terminal == true) a.copy(done = true) else a
+        is NormalizedEvent.Status -> if (e.terminal == true) finalizeAssistant(a) else a
         is NormalizedEvent.TextDelta -> a.copy(blocks = appendText(a.blocks, e.delta))
         is NormalizedEvent.ThinkingDelta -> a.copy(blocks = appendThinking(a.blocks, e.delta))
         is NormalizedEvent.ThinkingStart -> a
@@ -481,7 +481,12 @@ class ChatViewModel(
         is NormalizedEvent.ToolResult -> a.copy(
             blocks = a.blocks.map { b ->
                 if (b is ContentBlock.ToolUse && b.id == e.toolUseId) {
-                    b.copy(result = e.content, isError = e.isError == true, running = false)
+                    b.copy(
+                        result = e.content,
+                        isError = e.isError == true,
+                        interrupted = e.interrupted == true,
+                        running = false,
+                    )
                 } else {
                     b
                 }
@@ -489,10 +494,27 @@ class ChatViewModel(
         )
         is NormalizedEvent.Usage -> a.copy(usage = parseUsage(e))
         is NormalizedEvent.TurnEnd -> a
-        is NormalizedEvent.Error -> a.copy(error = e.message, done = e.terminal == true)
+        is NormalizedEvent.Error ->
+            if (e.terminal == true) finalizeAssistant(a.copy(error = e.message)) else a.copy(error = e.message)
         is NormalizedEvent.PermissionRequest -> a
         is NormalizedEvent.Question -> a.copy(
             blocks = a.blocks + ContentBlock.Question(toolUseId = e.toolUseId, questions = e.questions)
+        )
+    }
+
+    /**
+     * 收口一条助手回复：标 done，并把还没拿到结果的工具卡标成「中断」。
+     *
+     * daemon 也会在 run 结束时补发中断结果，但点「停止」时客户端已经提前掐了流、读不到那一帧，
+     * 所以本地收口必须自己再关一遍，否则卡片会一直转圈。
+     */
+    private fun finalizeAssistant(a: ChatUiMessage.Assistant): ChatUiMessage.Assistant {
+        if (a.done && a.blocks.none { it is ContentBlock.ToolUse && it.running }) return a
+        return a.copy(
+            done = true,
+            blocks = a.blocks.map { b ->
+                if (b is ContentBlock.ToolUse && b.running) b.copy(running = false, interrupted = true) else b
+            },
         )
     }
 

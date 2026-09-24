@@ -62,6 +62,8 @@ sealed class NormalizedEvent {
         val toolUseId: String? = null,
         val content: String = "",
         val isError: Boolean? = null,
+        /** daemon 补发的中断结果：run 结束时该工具还没返回（取消 / 崩溃 / 空闲超时）。 */
+        val interrupted: Boolean? = null,
     ) : NormalizedEvent()
 
     @Serializable

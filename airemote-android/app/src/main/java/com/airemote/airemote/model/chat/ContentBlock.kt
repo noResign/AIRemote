@@ -15,6 +15,8 @@ sealed interface ContentBlock {
         val input: JsonElement? = null,
         val result: String? = null,
         val isError: Boolean = false,
+        /** 工具没跑完 run 就结束了（取消 / 崩溃 / 空闲超时），与"失败"区分展示。 */
+        val interrupted: Boolean = false,
         val running: Boolean = true,
     ) : ContentBlock
 
