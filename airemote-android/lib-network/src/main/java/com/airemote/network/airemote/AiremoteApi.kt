@@ -87,7 +87,7 @@ interface AiremoteApi {
     suspend fun updateWorkspace(@Path("id") id: String, @Body body: UpdateWorkspaceRequest): WorkspaceResponse
 
     @DELETE("api/workspaces/{id}")
-    suspend fun deleteWorkspace(@Path("id") id: String): OkResponse
+    suspend fun deleteWorkspace(@Path("id") id: String, @Query("cascade") cascade: Boolean? = null): OkResponse
 
     @GET("api/fs/directories")
     suspend fun directories(

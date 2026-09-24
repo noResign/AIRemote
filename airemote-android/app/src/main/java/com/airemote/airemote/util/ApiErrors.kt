@@ -10,7 +10,8 @@ import com.airemote.network.http.NetworkResult
  */
 fun friendlyError(error: NetworkResult.Error, fallbackPrefix: String = "请求失败"): String = when (error.apiCode) {
     "workspace_exists" -> "该目录已经是工作区了"
-    "workspace_not_empty" -> "该工作区还有会话，请先删除会话"
+    "workspace_not_empty" -> "该工作区还有会话，请勾选「同时删除会话」后再删"
+    "workspace_is_default" -> "默认工作区不能删除，请先把另一个工作区设为默认"
     "workspace_disabled" -> "该工作区已停用"
     "directory_not_found" -> "目录不存在或已被删除"
     "not_a_directory" -> "所选路径不是文件夹"

@@ -170,9 +170,10 @@ class SettingsViewModel(
         }
     }
 
-    fun deleteWorkspace(workspaceId: String) {
+    /** [cascade] 为 true 时连同该工作区下的会话一起删；否则有会话时 daemon 会 409。 */
+    fun deleteWorkspace(workspaceId: String, cascade: Boolean = false) {
         viewModelScope.launch {
-            when (val r = workspaceRepository.deleteWorkspace(workspaceId)) {
+            when (val r = workspaceRepository.deleteWorkspace(workspaceId, cascade)) {
                 is NetworkResult.Success -> {
                     if (WorkspaceSelection.current() == workspaceId) WorkspaceSelection.select(null)
                     load()

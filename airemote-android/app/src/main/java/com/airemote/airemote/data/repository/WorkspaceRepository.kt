@@ -80,9 +80,10 @@ class WorkspaceRepository(
         }
     }
 
-    suspend fun deleteWorkspace(workspaceId: String): NetworkResult<Unit> {
+    /** [cascade] 为 true 时连该工作区下的会话（含聊天记录与事件）一起删掉。 */
+    suspend fun deleteWorkspace(workspaceId: String, cascade: Boolean = false): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return when (val r = safeApiCall { api.deleteWorkspace(workspaceId) }) {
+        return when (val r = safeApiCall { api.deleteWorkspace(workspaceId, cascade) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }
