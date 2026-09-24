@@ -127,15 +127,48 @@ export function startRun(req: RunRequest): ActiveRun {
   };
 
   const args = req.adapter.buildArgs(ctx);
-  const parser: StreamParser = req.adapter.createParser((ev) => {
+
+  // Tool calls the runtime opened but never returned a result for. They are
+  // closed explicitly when the run ends (see `closeOpenTools`), so a run's
+  // stream is always well-formed: an unmatched `tool_use` renders as a
+  // forever-spinning card, and that state survives into the persisted replay.
+  const openTools = new Set<string>();
+
+  const emit = (ev: NormalizedEvent): void => {
     lastActivity = Date.now();
+    if (ev.type === 'tool_use') {
+      openTools.add(ev.id);
+    } else if (ev.type === 'tool_result' && ev.toolUseId) {
+      openTools.delete(ev.toolUseId);
+    }
     req.onEvent(ev);
     // A clean turn boundary (non tool_use stop_reason) means the runtime is
     // done with this stdin session; close it so the child can exit.
     if (ev.type === 'turn_end' && ev.stopReason !== 'tool_use') {
       closeStdin();
     }
-  });
+  };
+
+  const parser: StreamParser = req.adapter.createParser(emit);
+
+  /**
+   * Close every tool call that never got a result. A cancel, a crash and the
+   * idle watchdog all end a run while a tool is still in flight, and the runtime
+   * only writes a `tool_result` once the call returns — so without this the
+   * stream would end on an unmatched `tool_use`.
+   */
+  const closeOpenTools = (): void => {
+    for (const id of [...openTools]) {
+      emit({
+        type: 'tool_result',
+        toolUseId: id,
+        content: '运行已结束，工具未返回结果',
+        isError: true,
+        interrupted: true,
+      });
+    }
+    openTools.clear();
+  };
 
   const promise = new Promise<RunOutcome>((resolve) => {
     const p = spawn(req.adapter.bin, args, {
@@ -155,6 +188,7 @@ export function startRun(req: RunRequest): ActiveRun {
     });
 
     p.on('error', (err) => {
+      closeOpenTools();
       resolve({
         status: 'failed',
         exitCode: null,
@@ -168,6 +202,7 @@ export function startRun(req: RunRequest): ActiveRun {
       } catch (err) {
         log.warn('parser flush error', err);
       }
+      closeOpenTools();
       if (cancelled) {
         resolve({ status: 'cancelled', exitCode: code, error: cancelReason ?? 'cancelled' });
       } else if (code === 0) {

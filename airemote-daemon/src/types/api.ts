@@ -8,6 +8,12 @@
  * adapter (Claude Code today, others later) is translated into this union by
  * its stream parser, so the transport never needs to know runtime-specific
  * wire formats.
+ *
+ * Stream invariant: every `tool_use` is followed by a matching `tool_result`
+ * before the run's terminal `status`. A run can end while a tool is still in
+ * flight (cancel, crash, idle timeout), in which case the engine synthesizes
+ * the missing result with `interrupted: true` — clients can therefore treat a
+ * `tool_use` without a result as "still running" and nothing else.
  */
 export interface QuestionOption {
   label: string;
@@ -35,7 +41,11 @@ export type NormalizedEvent =
   | { type: 'thinking_delta'; delta: string }
   | { type: 'thinking_start' }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; toolUseId?: string; content: string; isError?: boolean }
+  /**
+   * `interrupted` marks a result the daemon synthesized because the run ended
+   * with the tool still in flight; the runtime never reported one.
+   */
+  | { type: 'tool_result'; toolUseId?: string; content: string; isError?: boolean; interrupted?: boolean }
   | {
       type: 'usage';
       usage: unknown;
