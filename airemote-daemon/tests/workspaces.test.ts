@@ -11,6 +11,13 @@ function openDb(): Db {
   return db;
 }
 
+/** Seed the startup workspace, asserting one was actually created. */
+function seed(db: Db) {
+  const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+  if (!ws) throw new Error('expected seedDefaultWorkspace to create a workspace');
+  return ws;
+}
+
 afterEach(() => {
   for (const db of dbs.splice(0)) db.close();
 });
@@ -18,7 +25,7 @@ afterEach(() => {
 describe('Db workspaces + permissions', () => {
   it('seeds a default workspace and filters sessions by workspace', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     expect(db.listWorkspaces()).toHaveLength(1);
     expect(db.getDefaultWorkspace()?.id).toBe(ws.id);
 
@@ -32,7 +39,7 @@ describe('Db workspaces + permissions', () => {
 
   it('persists session permission grants', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     db.createSession({ id: 's-1', runtime: 'claude', workspaceId: ws.id, permissionMode: 'ask', cwd: ws.path });
 
     expect(db.hasPermissionGrant('s-1', 'Bash')).toBe(false);
@@ -47,7 +54,7 @@ describe('Db workspaces + permissions', () => {
 
   it('allows a subdirectory of an existing workspace as its own workspace', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     const childPath = `${ws.path}/child`;
 
     // Containment still holds (cwd validation relies on it)...
@@ -60,7 +67,7 @@ describe('Db workspaces + permissions', () => {
 
   it('deletes permission grants with their session', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     db.createSession({ id: 's-1', runtime: 'claude', workspaceId: ws.id, permissionMode: 'ask', cwd: ws.path });
     db.addPermissionGrant('s-1', 'Bash');
     db.deleteSession('s-1');
@@ -71,7 +78,7 @@ describe('Db workspaces + permissions', () => {
 describe('workspace extra dirs', () => {
   it('stores extra dirs per workspace, idempotently, and cascades on delete', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     expect(db.listWorkspaceDirs(ws.id)).toEqual([]);
 
     db.addWorkspaceDir(ws.id, '/srv/extra');
@@ -90,7 +97,7 @@ describe('workspace extra dirs', () => {
 
   it('keeps granted dirs scoped to their own workspace', () => {
     const db = openDb();
-    const a = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const a = seed(db);
     const b = db.createWorkspace({ name: 'b', path: `${a.path}/child` });
     db.addWorkspaceDir(a.id, '/srv/extra');
 
@@ -115,7 +122,7 @@ describe('workspace extra dirs', () => {
 describe('workspace browse shortcuts', () => {
   it('stores shortcuts separately from granted dirs and cascades on delete', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     expect(db.listWorkspaceShortcuts(ws.id)).toEqual([]);
 
     db.addWorkspaceShortcut(ws.id, '/srv/bookmark');
@@ -142,7 +149,7 @@ describe('workspace browse shortcuts', () => {
   // 先有书签、后把同一目录授权：书签变成多余的，否则 tab 行上会出现两个一样的目录。
   it('drops a bookmark once the same dir gets granted', () => {
     const db = openDb();
-    const ws = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    const ws = seed(db);
     db.addWorkspaceShortcut(ws.id, '/srv/x');
     expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/x']);
 
@@ -154,5 +161,33 @@ describe('workspace browse shortcuts', () => {
     db.addWorkspaceShortcut(ws.id, '/srv/y');
     db.addWorkspaceDir(ws.id, '/srv/z');
     expect(db.listWorkspaceShortcuts(ws.id)).toEqual(['/srv/y']);
+  });
+});
+
+describe('startup workspace seeding', () => {
+  // `--workspace` 是「首次安装的种子」而不是「每次启动都要存在」：以前每次启动都
+  // 重建，用户删掉默认工作区后重启它又回来了。
+  it('does not resurrect a deleted workspace on the next start', () => {
+    const db = openDb();
+    const ws = seed(db);
+    db.deleteWorkspace(ws.id);
+
+    const again = db.seedDefaultWorkspace(process.cwd(), 'ask');
+    expect(again).toBeNull();
+    expect(db.listWorkspaces()).toEqual([]);
+  });
+
+  it('does not re-add the startup dir when other workspaces exist', () => {
+    const db = openDb();
+    const first = seed(db);
+    const other = db.createWorkspace({ name: 'other', path: '/srv/other' });
+    db.deleteWorkspace(first.id);
+    // 库层不管默认的重新指派（那是路由做的事），删完就没有默认了。
+    expect(db.getDefaultWorkspace()).toBeUndefined();
+
+    // seed 只是把剩下的那个扶成默认，不再把 --workspace 加回来。
+    expect(db.seedDefaultWorkspace(process.cwd(), 'ask')?.id).toBe(other.id);
+    expect(db.getDefaultWorkspace()?.id).toBe(other.id);
+    expect(db.listWorkspaces().map((w) => w.id)).toEqual([other.id]);
   });
 });

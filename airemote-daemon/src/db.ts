@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+/** Setting key: `--workspace` has already been seeded once. */
+const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
+
 export interface SessionRow {
   id: string;
   runtime: string;
@@ -292,11 +295,16 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET permission_mode = ? WHERE id = ?`).run(mode, id);
   }
 
+  /** Drop one run's persisted events. */
+  deleteEventsForRun(runId: string): void {
+    this.db.prepare(`DELETE FROM events WHERE run_id = ?`).run(runId);
+  }
+
   /** Delete a session and all its messages, runs, events and permission grants. */
   deleteSession(id: string): void {
     const runs = this.listRuns(id);
     for (const run of runs) {
-      this.db.prepare(`DELETE FROM events WHERE run_id = ?`).run(run.id);
+      this.deleteEventsForRun(run.id);
     }
     this.db.prepare(`DELETE FROM runs WHERE session_id = ?`).run(id);
     this.db.prepare(`DELETE FROM messages WHERE session_id = ?`).run(id);
@@ -306,23 +314,29 @@ export class Db {
 
   // ---- workspaces ----
 
-  /** Seed the first Workspace and backfill legacy sessions. Idempotent. */
-  seedDefaultWorkspace(rawPath: string, defaultPermissionMode: string): WorkspaceRow {
-    const realPath = fs.realpathSync(path.resolve(rawPath));
-    const existing = this.listWorkspaces();
-    let workspace = existing.find((w) => w.path === realPath);
-
-    if (!workspace) {
-      const id = randomUUID();
-      workspace = this.createWorkspace({
-        id,
-        name: path.basename(realPath) || realPath,
-        path: realPath,
-        isDefault: existing.length === 0,
-      });
+  /**
+   * Register `--workspace` as the starting Workspace, once per install, and
+   * backfill legacy sessions.
+   *
+   * `--workspace` is a seed, not a guarantee: a workspace the user deleted is
+   * not resurrected on the next start (and a directory that no longer exists
+   * cannot make startup throw). A fresh client can always add one back.
+   */
+  seedDefaultWorkspace(rawPath: string, defaultPermissionMode: string): WorkspaceRow | null {
+    if (!this.getSetting(SEEDED_WORKSPACE_KEY)) {
+      if (this.listWorkspaces().length === 0) {
+        const realPath = fs.realpathSync(path.resolve(rawPath));
+        this.createWorkspace({
+          name: path.basename(realPath) || realPath,
+          path: realPath,
+          isDefault: true,
+        });
+      }
+      this.setSetting(SEEDED_WORKSPACE_KEY, '1');
     }
 
-    if (!this.getDefaultWorkspace()) {
+    const workspace = this.getDefaultWorkspace() ?? this.listWorkspaces()[0] ?? null;
+    if (workspace && !this.getDefaultWorkspace()) {
       this.setDefaultWorkspace(workspace.id);
     }
 
@@ -331,12 +345,13 @@ export class Db {
     }
 
     // Current code only ever allowed sessions inside the single startup root.
-    // Bind legacy null sessions to the seeded default workspace.
-    const fallback = this.getDefaultWorkspace() ?? workspace;
-    this.db.prepare(`UPDATE sessions SET workspace_id = ? WHERE workspace_id IS NULL`).run(fallback.id);
+    // Bind legacy null sessions to whatever workspace exists now.
+    if (workspace) {
+      this.db.prepare(`UPDATE sessions SET workspace_id = ? WHERE workspace_id IS NULL`).run(workspace.id);
+    }
     this.db.prepare(`UPDATE sessions SET permission_mode = ? WHERE permission_mode IS NULL OR permission_mode = ''`).run(defaultPermissionMode);
 
-    return this.getWorkspace(workspace.id) as WorkspaceRow;
+    return workspace;
   }
 
   createWorkspace(input: { id?: string; name: string; path: string; isDefault?: boolean }): WorkspaceRow {

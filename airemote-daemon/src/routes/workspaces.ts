@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspace-service.js';
+import { listActiveRuns } from '../runtimes/engine.js';
 
 function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
   return {
@@ -227,14 +228,31 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
     res.json({ ok: true, shortcutDirs: ctx.db.listWorkspaceShortcuts(workspace.id) });
   });
 
+  // 删工作区只删注册信息，磁盘上的目录/文件一律不动。带 `?cascade=1` 时连它的会话一起
+  // 删（聊天记录、run、事件、会话级授权）；不带时只要还有会话就 409。
+  //
+  // 默认工作区不可删：客户端没指定工作区时用的就是它，删掉会让新会话无处落地。这条也顺带
+  // 保证了「永远删不掉最后一个工作区」——最后一个必然是默认的那个，所以工作区数为零的
+  // 状态不可达。要删它就先把另一个设为默认。
+  //
+  // 注意级联也**不会**删 `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的
+  // 会话记录，删了会破坏电脑上的续接，所以同一个目录重新加成工作区后，续接列表里还能看到它们。
   app.delete('/api/workspaces/:id', (req, res) => {
     const workspace = ctx.db.getWorkspace(req.params.id);
     if (!workspace) {
       res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
       return;
     }
+    if (workspace.is_default === 1) {
+      res.status(409).json({
+        error: 'default workspace cannot be deleted',
+        code: 'workspace_is_default',
+      });
+      return;
+    }
+    const cascade = req.query.cascade === '1' || req.query.cascade === 'true';
     const sessions = ctx.db.listSessions(workspace.id);
-    if (sessions.length > 0) {
+    if (sessions.length > 0 && !cascade) {
       res.status(409).json({
         error: `workspace still has ${sessions.length} session(s)`,
         code: 'workspace_not_empty',
@@ -242,12 +260,17 @@ export function registerWorkspaceRoutes(app: Express, ctx: AppContext): void {
       });
       return;
     }
-    ctx.db.deleteWorkspace(workspace.id);
-    if (workspace.is_default === 1) {
-      const next = ctx.db.listWorkspaces().find((w) => w.enabled === 1);
-      if (next) ctx.db.setDefaultWorkspace(next.id);
+    for (const session of sessions) {
+      // 先取消在跑的 run：否则子进程会被遗留，且它退出时还会往已删的 run 写事件。
+      for (const active of listActiveRuns()) {
+        const row = ctx.db.getRun(active.id);
+        if (row && row.session_id === session.id) active.cancel('workspace deleted');
+      }
+      ctx.db.deleteSession(session.id);
+      ctx.permissions.clearSession(session.id);
     }
-    ctx.db.audit('delete_workspace', workspace.id);
-    res.json({ ok: true, id: workspace.id });
+    ctx.db.deleteWorkspace(workspace.id);
+    ctx.db.audit('delete_workspace', JSON.stringify({ id: workspace.id, cascade, sessions: sessions.length }));
+    res.json({ ok: true, id: workspace.id, deletedSessions: sessions.length });
   });
 }

@@ -117,7 +117,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/workspaces` | 是 | 工作区列表（含 sessionCount 与附加目录 `dirs`） |
 | `POST /api/workspaces` | 是 | 新增工作区，`{name?, path}`，校验目录存在且路径未重复（允许嵌套，如根目录工作区下再建子目录工作区） |
 | `PATCH /api/workspaces/:id` | 是 | 重命名 / 启停 / 设为默认 |
-| `DELETE /api/workspaces/:id` | 是 | 删除工作区（有 Session 时阻止；级联删附加目录） |
+| `DELETE /api/workspaces/:id` | 是 | 删除工作区（只删注册信息，磁盘不动；级联清附加目录与书签）。`?cascade=1` 时连它的 Session 一起删，否则有 Session 就 409 `workspace_not_empty`；默认工作区一律 409 `workspace_is_default` |
 | `POST /api/workspaces/:id/dirs` | 是 | 添加附加目录，`{path}`；校验存在 + 是目录，拒绝「等于主目录」/「已存在」 |
 | `DELETE /api/workspaces/:id/dirs` | 是 | 移除附加目录，`{path}`（body；Retrofit 用 `@HTTP` 绕过 `@DELETE` 无 body 的限制） |
 | `POST /api/workspaces/:id/shortcuts` | 是 | 加一个浏览书签，`{path}`；去重（主目录/附加目录/已有书签都算重复 → 409 `shortcut_exists`） |
@@ -207,6 +207,11 @@ SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`eve
 status | text_delta | thinking_delta | thinking_start | tool_use
 tool_result | usage | turn_end | error | permission_request | question
 ```
+
+**流的不变量**：终局 `status` 之前，每个 `tool_use` 都有配对的 `tool_result`。run 可能在工具还没返回时
+就结束（取消 / 崩溃 / 空闲看门狗），此时引擎补发一帧合成结果（`interrupted: true`、`isError: true`，
+content 说明未返回结果）。客户端因此可以把「没有配对的 tool_use」一律当成"仍在运行"，不必各自兜底；
+历史回放读到的也是同一份自洽的流。
 
 `POST /api/chat` 请求体：`{ prompt, sessionId?, workspaceId?, claudeSessionId?, model?, runtime?, permissionMode? }`。
 
@@ -336,10 +341,19 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 - **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
 - **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；生产建议 `AIREMOTE_TLS_CERT/KEY` 或反代/SSH 隧道。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见 §7）。
-- **工作目录**：daemon 启动时把 `--workspace` 注册为第一个 Workspace；手机可新增/切换 Workspace。
+- **工作目录**：`--workspace` 只在**工作区表为空时**注册一次（首次安装），之后不再自动重建——
+  用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时客户端可随时新增。
   每个 Session 绑定 `workspace_id + cwd`，续接和导入都要校验 cwd 位于该 Session 所属 Workspace 内，
   否则 400 `cwd_not_allowed`。**注意**：这条校验针对工作区**主目录**（新 Session 的 cwd 就取自主目录）；
   工作区还可能有附加目录（§6），它们不参与 cwd 校验，只扩大 agent 的可达范围。
+- **删除工作区**：默认只删注册信息（行 + 附加目录 + 浏览书签），磁盘上的目录和文件一律不动；
+  有 Session 时 409 `workspace_not_empty`，`?cascade=1` 才会连 Session（含聊天记录、run、事件、
+  会话级授权）一起删。级联会先取消这些 Session 在跑的 run。**级联不删**
+  `~/.claude/projects/<cwd>/<id>.jsonl`——那是 Claude Code 自己的会话记录，删了会破坏电脑上的续接，
+  所以同一目录重新加成工作区后，`GET /api/claude-sessions` 仍会列出它们。
+- **默认工作区不可删**（409 `workspace_is_default`）：它是客户端没指定工作区时的落点，删了新会话
+  无处落地。要删就先把另一个设为默认。这条顺带保证了「永远删不掉最后一个工作区」——最后一个必然
+  是默认的那个，所以「零工作区」这个状态不可达，`resolveWorkspaceForRequest` 不会拿到 null。
 - **Workspace 嵌套**：允许父子包含关系（典型场景：daemon `--workspace` 指向根目录，之后把其下的
   子目录注册成独立 Workspace）。Session 的归属靠自身 `workspace_id`，不从路径前缀推导；前缀只用于
   校验 cwd 位于所属 Workspace 内，因此嵌套不影响归属正确性。唯一的语义放宽：查询外层 Workspace 的

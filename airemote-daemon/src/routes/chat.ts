@@ -151,8 +151,12 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     let seq = 0;
     let finished = false;
     let assistantText = '';
+    // 运行期间会话可能被删（删会话 / 删工作区级联）。run 行一没，再写事件和消息就只是
+    // 往不存在的东西上挂孤儿行，所以置位后 send 直接静默。
+    let runDeleted = false;
 
     const send = (ev: NormalizedEvent): void => {
+      if (runDeleted) return;
       seq += 1;
       if (ev.type === 'text_delta') assistantText += ev.delta;
       try {
@@ -231,18 +235,25 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     try {
       const outcome = await active.promise;
       finished = true;
-      ctx.db.updateRun(runId, {
-        status: outcome.status,
-        endedAt: Date.now(),
-        exitCode: outcome.exitCode,
-        error: outcome.error,
-      });
-      ctx.db.touchSession(session.id);
-      // Persist the assistant's aggregated visible text as a message so the
-      // transcript is complete without replaying every event. Tool / thinking
-      // detail stays in the events table.
-      if (assistantText.trim()) {
-        ctx.db.addMessage(session.id, 'assistant', assistantText.trim());
+      if (!ctx.db.getRun(runId)) {
+        // 会话/工作区在运行期间被删了：清掉从 cancel 到进程退出之间迟到写入的事件，
+        // 并跳过收尾持久化（会话行都没了，写消息只会留下孤儿行）。
+        runDeleted = true;
+        ctx.db.deleteEventsForRun(runId);
+      } else {
+        ctx.db.updateRun(runId, {
+          status: outcome.status,
+          endedAt: Date.now(),
+          exitCode: outcome.exitCode,
+          error: outcome.error,
+        });
+        ctx.db.touchSession(session.id);
+        // Persist the assistant's aggregated visible text as a message so the
+        // transcript is complete without replaying every event. Tool / thinking
+        // detail stays in the events table.
+        if (assistantText.trim()) {
+          ctx.db.addMessage(session.id, 'assistant', assistantText.trim());
+        }
       }
       if (outcome.error && outcome.status === 'failed') {
         send({ type: 'error', code: 'run_failed', message: outcome.error, terminal: true });
