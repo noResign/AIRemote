@@ -17,7 +17,7 @@ function projectsDir(claudeHome?: string): string {
 /**
  * Decode a `projects/` subdirectory name back to a cwd. Claude Code encodes an
  * absolute path as `-` + path with `/` replaced by `-` (e.g.
- * `-home-renbin-foo` -> `/home/renbin/foo`). Paths that themselves contain `-`
+ * `-home-alice-code-demo` -> `/home/alice/code/demo`). Paths that themselves contain `-`
  * are ambiguous under this scheme; we use the standard decoding.
  */
 function cwdFromDirname(dirname: string): string {

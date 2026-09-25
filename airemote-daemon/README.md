@@ -4,7 +4,8 @@ AIRemote 的守护进程：`spawn` 本机已安装的编码 agent CLI（当前 C
 agent），以无头方式执行，把输出解析成统一的流式事件，通过 HTTP/SSE 推给远程客户端。
 
 完整技术方案（架构 / 协议 / 权限模型 / 数据模型 / 全部配置参数 / 分发）见
-**[docs/daemon.md](docs/daemon.md)**；项目总览见[根 README](../README.md)。
+**[docs/daemon.md](docs/daemon.md)**；项目总览见
+[AIRemote 仓库](https://github.com/noResign/AIRemote#readme)。
 
 ## 前置
 
@@ -66,16 +67,20 @@ Bearer token；默认权限模式为 `ask`，审批超时或断线默认拒绝�
 不是沙箱**。公开网络使用请套 HTTPS（`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`）或反代 /
 SSH 隧道。详见 [docs/daemon.md](docs/daemon.md) §9。
 
-## 分发
+## 安装
+
+用户侧（需 Node `~24` + 本机已装并登录 Claude Code）：
 
 ```bash
-# 在仓库根目录执行：build + pack + 上传 OSS daemon/
-.claude/skills/deploy/scripts/release-daemon.sh
+npx @noresign/airemote --help           # 免安装试用
+npm install -g @noresign/airemote       # 装成全局命令（命令名仍是 airemote）
+airemote --workspace /path/to/project
 ```
 
 版本号取自 `package.json` 的 `version`（semver，手改递增），`--version`、`/api/health`
-与产物文件名同源。
+与 npm 包版本同源。包名为什么带 scope、包内容由什么决定，见
+[docs/daemon.md](docs/daemon.md) §12。
 
 ## License
 
-Apache-2.0，见 [LICENSE](../LICENSE)。
+Apache-2.0，见 [LICENSE](LICENSE)。

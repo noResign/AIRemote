@@ -513,54 +513,26 @@ ln -sf "$PWD/dist/index.js" ~/.local/bin/airemote
 airemote --help
 ```
 
-**生产包分发**（npm/pnpm 全局安装，对方需 Node ~24 + Claude Code）：
+**公开分发（npm 公共仓）**。包内容由 `package.json` 的 `files` 白名单决定（`dist` / `docs`
+/ `client` / `.env.example`，外加 npm 固定携带的 `README.md`、`LICENSE`、`package.json`），
+所以测试客户端与本文档都会随包发布。
 
 版本号取自 `airemote-daemon/package.json` 的 `version`（semver，手改递增：修 bug 加 patch，
-加功能加 minor，大改加 major）。`airemote --version`、`/api/health` 和产物文件名都读取同一来源；
-发布脚本可用 `DAEMON_VERSION=1.0.1` 临时覆盖。
+加功能加 minor，大改加 major）。`airemote --version`、`/api/health` 和 npm 包版本都读取同一来源。
 
 ```bash
-# 在仓库根目录执行：build + pnpm pack + 上传 OSS daemon/
-.claude/skills/deploy/scripts/release-daemon.sh
-
-# 已有 dist 时可跳过 build
-.claude/skills/deploy/scripts/release-daemon.sh --skip-build
-
-# 只本地打包、不上传
-.claude/skills/deploy/scripts/release-daemon.sh --no-upload
+cd airemote-daemon
+npm pack --dry-run    # 发布前看一眼最终包内容
+npm publish           # prepack 钩子自动 build；registry 由 publishConfig 钉在官方源
 ```
 
-产物：
-
-```text
-.tmp/daemon-release/package/airemote-<version>.tgz
-```
-
-上传位置（bucket 由 `OSS_BUCKET` / `OSS_PUBLIC_BASE` 决定，见 `scripts/oss-config.sh`）：
-
-```text
-$OSS_PUBLIC_BASE/daemon/airemote-<version>.tgz
-$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz
-```
-
-对方机器直接全局安装：
+用户侧（需 Node `~24` + 本机已装并登录 Claude Code）：
 
 ```bash
-# 推荐 npm（全局 bin 通常已在 PATH）
-npm install -g --force "$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz"
-
-# 或 pnpm（需先 pnpm setup 并重开终端）
-pnpm setup
-pnpm add -g --force "$OSS_PUBLIC_BASE/daemon/airemote-latest.tgz"
-```
-
-安装后：
-
-```bash
+npx @noresign/airemote --help             # 免安装试用
+npm install -g @noresign/airemote         # 装成全局命令（命令名仍是 airemote）
 airemote --workspace /path/to/project --token <strong-token>
 ```
-
-`airemote-latest.tgz` 永远指向最新版本；重新执行安装命令即可覆盖升级。
 
 `.env` 配置（运行目录下自动加载）：
 
