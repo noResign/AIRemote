@@ -1,16 +1,27 @@
-# AIRemote
+> [English](README.en.md) | 中文
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/mascot-hero-dark.png">
+  <img src="docs/media/mascot-hero.png" width="620" alt="AIRemote">
+</picture>
+
+<h1>AIRemote</h1>
+
+<h4>躺在沙发上指挥电脑上的编码 agent 干活</h4>
+
+[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **安全模型**](#安全模型-)
+
+[![npm](https://img.shields.io/npm/v/@noresign/airemote?color=0E9F86)](https://www.npmjs.com/package/@noresign/airemote) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
+
+</div>
 
 **远程操纵本机编码 agent。** 电脑上跑一个 daemon，把本机安装的编码 agent CLI（当前是
 Claude Code）以无头方式 spawn 起来，把输出解析成统一的流式事件，通过 HTTP/SSE 推给手机：
 在手机上看流式输出、审批工具调用、浏览文件、切换工作区，也可以随时锁屏离开。
 
 手机只是遥控器，**任务始终在电脑上执行**——断连不影响任务，重连自动续上。
-
-> [English](README.en.md) | 中文
-
-<!-- 顶部主图：截好图放进 docs/media/ 后，取消下面这行的注释
-![AIRemote](docs/media/hero.png)
--->
 
 ## 快速开始
 

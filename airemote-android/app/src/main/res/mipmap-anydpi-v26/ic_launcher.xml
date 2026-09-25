@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  自适应图标（API 26+）：形状由系统裁，只有背景层 + 前景层。
+  前景是白色线描的吉祥物（@mipmap/ic_launcher_foreground，各密度 PNG），
+  图形已缩在 108dp 画布的安全区内，圆形/方形遮罩都不会切到。
+  API 24/25 的设备用 mipmap-*dpi/ic_launcher.webp（完整合成图）。
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@drawable/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
-    <monochrome android:drawable="@drawable/ic_launcher_foreground" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>

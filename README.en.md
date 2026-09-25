@@ -1,4 +1,21 @@
-# AIRemote
+> English | [中文](README.md)
+
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/media/mascot-hero-dark.png">
+  <img src="docs/media/mascot-hero.png" width="620" alt="AIRemote">
+</picture>
+
+<h1>AIRemote</h1>
+
+<h4>Direct your coding agent from the couch</h4>
+
+[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **Security model**](#security-model-)
+
+[![npm](https://img.shields.io/npm/v/@noresign/airemote?color=0E9F86)](https://www.npmjs.com/package/@noresign/airemote) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
+
+</div>
 
 **Remote-control the coding agent on your own machine.** A daemon runs on your
 computer, spawns a locally installed coding-agent CLI (Claude Code today) in headless
@@ -8,12 +25,6 @@ you like.
 
 Your phone is just the remote control; **the work always runs on your computer**.
 Losing the connection does not stop a run — reconnect and pick up where you left off.
-
-> English | [中文](README.md)
-
-<!-- Hero image: drop the file into docs/media/ and uncomment the line below
-![AIRemote](docs/media/hero.png)
--->
 
 ## Quick start
 

@@ -17,6 +17,15 @@ iOS 客户端**尚未实现**，本目录是预留位。整体定位见[根 READ
 实现适配方案（Design Token → UIKit 的逐项落地、分阶段实施）见
 [docs/ui_adapter.md](docs/ui_adapter.md)。
 
+## 应用图标
+
+三套外观已就绪（含 iOS 18 的深色 / 着色变体），均为 1024×1024、**无透明通道**
+（App Store 的硬要求）：[assets/AppIcon.appiconset](assets/AppIcon.appiconset)。
+
+新建 Xcode 工程后，把整个 `AppIcon.appiconset` 文件夹放进工程的 `Assets.xcassets/`
+（替换掉自动生成的那个空目录）即可，Xcode 会自行派生其余尺寸。图形母版在
+[../docs/media/mascot-icon.png](../docs/media/mascot-icon.png)。
+
 ## 技术选型（开工前已定）
 
 | 事项 | 决定 |
