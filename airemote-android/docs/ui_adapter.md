@@ -1,9 +1,9 @@
 # airemote Android UI 适配方案
 
-> 本文档是 Android 客户端把新版 `docs/ui_design.md`（浅色优先 + 青绿/翡翠）落到
+> 本文档是 Android 客户端把新版 `docs/ui/`（浅色优先 + 青绿/翡翠）落到
 > Jetpack Compose 的**实现适配方案**，也是开工前的施工图。
 >
-> - 设计源：`docs/ui_design.md`（唯一设计源，所有 token 值从它抄，不臆造）
+> - 设计源：`docs/ui/design-principles.md`（唯一设计源，所有 token 值从它抄，不臆造）
 > - 代码位置：`app/src/main/java/com/airemote/airemote/`
 > - 状态：**待评审 / 待决策**（见 §10）
 
@@ -12,7 +12,7 @@
 ## 1. 目标与范围
 
 把 M1 已实现的 Android 客户端从「Material 模板默认紫色 + 无底部导航」改造成与新版
-`ui_design.md` 一致：
+`design-principles.md` 一致：
 
 1. **换肤**：浅色优先 + 青绿 `#0E9F86` 主色 + 翡翠 `success`，并保留暗色主题。
 2. **补导航**：底部 Tab Bar（会话 / 文件 / 设置），聊天详情保持 push。
@@ -43,7 +43,7 @@
 
 ## 3. 适配总原则（对齐 CLAUDE.md）
 
-1. **`docs/ui_design.md` 是唯一设计源**：token 值从 §4.1/§4.2/§4.3 直接抄。
+1. **`docs/ui/design-principles.md` 是唯一设计源**：token 值从 §4.1/§4.2/§4.3 直接抄。
 2. **严格 MVVM**：UI 层不碰网络；token 归 theme 层；列表分组建议下沉 ViewModel（见 §10-4）。
 3. **runtime 身份可配置映射**：抽独立映射表，新增 agent 只加一行不改布局。
 4. **一个文件一个顶层公开类型**：token 用 `object`，映射用 data class + object 表。
@@ -258,7 +258,7 @@ connect（门禁，startDestination）
 - `ui/NewSessionSheet.kt`：radio 选中青绿（`primary` + `primarySubtle`）
 - `ui/SettingsScreen.kt`：分组卡片、语义图标、只读信息
 
-**验收**：各屏目视与 `docs/ui_preview.html` 原型一致；语音按钮占位可见（不接识别）。
+**验收**：各屏目视与 `docs/ui/preview.html` 原型一致；语音按钮占位可见（不接识别）。
 
 ---
 
@@ -278,7 +278,7 @@ P0 主题地基 → P1 图标/身份/组件 → P2 Tab 导航骨架 → P3 会�
 | 规范要求 | 落地动作 |
 |---|---|
 | UI 层不碰网络 | 保持 repository/ViewModel 边界；P3 分组下沉 VM |
-| 单一设计源 | token 值从 `docs/ui_design.md` §4.1/4.2/4.3 直抄 |
+| 单一设计源 | token 值从 `docs/ui/design-principles.md` §4.1/4.2/4.3 直抄 |
 | runtime 可配置映射 | §5.2 `RuntimeIdentities`，新增 agent 只加一行 |
 | 一个文件一个顶层公开类型 | token 用 `object`，映射用 data class + object |
 | DTO 与 api.ts 对齐 | 现有已对齐，本次不改 DTO |

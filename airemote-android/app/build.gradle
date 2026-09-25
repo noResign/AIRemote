@@ -12,7 +12,7 @@ if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-// 版本号约定（与 release-android.sh 配套，见 docs/updater.md §7.1）：
+// 版本号约定（与 release-android.sh 配套；细节见 docs/local/updater.md §7.1，本机私有不入库）：
 //   正式包（release variant）：versionCode = epoch 秒，versionName = version.txt 的语义化版本
 //           （alpha 追加 -alpha.<时间戳>，保证同一版本多次 alpha 也升序）
 //   本地包（debug variant）：versionCode = 1（固定低值），versionName = 0.0.0-<yyyyMMddHHmmss>

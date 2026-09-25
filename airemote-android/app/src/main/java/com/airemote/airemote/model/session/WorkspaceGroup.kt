@@ -2,7 +2,7 @@ package com.airemote.airemote.model.session
 
 import com.airemote.network.airemote.dto.SessionDto
 
-/** 会话列表按 cwd 分组后的结果（docs/ui_design.md §6.2）。 */
+/** 会话列表按 cwd 分组后的结果（docs/ui/pages/sessions.md §6.2）。 */
 data class WorkspaceGroup(
     /** 完整 cwd，用作分组的唯一 key。 */
     val cwd: String,

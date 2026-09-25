@@ -1,0 +1,30 @@
+# airemote-ios
+
+iOS 客户端**尚未实现**，本目录是预留位。整体定位见[根 README](../README.md)。
+
+## 目标形态
+
+- 原生 **UIKit**（命令式），与 Android 共用 [docs/ui/](../docs/ui/README.md) 这一套设计规范；
+  token 落到 `UIColor` / `UIFont`（配 `UIFontMetrics` 支持动态字号）/ Auto Layout，图标用
+  SF Symbols，逐项映射见 [docs/ui/design-principles.md](../docs/ui/design-principles.md) §4.5
+- **纯代码 UI，不用 Storyboard / XIB**：diff 干净、好 review，也不依赖 Interface Builder
+- 传输契约已冻结：跨端唯一真源是
+  [airemote-daemon/src/types/api.ts](../airemote-daemon/src/types/api.ts)，
+  daemon 侧协议见 [airemote-daemon/docs/daemon.md](../airemote-daemon/docs/daemon.md) §6
+- 接入方式参考 Android 侧：按 `types/api.ts` 对齐 wire DTO（字段名 / 类型 / 多态判别一一对齐），
+  再实现 SSE 传输与本地设置持久化
+
+实现适配方案（Design Token → UIKit 的逐项落地、分阶段实施）见
+[docs/ui_adapter.md](docs/ui_adapter.md)。
+
+## 技术选型（开工前已定）
+
+| 事项 | 决定 |
+|---|---|
+| 依赖管理 | **CocoaPods** —— 对齐公司技术栈。`.xcworkspace` 构建、`Podfile.lock` 入库、`Pods/` 忽略；遇只支持 SPM 的库可在同一工程内并用 |
+| 本地存储 | `UserDefaults` 放普通设置，**Keychain 放 token**（敏感凭据不进 UserDefaults） |
+| 网络层 | 自研：`URLSession` + `async/await`，SSE 手写解析（纯逻辑、可单测，对齐 Android 侧 `lib-network`） |
+| UI 组织 | 纯代码 UIKit；导航用 `UITabBarController` + `UINavigationController`，浮层用 `UISheetPresentationController` |
+| 最低 iOS 版本 | 待定 —— 决定可用 API（如 `UISheetPresentationController` 要 iOS 15+）与能对齐的 Xcode 版本 |
+
+实现进度会同步到根 README 的「状态」一节。

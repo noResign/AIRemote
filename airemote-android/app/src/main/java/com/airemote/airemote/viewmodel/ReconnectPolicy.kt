@@ -6,8 +6,8 @@ package com.airemote.airemote.viewmodel
  * 一轮（一次 `runStream` 的 collect）结束后，[decide] 给出下一步：收口、放弃、还是退避重连。
  * 状态的累积（连续失败轮数、连不上 daemon 的时长）由调用方维护，这里只管判定。
  *
- * 设计前提见 `docs/chat_history_pagination.md` 之外的 daemon 行为：run 与连接解耦，客户端
- * 断开后 run 继续跑，所以「流断了」几乎总是可以重连的——唯一的例外是 run 真的没了。
+ * 设计前提是 daemon 的 run 与连接解耦：客户端断开后 run 继续跑，所以「流断了」几乎总是
+ * 可以重连的——唯一的例外是 run 真的没了。
  */
 internal object ReconnectPolicy {
 

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.airemote.airemote.ui.theme.DesignColors
 
 /**
- * 一个 runtime（agent）的 UI 身份：图标 + 主题色 + 展示名（docs/ui_design.md §5.2）。
+ * 一个 runtime（agent）的 UI 身份：图标 + 主题色 + 展示名（docs/ui/design-principles.md §5.2）。
  * 新增 agent 只需在 [RuntimeIdentities] 的 table 里加一行，不改布局。
  */
 data class RuntimeIdentity(

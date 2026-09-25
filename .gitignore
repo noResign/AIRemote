@@ -11,3 +11,6 @@ dist/
 # Local-only: agent skills / machine-specific docs, kept out of the repo
 .claude/
 docs/local/
+
+airemote-android/docs/local/
+airemote-ios/docs/local/

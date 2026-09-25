@@ -12,6 +12,9 @@ agent），以无头方式执行，把输出解析成统一的流式事件，通
 - Node `~24`、pnpm 10
 - 本机已装并登录 `claude` CLI（`claude auth login`）
 
+> 只是要用、不打算改代码的话，直接 `npm install -g @noresign/airemote` 即可（命令名是
+> `airemote`）。下面是**从源码**构建的步骤。
+
 ## 构建与运行
 
 ```bash
@@ -47,6 +50,57 @@ curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 
 浏览器打开 [client/index.html](client/index.html) 可得到一个零依赖的图形化测试客户端。
 
+## 配置
+
+优先级：**命令行 flag > shell 环境变量 > `.env` 文件 > 默认值**。
+
+| flag | 环境变量 | 默认 | 说明 |
+|---|---|---|---|
+| `--host` | `AIREMOTE_HOST` | `0.0.0.0` | 监听地址（`127.0.0.1` = 仅本机） |
+| `--port` | `AIREMOTE_PORT` | `4780` | 端口 |
+| `--workspace` | `AIREMOTE_WORKSPACE` | 当前目录 | 初始 Workspace 根目录 |
+| `--data-dir` | `AIREMOTE_DATA_DIR` | `~/.airemote` | SQLite + token |
+| `--token` | `AIREMOTE_TOKEN` | 自动生成 | Bearer 鉴权密钥 |
+| `--permission-mode` | `AIREMOTE_PERMISSION_MODE` | `default`(=ask) | 新 Session 权限模式 seed |
+| `--env-file` | `AIREMOTE_ENV_FILE` | `./.env` | `.env` 路径 |
+
+其他常用变量：`AIREMOTE_PERMISSION_TIMEOUT_SECONDS`（审批超时，默认 120）、
+`AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`（空闲看门狗，默认 900，0=禁用）、
+`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`（同时设置才启用 HTTPS）、
+`AIREMOTE_ALLOW_DEPLOY`（允许手机触发部署，默认关闭）。
+
+完整清单见 [.env.example](.env.example) 与 [docs/daemon.md](docs/daemon.md) §10。
+
+## API 速览
+
+非 `/api/health` 的所有路由都要 `Authorization: Bearer <token>`。
+
+| 方法 & 路径 | 说明 |
+|---|---|
+| `GET /api/health` | 存活 + 版本（唯一免鉴权） |
+| `POST /api/chat` | 发指令，返回 SSE 流；断线后 run 继续跑 |
+| `GET /api/runs/:id/stream?after=` | 重连：回放 + 续直播 |
+| `GET /api/runs/:id/events` | 一次性回放 run 事件 |
+| `POST /api/runs/:id/cancel` | 取消运行 |
+| `POST /api/permissions/:id/decision` | 审批决定（allow / deny / allow_all） |
+| `GET/PATCH /api/sessions/:id/permissions` | Session 权限模式与已授权工具 |
+| `GET/POST/PATCH/DELETE /api/workspaces` | 工作区管理 |
+| `GET /api/fs/directories` | 目录选择器 |
+| `GET /api/changes`、`/api/changes/diff` | Git 未提交改动与单文件 diff |
+| `GET /api/files`、`/api/files/content` | 目录懒加载与文本文件内容 |
+| `GET /api/claude-sessions` | 枚举 workspace 内的 Claude 会话（可导入续接） |
+| `POST /api/deploy` | 触发发布（默认关闭） |
+
+SSE 每帧为 `{ runId, seq, event }`，`event` 是 `NormalizedEvent`：
+
+```text
+status | text_delta | thinking_delta | thinking_start | tool_use
+tool_result | usage | turn_end | error | permission_request | question
+```
+
+完整端点表、请求体与错误形状见 [docs/daemon.md](docs/daemon.md) §6；跨端传输契约的唯一真源是
+`src/types/api.ts`。
+
 ## 开发
 
 ```bash
@@ -67,9 +121,13 @@ Bearer token；默认权限模式为 `ask`，审批超时或断线默认拒绝�
 不是沙箱**。公开网络使用请套 HTTPS（`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`）或反代 /
 SSH 隧道。详见 [docs/daemon.md](docs/daemon.md) §9。
 
-## 安装
+## 发布与安装
 
-用户侧（需 Node `~24` + 本机已装并登录 Claude Code）：
+**维护者发布**：由作者手动完成（`prepack` 钩子会自动 build，registry 与 access 由
+`package.json` 的 `publishConfig` 固定）。版本号取自 `package.json` 的 `version`（semver，
+手改递增）；**已发布的版本不可覆写**，改完发新版本。
+
+**用户安装**（需 Node `~24` + 本机已装并登录 Claude Code）：
 
 ```bash
 npx @noresign/airemote --help           # 免安装试用
@@ -77,9 +135,7 @@ npm install -g @noresign/airemote       # 装成全局命令（命令名仍是 a
 airemote --workspace /path/to/project
 ```
 
-版本号取自 `package.json` 的 `version`（semver，手改递增），`--version`、`/api/health`
-与 npm 包版本同源。包名为什么带 scope、包内容由什么决定，见
-[docs/daemon.md](docs/daemon.md) §12。
+包名为什么带 scope、包内容由哪些文件组成，见 [docs/daemon.md](docs/daemon.md) §12。
 
 ## License
 

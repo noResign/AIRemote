@@ -21,8 +21,13 @@
 AIRemote/
 ├─ CLAUDE.md              本文件
 ├─ docs/
-│  ├─ ui_design.md        移动端 UI 设计规范（Android/iOS 通用，单一设计源）
-│  └─ chat_history_pagination.md  聊天历史分页加载技术方案（跨 daemon + Android，待实施）
+│  ├─ ui/                 移动端 UI 设计（Android/iOS 共用，单一设计源）
+│  │  ├─ README.md        总览与索引；design-principles.md 设计原则 + Design Tokens（§0-§5）
+│  │  ├─ pages/           逐页规格（连接 / 会话 / 聊天 / 文件 / 设置 / 审批 …）
+│  │  ├─ interactions.md  关键交互与状态（§7）
+│  │  ├─ appendix.md      数据映射 / 里程碑 / 接口契约
+│  │  └─ preview.html     可交互原型
+│  └─ local/              本机私有方案笔记（gitignore，不入库：权限/工作区、Files Tab、分页 …）
 ├─ airemote-daemon/       daemon 子项目（Node 24 + Express + SQLite）
 │  ├─ src/                daemon 源码
 │  ├─ client/             极简测试网页客户端（index.html，零依赖）
@@ -31,13 +36,7 @@ AIRemote/
 ├─ airemote-android/      Android 客户端（Kotlin + Compose，M1 已实现）
 │  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
 │  └─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
-├─ airemote-ios/          iOS 客户端（预留，原生 SwiftUI）
-└─ .claude/skills/deploy/ 部署 skill（用户说“发布测试/生产”时触发）
-   ├─ SKILL.md
-   └─ scripts/
-      ├─ deploy.sh            统一部署入口（test/alpha、prod）
-      ├─ deploy-daemon.sh     daemon 编译 + 重启
-      └─ release-android.sh   Android 打包 + 上传 OSS
+└─ airemote-ios/          iOS 客户端（预留，原生 UIKit）
 ```
 
 - **airemote-daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
@@ -50,7 +49,8 @@ AIRemote/
   `node:sqlite`（零原生依赖）、测试 Vitest、dev 用 `tsx`。
 - **Android**：Kotlin、Jetpack Compose + Material 3、Retrofit + kotlinx-serialization、
   OkHttp（SSE 手写解析）、MMKV、Navigation Compose、MVVM；多模块（`:app` 业务 + `:lib-network` 通用网络层）。
-- **iOS**：预留，原生 SwiftUI，与 Android 共用 `docs/ui_design.md` 一套规范。
+- **iOS**：预留，原生 UIKit（命令式），与 Android 共用 `docs/ui/` 一套规范；平台映射见
+  `docs/ui/design-principles.md` §4.5。
 
 
 ## 开发规范
@@ -66,7 +66,7 @@ AIRemote/
 - **传输契约**：改 `types/api.ts` 前先想清对 Android/iOS 两端的影响；Android 侧 DTO 与之一一
   对齐（字段名/类型/多态判别）。
 - **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `airemote-daemon/docs/daemon.md`；
-  UI → `docs/ui_design.md`）。
+  UI → `docs/ui/`）。
 
 ### daemon
 
@@ -104,7 +104,7 @@ AIRemote/
 - **传输契约**：改 `types/api.ts` 时同步改 `:lib-network` 的 `airemote/dto/`（字段名/类型/多态判别
   一一对齐）；跨 module 的 DTO 属性不能智能转换，先用局部变量接再判空。
 - **持久化**：MMKV（`SettingsStore`，留在 `:app`）。
-- **UI**：以 `docs/ui_design.md` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
+- **UI**：以 `docs/ui/` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
   新增 agent 只加一行不改布局。
 - **注意**：用户没有主动提出帮忙运行android项目，再更改后请不要主动使用.gradlew命令运行，用户自己运行测试
 
@@ -124,7 +124,16 @@ AIRemote/
   `GET /api/claude-sessions` 枚举 workspace 内会话，实现 TUI↔远程双向续接。
 - **token**：持久化在 `<data-dir>/token`，启动复用（删文件即轮换）。
 
-## 部署
+## 部署（作者本机私有工作流）
+
+> ⚠️ 本节描述的是**作者本机**的发布流水线，脚本位于 `.claude/skills/deploy/`，而 `.claude/`
+> 被 gitignore，**不在仓库内**——下面出现的脚本路径对开源读者都不可用，请直接忽略本节。
+
+**发布边界（重要）**
+
+- ✅ **本机发布流水线由 agent 执行**：用户说「发布测试 / 发布生产」时，按下面的规则跑脚本。
+- ⛔ **对外的公开分发（npm 公共仓）只能由用户本人手动完成**：agent 不得代为发布，也不要
+  主动建议、提示或输出这一步的命令。
 
 统一入口：`.claude/skills/deploy/scripts/deploy.sh`，按 git 变更自动决定做什么。
 
@@ -149,8 +158,8 @@ Android 版本号：版本源是 `airemote-android/version.txt`（语义化，`1
 `→ 1.1.0` 加功能 / `→ 2.0.0` 大改）。发布脚本据此生成 versionName（alpha 追加 `-alpha.<时间戳>`），
 release variant（AS 直接 Build APK 或发布脚本）自动读它并取
 versionCode = `epoch 秒`；debug variant 才是本地包，固定 versionCode = `1`、versionName = `0.0.0-*`。
-约定与踩坑记录见 `airemote-android/docs/updater.md` §7.1 —— **正式包的 versionCode 和 versionName
-都必须高于本地 debug 构建**，否则安装器会判降级拒装。
+约定与踩坑记录见 `airemote-android/docs/local/updater.md` §7.1（私有，不入库）——
+**正式包的 versionCode 和 versionName 都必须高于本地 debug 构建**，否则安装器会判降级拒装。
 
 Daemon 版本号：版本源是 `airemote-daemon/package.json` 的 `version`（同样语义化，
 `1.0.0 → 1.0.1` 小修 / `→ 1.1.0` 加功能 / `→ 2.0.0` 大改），`--version`、`/api/health`

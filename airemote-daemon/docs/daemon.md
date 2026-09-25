@@ -154,7 +154,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 **改动文件（Files Tab）**：`/api/changes` 基于 `git status --porcelain=v1 -z -- .` 返回指定目录
 的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回单文件 patch。
-详见 `docs/files_tab_design.md`。
+详见 `docs/ui/pages/files.md`。
 
 **非仓库目录返回 `repos`**：`git rev-parse --show-toplevel` 只向上找仓库，所以根目录自身不在任何
 仓库时（如 `~/OpenProject` 下面平铺着一堆仓库），根目录看改动会直接 `isGitRepo=false`。
@@ -305,7 +305,7 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 - **`Read` / `Grep` 不接受 `allow_all`**：对它们来说那等于「本 Session 内读任意路径」——
   比「允许此目录」大得多，而且走过之后 daemon 会在 `hasPermissionGrant` 那一步直接
   `auto-allowed`，**目录授权再也不会被写入**，整套目录机制静默失效。两层防护：
-  1. 客户端不提供该按钮（`ui_design.md` §6.7）；
+  1. 客户端不提供该按钮（`docs/ui/pages/permission-approval.md` §6.7）；
   2. daemon 收到针对目录门禁工具的 `allow_all` 返回 **400 `allow_all_unsupported`**，
      并记 `log.warn`；请求保持 pending，客户端改发 `allow` 仍可通过。不做降级兼容——
      这类「全盘读取」的授权一旦存在就会架空目录机制，宁可显式失败。
@@ -519,12 +519,8 @@ airemote --help
 
 版本号取自 `airemote-daemon/package.json` 的 `version`（semver，手改递增：修 bug 加 patch，
 加功能加 minor，大改加 major）。`airemote --version`、`/api/health` 和 npm 包版本都读取同一来源。
-
-```bash
-cd airemote-daemon
-npm pack --dry-run    # 发布前看一眼最终包内容
-npm publish           # prepack 钩子自动 build；registry 由 publishConfig 钉在官方源
-```
+**发布动作由作者手动完成**：`prepack` 钩子会自动 build，registry 与 access 由 `package.json`
+的 `publishConfig` 固定；已发布的版本不可覆写，改完发新版本。
 
 用户侧（需 Node `~24` + 本机已装并登录 Claude Code）：
 
