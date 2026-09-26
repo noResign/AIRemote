@@ -66,7 +66,6 @@ curl -N -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 
 其他常用变量：`AIREMOTE_PERMISSION_TIMEOUT_SECONDS`（审批超时，默认 120）、
 `AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`（空闲看门狗，默认 900，0=禁用）、
-`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`（同时设置才启用 HTTPS）、
 `AIREMOTE_ALLOW_DEPLOY`（允许手机触发部署，默认关闭）。
 
 完整清单见 [.env.example](.env.example) 与 [docs/daemon.md](docs/daemon.md) §10。
@@ -118,8 +117,9 @@ pnpm test             # Vitest
 
 远程驱动一个带 shell 权限的 agent 本质等于远程代码执行。所有非 `/api/health` 路由都要
 Bearer token；默认权限模式为 `ask`，审批超时或断线默认拒绝；**`workspace` 只是 spawn cwd，
-不是沙箱**。公开网络使用请套 HTTPS（`AIREMOTE_TLS_CERT` / `AIREMOTE_TLS_KEY`）或反代 /
-SSH 隧道。详见 [docs/daemon.md](docs/daemon.md) §9。
+不是沙箱**。跨网络访问请先用组网工具（Tailscale / ZeroTier / WireGuard）把设备放进加密内网；
+内网穿透只适合自用（详见根 README「手机电脑不在同一个局域网」）。详见
+[docs/daemon.md](docs/daemon.md) §9。
 
 ## 发布与安装
 

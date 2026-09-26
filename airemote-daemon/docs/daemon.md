@@ -339,7 +339,8 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
 ## 9. 安全模型
 
 - **认证**：非 health 的 `/api/*` 全要 Bearer token（`auth.ts` 常量时间比较）。
-- **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；生产建议 `AIREMOTE_TLS_CERT/KEY` 或反代/SSH 隧道。
+- **传输**：默认 HTTP 绑 `0.0.0.0`（局域网）；跨网络访问建议用组网工具放进加密内网（见 README
+  「手机电脑不在同一个局域网」），内网穿透只适合自用。
 - **权限**：Session 级 `ask` / `acceptEdits` / `bypass`；审批 + 只读白名单 + 默认拒绝（见 §7）。
 - **工作目录**：`--workspace` 只在**工作区表为空时**注册一次（首次安装），之后不再自动重建——
   用户删掉的工作区不会在重启后自己回来，目录不存在也不会让启动抛错；缺工作区时客户端可随时新增。

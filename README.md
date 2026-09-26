@@ -9,7 +9,9 @@
 
 <h1>AIRemote</h1>
 
-<h4>躺在沙发上指挥电脑上的编码 agent 干活</h4>
+<h4>躺着指挥电脑上的AI Agent 干活</h4>
+
+<h5>咱就说，能不能躺着把活干了</h5>
 
 [📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **安全模型**](#安全模型-)
 
@@ -17,17 +19,17 @@
 
 </div>
 
-**远程操纵本机编码 agent。** 电脑上跑一个 daemon，把本机安装的编码 agent CLI（当前是
-Claude Code）以无头方式 spawn 起来，把输出解析成统一的流式事件，通过 HTTP/SSE 推给手机：
-在手机上看流式输出、审批工具调用、浏览文件、切换工作区，也可以随时锁屏离开。
+**远程操纵编码 agent。** 电脑上跑一个 daemon，把安装的编码 agent CLI（当前仅支持
+Claude Code，后续支持Codex、DSH）以无头方式 spawn 起来，把输出解析成统一的流式事件，通过 HTTP/SSE 推给手机：
+在手机上看流式输出、审批工具调用、浏览电脑文件、切换工作区等，不局限于写代码。
 
-手机只是遥控器，**任务始终在电脑上执行**——断连不影响任务，重连自动续上。
+手机是远程终端，**任务始终在电脑上执行**——断连不影响任务，重连自动续上。
 
 ## 快速开始
 
 ### 1. 装 daemon
 
-前置：**Node `~24`**，以及本机已装并登录 `claude` CLI（`claude auth login`）。
+前置：**Node `~24`**，以及本机已装并登录 `claude` CLI（`claude auth login`）：
 
 ```bash
 npm install -g @noresign/airemote      # 全局命令名是 airemote
@@ -46,33 +48,38 @@ LAN:   http://192.168.1.20:4780
 - token 持久化在 `~/.airemote/token`，删掉即轮换；也可以用 `--token` 指定别的
 - 完整参数、配置项与 HTTP/SSE 接口见 [airemote-daemon/README.md](airemote-daemon/README.md)。
 
-#### 手机不在同一个局域网？（可选）
+#### 手机电脑不在同一个局域网（可选）
 
-daemon 默认只监听局域网。要在外网连进来，两种常见做法：
+daemon 默认监听局域网，公网连接有以下两种方法：
 
-**SSH 反向隧道**——有一台公网服务器就够了。在**跑 daemon 的电脑**上执行：
+**(1) SSH 中转** 
+
+适合自用，需要一台公网服务器，在**跑 daemon 的电脑**上执行：
 
 ```bash
-ssh -N -R 4780:127.0.0.1:4780 user@your-server
+ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 ```
 
-然后手机连 `http://your-server:4780`。三个容易踩的坑：
+然后手机连 `http://your-server:4788`，4788端口为服务器端口，可自定义选择。但要注意：**SSH 只加密了「电脑 → 服务器」这一段，手机到服务器
+那一跳仍是明文 HTTP**，token 在这段上等于裸奔——所以这条路只适合自己临时用。
+
+两个容易踩的坑：
 
 - `-R` 默认只在服务器的 **loopback** 上监听，手机连不上；需要在服务器 `/etc/ssh/sshd_config`
-  里设 `GatewayPorts clientspecified`，并改用 `-R 0.0.0.0:4780:127.0.0.1:4780`
-- 隧道断了不会自愈，用 `autossh -M 0 -N -R ...` 或做成 systemd 常驻
-- 这种场景建议 daemon 只监听本机（`--host 127.0.0.1`），别让它同时暴露在局域网里
+  里设 `GatewayPorts clientspecified`
+- 隧道断了不会自愈，做成 systemd 服务常驻或用 `autossh -M 0 -N -R ...`
 
-**组网工具**——把电脑和手机加进同一个虚拟内网，之后就像在同一个 LAN 里一样直接用 daemon
-打印的地址（或虚拟网 IP）连接，daemon 侧不用改任何配置：
+**(2) 组网工具**
 
-- Tailscale / ZeroTier —— 装好登录即用，手机端有 App，打不通 NAT 时自动走中继
-- WireGuard —— 自己搭，最干净，但要维护密钥与路由
-- frp / nps —— 自建中转，功能多，配置比 SSH 隧道重
-- Cloudflare Tunnel —— 适合只想暴露 Web，注意它等同于把服务放到公网
+把电脑和手机加进同一个虚拟内网，之后就像在同一个 LAN 里一样，直接用 daemon 打印的地址（或虚拟网 IP）连接，daemon 侧不用改任何配置。
 
-> ⚠️ 上面任何一种做法都等于**把 daemon 暴露到公网**，而它驱动的是一个带 shell 权限的 agent。
-> 至少确认 token 是强随机的；对外网访问建议再套一层 HTTPS（`AIREMOTE_TLS_*`）或反代。
+- **Tailscale / ZeroTier** —— 装好登录即用，手机端有 App，打不通 NAT 时自动走中继
+- **WireGuard** —— 自己搭，最干净，但要维护密钥与路由
+
+好处是**整条链路本来就是加密的**，不用再操心证书和端口暴露。
+
+> ⚠️ 上面任何一种做法都让 daemon 暴露到公网，不再是「只有本机能碰」的，而它驱动的是一个带 shell 权限的
+> agent——任何人连上即可指挥它操作你的电脑。因此注意不要泄露 ip 及 token，确保 token 复杂度足够高。
 
 ### 2. 编译 Android 客户端
 
@@ -110,17 +117,13 @@ cd airemote-android
 
 ## 界面
 
-<!--
-截图放进 docs/media/，文件名与下面一致后取消注释即可。
+| 会话列表 | 聊天（支持markdown渲染） | 审批浮层 | 新建会话 |
+|---|---|---|---|
+| <img src="docs/media/session_dir.jpg" width="170" alt="会话列表"> | <img src="docs/media/session.jpg" width="170" alt="聊天"> | <img src="docs/media/permission_dialog.jpg" width="170" alt="审批浮层"> | <img src="docs/media/create_session.jpg" width="170" alt="新建会话"> |
 
-| 会话列表 | 聊天 | 审批浮层 |
-|---|---|---|
-| ![会话列表](docs/media/screenshot-sessions.png) | ![聊天](docs/media/screenshot-chat.png) | ![审批浮层](docs/media/screenshot-approval.png) |
-
-| 新建会话 | 文件 / Diff | 工作区管理 |
-|---|---|---|
-| ![新建会话](docs/media/screenshot-new-session.png) | ![文件](docs/media/screenshot-files.png) | ![工作区管理](docs/media/screenshot-workspaces.png) |
--->
+| 文件 / Diff（可添加多git目录） | 全部文件 | 工作区管理 | 设置 |
+|---|---|---|---|
+| <img src="docs/media/file_git.jpg" width="170" alt="文件 Diff"> | <img src="docs/media/file_full.jpg" width="170" alt="全部文件"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="工作区管理"> | <img src="docs/media/setting.jpg" width="170" alt="设置"> |
 
 ## 文档
 
@@ -132,9 +135,6 @@ cd airemote-android
 | [airemote-ios/README.md](airemote-ios/README.md) | iOS 客户端（预留）：目标形态、技术选型、开发环境 |
 | [docs/ui/](docs/ui/README.md) | 移动端 UI 设计（Android / iOS 共用，单一设计源）：设计原则 + 逐页规格 |
 | [CLAUDE.md](CLAUDE.md) | 仓库纲领：边界、开发规范、关键设计决策 |
-
-> 权限 / 工作区模型、Files Tab、聊天历史分页等**方案笔记属于本机私有文档**（`docs/local/`，
-> 不入库），所以不在上表。
 
 ## 安全模型 ⚠️
 
@@ -150,8 +150,8 @@ daemon 提供的边界：
 - **只读白名单**：仅放行无 shell 元字符的只读 Bash
 - **审计**：chat / cancel / permission_decision / rename / delete 全部记入 `audit_log`
 
-公开网络上使用请务必套 HTTPS（`AIREMOTE_TLS_*` 或反代）或 SSH 隧道，并保管好 token。
-只想本机使用就 `--host 127.0.0.1`。
+公开网络上使用，请先用ssh中转或者组网工具（Tailscale / ZeroTier / WireGuard）把设备放进一个加密的虚拟内网
+（见上文「手机电脑不在同一个局域网」），并保管好 token。只想本机使用就 `--host 127.0.0.1`。
 
 ## 状态
 

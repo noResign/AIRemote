@@ -11,20 +11,22 @@
 
 <h4>Direct your coding agent from the couch</h4>
 
+<h5>Come on — can't we just get the work done lying down?</h5>
+
 [📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **Security model**](#security-model-)
 
 [![npm](https://img.shields.io/npm/v/@noresign/airemote?color=0E9F86)](https://www.npmjs.com/package/@noresign/airemote) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
-**Remote-control the coding agent on your own machine.** A daemon runs on your
-computer, spawns a locally installed coding-agent CLI (Claude Code today) in headless
-mode, and streams its normalized output to your phone over HTTP/SSE — watch the stream
-live, approve tool calls, browse files, switch workspaces, and lock your phone whenever
-you like.
+**Remote-control the coding agent.** A daemon on your computer spawns the installed
+coding-agent CLI (Claude Code today; Codex and DeepSeek Harness planned) headlessly, turns
+its output into one normalized stream of events, and pushes it to your phone over HTTP/SSE:
+watch the stream live, approve tool calls, browse the computer's files, switch workspaces —
+and it is not limited to writing code.
 
-Your phone is just the remote control; **the work always runs on your computer**.
-Losing the connection does not stop a run — reconnect and pick up where you left off.
+Your phone is a remote terminal; **the work always runs on your computer** — losing the
+connection does not stop a run, and reconnecting picks up where you left off.
 
 ## Quick start
 
@@ -58,33 +60,38 @@ LAN:   http://192.168.1.20:4780
 By default the daemon only listens on your LAN. To reach it from the internet, two
 common approaches:
 
-**SSH reverse tunnel** — one machine with a public IP is enough. On the **computer
-running the daemon**:
+**1. SSH relay** — for personal use. You need one machine with a public IP. On the
+**computer running the daemon**:
 
 ```bash
-ssh -N -R 4780:127.0.0.1:4780 user@your-server
+ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 ```
 
-Then point your phone at `http://your-server:4780`. Three things people trip on:
+Then point your phone at `http://your-server:4788` — 4788 is the port on the server; pick
+any you like. Note that **SSH only encrypts the "computer → server" leg; the hop from the
+phone to the server is still plain HTTP**, so the token travels in the clear there — which
+is why this route is only for your own temporary use.
 
-- `-R` binds on the server's **loopback** by default, so the phone cannot reach it. Set
-  `GatewayPorts clientspecified` in the server's `/etc/ssh/sshd_config` and use
-  `-R 0.0.0.0:4780:127.0.0.1:4780` instead
+Two things people trip on:
+
+- The command binds `0.0.0.0`, but the server ignores that and binds to **loopback** by
+  default, so the phone still cannot reach it. Set `GatewayPorts clientspecified` in the
+  server's `/etc/ssh/sshd_config`
 - The tunnel does not reconnect by itself; use `autossh -M 0 -N -R ...` or run it under systemd
-- For this setup prefer `--host 127.0.0.1`, so the daemon is not also exposed to the LAN
 
-**Mesh / VPN tools** — put the computer and the phone on the same virtual network, then
-connect to the address the daemon printed (or its virtual IP) exactly as if you were on
-the same LAN. Nothing to change on the daemon side:
+**2. Mesh / VPN tools** — put the computer and the phone on the same virtual network, then
+connect to the address the daemon printed (or its virtual IP) exactly as if you were on the
+same LAN. Nothing to change on the daemon side:
 
-- Tailscale / ZeroTier — sign in and go; mobile apps included, with a relay fallback when NAT traversal fails
-- WireGuard — roll your own; cleanest, but you maintain the keys and routes
-- frp / nps — self-hosted relay; more features, heavier to configure than an SSH tunnel
-- Cloudflare Tunnel — good when you only want to expose HTTP; note it means putting the service on the public internet
+- **Tailscale / ZeroTier** — sign in and go; mobile apps included, with a relay fallback when NAT traversal fails
+- **WireGuard** — roll your own; cleanest, but you maintain the keys and routes
 
-> ⚠️ Every option above means **exposing the daemon to the public internet**, and it drives
-> an agent that has shell access. At minimum make sure the token is strongly random, and
-> consider putting HTTPS (`AIREMOTE_TLS_*`) or a reverse proxy in front.
+The whole path is encrypted end to end, so there is no certificate or port exposure to
+worry about.
+
+> ⚠️ Any of the above means the daemon is exposed beyond your own machine,
+> and it drives an agent with shell access — anyone who connects can drive it to operate
+> your computer. Do not leak your IP or token, and make sure the token is strongly random.
 
 ### 2. Build the Android client
 
@@ -124,17 +131,13 @@ Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
 
 ## Screenshots
 
-<!--
-Drop the screenshots into docs/media/ and uncomment once the filenames match.
+| Sessions | Chat (Markdown rendering) | Approval | New session |
+|---|---|---|---|
+| <img src="docs/media/session_dir.jpg" width="170" alt="Sessions"> | <img src="docs/media/session.jpg" width="170" alt="Chat"> | <img src="docs/media/permission_dialog.jpg" width="170" alt="Approval"> | <img src="docs/media/create_session.jpg" width="170" alt="New session"> |
 
-| Sessions | Chat | Approval |
-|---|---|---|
-| ![Sessions](docs/media/screenshot-sessions.png) | ![Chat](docs/media/screenshot-chat.png) | ![Approval](docs/media/screenshot-approval.png) |
-
-| New session | Files / diff | Workspaces |
-|---|---|---|
-| ![New session](docs/media/screenshot-new-session.png) | ![Files](docs/media/screenshot-files.png) | ![Workspaces](docs/media/screenshot-workspaces.png) |
--->
+| Files / diff (multiple Git dirs) | All files | Workspaces | Settings |
+|---|---|---|---|
+| <img src="docs/media/file_git.jpg" width="170" alt="Files / diff"> | <img src="docs/media/file_full.jpg" width="170" alt="All files"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="Workspaces"> | <img src="docs/media/setting.jpg" width="170" alt="Settings"> |
 
 ## Documentation
 
@@ -146,9 +149,6 @@ Drop the screenshots into docs/media/ and uncomment once the filenames match.
 | [airemote-ios/README.md](airemote-ios/README.md) | iOS client (reserved): target shape, tech choices, dev environment |
 | [docs/ui/](docs/ui/README.md) | Mobile UI design (shared by Android and iOS; single design source): principles + per-page specs |
 | [CLAUDE.md](CLAUDE.md) | Repo charter: boundaries, conventions, key design decisions |
-
-> Design notes for the permission / workspace model, the Files tab and chat history
-> pagination are **local-only** (`docs/local/`, not in the repo), hence absent above.
 
 > The documents in this repository are written in Chinese.
 
@@ -168,8 +168,9 @@ What the daemon does enforce:
 - **Read-only allowlist**: only read-only Bash without shell metacharacters passes through
 - **Audit log**: chat / cancel / permission_decision / rename / delete are all recorded
 
-On an untrusted network, put it behind HTTPS (`AIREMOTE_TLS_*` or a reverse proxy) or an
-SSH tunnel, and keep the token secret. For local-only use, `--host 127.0.0.1`.
+On an untrusted network, put the devices on an encrypted virtual network first (Tailscale /
+ZeroTier / WireGuard — see "Connecting from outside your LAN"), and keep the token secret.
+For local-only use, `--host 127.0.0.1`.
 
 ## Status
 
