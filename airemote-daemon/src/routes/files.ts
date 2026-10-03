@@ -1,7 +1,15 @@
+import fs from 'node:fs';
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
-import { FileBrowserError, listFiles, readFileContent } from '../file-browser.js';
+import {
+  FileBrowserError,
+  guessContentType,
+  listFiles,
+  parseRange,
+  readFileContent,
+  resolveFile,
+} from '../file-browser.js';
 import {
   canonicalizeExistingDirectory,
   resolveWorkspaceForRequest,
@@ -89,5 +97,68 @@ export function registerFileRoutes(app: Express, ctx: AppContext): void {
     } catch (err) {
       sendFileError(res, err);
     }
+  });
+
+  // Raw bytes for previewing media (images / video). Unlike /content this is not
+  // size-capped and is not UTF-8 decoded — it streams the file as-is and honors
+  // `Range`, which is what lets a video player seek and a large image load in
+  // pieces. Auth is the same bearer gate as everything else under /api.
+  app.get('/api/files/raw', (req, res) => {
+    const requested = typeof req.query.workspaceId === 'string' && req.query.workspaceId ? req.query.workspaceId : undefined;
+    const workspace = resolveWorkspaceForRequest(ctx.db, requested);
+    if (!workspace) {
+      res.status(404).json({ error: 'workspace not found', code: 'workspace_not_found' });
+      return;
+    }
+    const relativePath = typeof req.query.path === 'string' ? req.query.path : '';
+    if (!relativePath) {
+      res.status(400).json({ error: 'path is required', code: 'bad_request' });
+      return;
+    }
+    let resolved: { absolute: string; wire: string };
+    try {
+      const root = resolveRoot(workspace, req.query.root);
+      resolved = resolveFile(root, relativePath);
+    } catch (err) {
+      sendFileError(res, err);
+      return;
+    }
+
+    let size: number;
+    try {
+      size = fs.statSync(resolved.absolute).size;
+    } catch {
+      res.status(404).json({ error: 'file not found', code: 'file_not_found' });
+      return;
+    }
+
+    const range = parseRange(req.headers.range, size);
+    res.setHeader('Content-Type', guessContentType(resolved.wire));
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Disposition', 'inline');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+
+    if (range === 'invalid') {
+      res.status(416).setHeader('Content-Range', `bytes */${size}`);
+      res.end();
+      return;
+    }
+
+    let stream: fs.ReadStream;
+    if (range) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${range.start}-${range.end}/${size}`);
+      res.setHeader('Content-Length', String(range.end - range.start + 1));
+      stream = fs.createReadStream(resolved.absolute, { start: range.start, end: range.end });
+    } else {
+      res.setHeader('Content-Length', String(size));
+      stream = fs.createReadStream(resolved.absolute);
+    }
+
+    stream.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ error: 'read failed', code: 'read_failed' });
+      else res.destroy();
+    });
+    stream.pipe(res);
   });
 }

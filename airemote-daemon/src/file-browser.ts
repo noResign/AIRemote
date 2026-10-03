@@ -168,7 +168,7 @@ export function listFiles(
   };
 }
 
-function resolveFile(workspacePath: string, relativePath: string): { absolute: string; wire: string } {
+export function resolveFile(workspacePath: string, relativePath: string): { absolute: string; wire: string } {
   if (!relativePath || path.isAbsolute(relativePath)) {
     throw new FileBrowserError('path must be a relative file path', 'path_outside_workspace', 400);
   }
@@ -218,4 +218,78 @@ export function readFileContent(workspacePath: string, relativePath: string): Fi
     truncated: stat.size > readSize,
     content: binary ? '' : data.toString('utf8'),
   };
+}
+
+/**
+ * Content-Type for `/api/files/raw`. Only browsers/players need this — the byte
+ * stream itself is type-agnostic — so the map stops at image/video and anything
+ * else degrades to `application/octet-stream` (players then rely on sniffing).
+ */
+const CONTENT_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska',
+  avi: 'video/x-msvideo',
+  '3gp': 'video/3gpp',
+};
+
+export function guessContentType(name: string): string {
+  const ext = path.extname(name).slice(1).toLowerCase();
+  return CONTENT_TYPES[ext] ?? 'application/octet-stream';
+}
+
+export interface ByteRange {
+  /** Inclusive start offset. */
+  start: number;
+  /** Inclusive end offset. */
+  end: number;
+}
+
+/**
+ * Parse a single-range `Range: bytes=…` header against a known file size.
+ *
+ * - `null`      → no range asked for, or one we don't handle (multi-range,
+ *                 unknown unit): the caller serves the whole file with 200.
+ * - `'invalid'` → a range was asked for but is unsatisfiable: caller sends 416.
+ * - `{start,end}` → inclusive offsets to serve with 206.
+ *
+ * Open-ended (`bytes=5-`) and suffix (`bytes=-500`) forms are supported; the
+ * end is clamped to the last byte, and a start past EOF is rejected.
+ */
+export function parseRange(header: unknown, size: number): ByteRange | 'invalid' | null {
+  if (typeof header !== 'string') return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null; // unknown unit or multi-range → serve the full body
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === '' && rawEnd === '') return null;
+  if (size === 0) return 'invalid';
+
+  let start: number;
+  let end: number;
+  if (rawStart === '') {
+    const suffix = Number(rawEnd);
+    if (!Number.isInteger(suffix) || suffix <= 0) return 'invalid';
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === '' ? size - 1 : Number(rawEnd);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) return 'invalid';
+    if (start >= size) return 'invalid';
+    if (end >= size) end = size - 1;
+  }
+  return { start, end };
 }

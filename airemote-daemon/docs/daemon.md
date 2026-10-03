@@ -127,6 +127,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/changes/diff` | 是 | 单文件 diff，`?workspaceId=&root=<abs>&path=<relative>` |
 | `GET /api/files` | 是 | 单层目录懒加载，`?workspaceId=&root=<abs>&path=&cursor=&limit=&showHidden=&showIgnored=` |
 | `GET /api/files/content` | 是 | 读取文本文件，`?workspaceId=&root=<abs>&path=<relative>`；有大小限制与二进制检测 |
+| `GET /api/files/raw` | 是 | 原始字节流（图片/视频预览），同参数；不截断、不解码，支持 `Range`（206/416），按扩展名给 `Content-Type` |
 | `GET /api/agent` | 是 | 探测 Claude Code（版本/认证/能力/models） |
 | `GET /api/agents` | 是 | 已注册运行时列表 `{agents:[{id,name,bin}]}` |
 | `POST /api/deploy` | 是 | 提交部署任务，`{channel:'test'|'prod', target?:'auto'|'daemon'|'android'|'all'}` |
@@ -155,6 +156,13 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 **改动文件（Files Tab）**：`/api/changes` 基于 `git status --porcelain=v1 -z -- .` 返回指定目录
 的未提交改动；`/api/changes/diff` 使用 `git diff --no-ext-diff --no-textconv` 返回单文件 patch。
 详见 `docs/ui/pages/files.md`。
+
+**媒体预览（`/api/files/raw`）**：与 `/api/files/content` 同参数、同越界校验（`root` + 相对
+`path`），但**不截断、不做 UTF-8 解码**，直接把文件字节流出去——这是图片 / 视频能就地预览的前提。
+按扩展名回 `Content-Type`（`image/*`、`video/*`，其余 `application/octet-stream`），并支持
+`Range: bytes=…`（开放/后缀形式均可）以 `206` + `Content-Range` 分段返回，越界范围回 `416`——
+视频拖进度、大图分块加载都靠它。鉴权仍是 `/api/*` 的 Bearer header，token 不进 URL，
+客户端（Coil / ExoPlayer）通过 `AiremoteClient.authedHttpClient` 复用同一份鉴权 OkHttp 客户端。
 
 **非仓库目录返回 `repos`**：`git rev-parse --show-toplevel` 只向上找仓库，所以根目录自身不在任何
 仓库时（如 `~/OpenProject` 下面平铺着一堆仓库），根目录看改动会直接 `isGitRepo=false`。

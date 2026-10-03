@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { listFiles, readFileContent } from '../src/file-browser';
+import { guessContentType, listFiles, parseRange, readFileContent } from '../src/file-browser';
 
 let dir: string;
 
@@ -56,5 +56,47 @@ describe('file browser', () => {
     const binary = readFileContent(dir, 'image.bin');
     expect(binary.binary).toBe(true);
     expect(binary.content).toBe('');
+  });
+});
+
+describe('guessContentType', () => {
+  it('maps image and video extensions, case-insensitively', () => {
+    expect(guessContentType('cat.png')).toBe('image/png');
+    expect(guessContentType('photo.JPG')).toBe('image/jpeg');
+    expect(guessContentType('clip.MP4')).toBe('video/mp4');
+    expect(guessContentType('a/b/movie.mov')).toBe('video/quicktime');
+  });
+
+  it('falls back to octet-stream for unknown or missing extensions', () => {
+    expect(guessContentType('data.bin')).toBe('application/octet-stream');
+    expect(guessContentType('LICENSE')).toBe('application/octet-stream');
+  });
+});
+
+describe('parseRange', () => {
+  const size = 1000;
+
+  it('returns null when no usable range was requested', () => {
+    expect(parseRange(undefined, size)).toBeNull();
+    expect(parseRange('', size)).toBeNull();
+    expect(parseRange('bytes=0-1,3-4', size)).toBeNull(); // multi-range: serve full
+    expect(parseRange('items=0-1', size)).toBeNull(); // unknown unit
+  });
+
+  it('parses closed, open-ended and suffix ranges', () => {
+    expect(parseRange('bytes=0-99', size)).toEqual({ start: 0, end: 99 });
+    expect(parseRange('bytes=5-', size)).toEqual({ start: 5, end: 999 });
+    expect(parseRange('bytes=-500', size)).toEqual({ start: 500, end: 999 });
+  });
+
+  it('clamps the end to the last byte', () => {
+    expect(parseRange('bytes=0-99999', size)).toEqual({ start: 0, end: 999 });
+  });
+
+  it('rejects unsatisfiable ranges', () => {
+    expect(parseRange('bytes=1000-1200', size)).toBe('invalid'); // start past EOF
+    expect(parseRange('bytes=50-10', size)).toBe('invalid'); // start > end
+    expect(parseRange('bytes=-0', size)).toBe('invalid'); // zero-length suffix
+    expect(parseRange('bytes=0-0', 0)).toBe('invalid'); // empty file
   });
 });
