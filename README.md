@@ -33,10 +33,9 @@ Claude Code，后续支持Codex、DSH）以无头方式 spawn 起来，把输出
 
 ```bash
 npm install -g @noresign/airemote      # 全局命令名是 airemote
-airemote --workspace ~/code/my-project
-```
 
-- 不想全局安装就用 `npx @noresign/airemote --workspace ~/code/my-project`
+airemote --workspace ~/code/my-project # workspace参数指定工作空间，默认为命令启动目录
+```
 
 首次启动会生成 token 并打印，同时打印手机可以连的局域网地址：
 
@@ -45,10 +44,32 @@ token: 3f9c…   ← 手机连的时候要填这个
 LAN:   http://192.168.1.20:4780
 ```
 
-- token 持久化在 `~/.airemote/token`，删掉即轮换；也可以用 `--token` 指定别的
+- token 持久化在 `~/.airemote/token`，删掉即轮换；也可以用 `--token` 指定
 - 完整参数、配置项与 HTTP/SSE 接口见 [airemote-daemon/README.md](airemote-daemon/README.md)。
 
-#### 手机电脑不在同一个局域网（可选）
+### 2. 编译 Android 客户端
+
+用 Android Studio 打开 `airemote-android/`（JDK 17，`minSdk 24` / `targetSdk 36`），
+选 flavor 后直接 Run。命令行等价于：
+
+```bash
+cd airemote-android
+./gradlew :app:assembleAlphaDebug
+```
+
+两个通道：`alphaDebug`（测试）与 `prodDebug`（正式）；正式签名需要
+`airemote-android/keystore.properties`。模块划分与签名说明见
+[airemote-android/README.md](airemote-android/README.md)。
+
+
+### 3. 操作步骤
+
+1. 打开 App，填 daemon 地址（就是启动时打印的那个 LAN 地址）和 token，连接
+2. 新建会话 → 选工作区目录 → 发一句话
+3. agent 在电脑上干活，手机上看流式输出；要跑 Bash 或写文件时手机上会弹审批卡
+4. 想走就走——任务在电脑上继续跑，回来重连自动续上
+
+### 4. 手机电脑不在同一个局域网（可选）
 
 daemon 默认监听局域网，公网连接有以下两种方法：
 
@@ -81,26 +102,6 @@ ssh -N -R 0.0.0.0:4788:localhost:4780 user@your-server
 > ⚠️ 上面任何一种做法都让 daemon 暴露到公网，不再是「只有本机能碰」的，而它驱动的是一个带 shell 权限的
 > agent——任何人连上即可指挥它操作你的电脑。因此注意不要泄露 ip 及 token，确保 token 复杂度足够高。
 
-### 2. 编译 Android 客户端
-
-用 Android Studio 打开 `airemote-android/`（JDK 17，`minSdk 24` / `targetSdk 36`），
-选 flavor 后直接 Run。命令行等价于：
-
-```bash
-cd airemote-android
-./gradlew :app:assembleAlphaDebug
-```
-
-两个通道：`alphaDebug`（测试）与 `prodDebug`（正式）；正式签名需要
-`airemote-android/keystore.properties`。模块划分与签名说明见
-[airemote-android/README.md](airemote-android/README.md)。
-
-### 3. 操作步骤
-
-1. 打开 App，填 daemon 地址（就是启动时打印的那个 LAN 地址）和 token，连接
-2. 新建会话 → 选工作区目录 → 发一句话
-3. agent 在电脑上干活，手机上看流式输出；要跑 Bash 或写文件时手机上会弹审批卡
-4. 想走就走——任务在电脑上继续跑，回来重连自动续上
 
 ## 功能
 
@@ -125,16 +126,6 @@ cd airemote-android
 |---|---|---|---|
 | <img src="docs/media/file_git.jpg" width="170" alt="文件 Diff"> | <img src="docs/media/file_full.jpg" width="170" alt="全部文件"> | <img src="docs/media/workspace_manage.jpg" width="170" alt="工作区管理"> | <img src="docs/media/setting.jpg" width="170" alt="设置"> |
 
-## 文档
-
-| 文档 | 内容 |
-|---|---|
-| [airemote-daemon/README.md](airemote-daemon/README.md) | daemon 安装 / 配置 / API / 开发 |
-| [airemote-daemon/docs/daemon.md](airemote-daemon/docs/daemon.md) | daemon 完整技术方案：架构 / 协议 / 权限 / 数据模型 / 端点表 |
-| [airemote-android/README.md](airemote-android/README.md) | Android 客户端构建 / 签名 / 模块划分 |
-| [airemote-ios/README.md](airemote-ios/README.md) | iOS 客户端（预留）：目标形态、技术选型、开发环境 |
-| [docs/ui/](docs/ui/README.md) | 移动端 UI 设计（Android / iOS 共用，单一设计源）：设计原则 + 逐页规格 |
-| [CLAUDE.md](CLAUDE.md) | 仓库纲领：边界、开发规范、关键设计决策 |
 
 ## 安全模型 ⚠️
 
@@ -158,7 +149,7 @@ daemon 提供的边界：
 - **daemon**：可用（会话 / 审批 / 工作区 / 文件 均已落地）
 - **Android**：已实现（连接、会话列表、聊天、审批、新建会话、设置、文件、工作区管理）
 - **iOS**：预留，尚未实现
-- **多 runtime**：抽象已就位，当前唯一实现是 Claude Code
+- **多 runtime**：抽象已就位，当前仅支持 Claude Code
 
 ## License
 
