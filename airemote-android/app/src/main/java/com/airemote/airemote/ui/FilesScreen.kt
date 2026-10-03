@@ -84,6 +84,7 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     val diffState by viewModel.diffState.collectAsState()
     val fileBrowser by viewModel.fileBrowser.collectAsState()
     val fileContent by viewModel.fileContent.collectAsState()
+    val media by viewModel.media.collectAsState()
     val selectedWorkspacePath by WorkspaceSelection.selectedPath.collectAsState()
     val root by viewModel.root.collectAsState()
     val knownRoots by viewModel.knownRoots.collectAsState()
@@ -99,6 +100,12 @@ fun FilesScreen(viewModel: FilesViewModel = viewModel()) {
     LaunchedEffect(Unit) { viewModel.refresh() }
 
     when {
+        // 媒体预览排在最前：它是从「全部文件」点进来的最上层浮层（和文本/diff 互斥）。
+        media != null -> MediaViewerScreen(
+            state = media!!,
+            client = viewModel.mediaClient(),
+            onBack = viewModel::closeMedia,
+        )
         fileContent != null -> FileContentScreen(state = fileContent!!, onBack = viewModel::closeFile)
         diffState != null -> DiffScreen(
             state = diffState!!,

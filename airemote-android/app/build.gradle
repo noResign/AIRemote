@@ -2,7 +2,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    // 不再需要 kotlin-serialization 插件：本模块已无 @Serializable 类，协议 DTO 都在 :lib-network
 }
 
 def keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -12,14 +11,6 @@ if (hasKeystore) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
-// 版本号约定（与 release-android.sh 配套；细节见 docs/local/updater.md §7.1，本机私有不入库）：
-//   正式包（release variant）：versionCode = epoch 秒，versionName = version.txt 的语义化版本
-//           （alpha 追加 -alpha.<时间戳>，保证同一版本多次 alpha 也升序）
-//   本地包（debug variant）：versionCode = 1（固定低值），versionName = 0.0.0-<yyyyMMddHHmmss>
-// release-android.sh 通过 -PversionCode/-PversionName 注入时优先级最高。
-// 两个字段都必须「正式包 > 本地包」：ColorOS 安装器会拿 versionName 比大小，
-// 但 Android 安装器首先按 versionCode 判降级；本地用 epoch 时，只要本地构建晚于
-// 正式包，安装器就会报「已安装更高版本」。本地固定 1 才能保证正式包永远可覆盖安装。
 def rawVersionCode = project.findProperty("versionCode")?.toString()
 def versionCodeOverride = rawVersionCode
         ? rawVersionCode.toInteger()
@@ -31,7 +22,6 @@ def utcTimestamp = {
     fmt.format(new Date())
 }
 def localVersionName = "0.0.0-" + utcTimestamp()
-// 正式版本号源；release variant 会自动读取，不再要求必须由 release-android.sh 注入 -P。
 def versionFile = rootProject.file("version.txt")
 
 // 应用内更新通道 URL 不入库：从 updater.properties（gitignored，模板见 updater.properties.example）
@@ -163,6 +153,11 @@ dependencies {
     implementation libs.androidx.navigation.compose
     implementation libs.mmkv
     implementation libs.markdown.renderer.m3
+
+    implementation libs.coil.compose
+    implementation libs.media3.exoplayer
+    implementation libs.media3.ui
+    implementation libs.media3.datasource.okhttp
 
     implementation libs.androidx.compose.ui
     implementation libs.androidx.compose.ui.graphics

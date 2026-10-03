@@ -35,14 +35,20 @@ object AiremoteClient {
     }
 
     private val apiCache = mutableMapOf<String, AiremoteApi>()
+    private val clientCache = mutableMapOf<String, OkHttpClient>()
 
-    /** Build (or reuse) an API instance that injects `Authorization: Bearer <token>` on every call. */
+    /**
+     * An OkHttp client that injects `Authorization: Bearer <token>` on every call,
+     * shared per (baseUrl, token). Exposed for consumers that fetch bytes over
+     * their own HTTP stack — Coil for images, ExoPlayer for video — so the token
+     * stays in a header and never ends up in a URL.
+     */
     @Synchronized
-    fun create(baseUrl: String, token: String): AiremoteApi {
+    fun authedHttpClient(baseUrl: String, token: String): OkHttpClient {
         val normalized = normalizeBaseUrl(baseUrl)
         val key = "$normalized|$token"
-        return apiCache.getOrPut(key) {
-            val client = baseOkHttpClient.newBuilder()
+        return clientCache.getOrPut(key) {
+            baseOkHttpClient.newBuilder()
                 .addInterceptor { chain ->
                     val request = chain.request().newBuilder()
                         .header("Authorization", "Bearer $token")
@@ -50,9 +56,35 @@ object AiremoteClient {
                     chain.proceed(request)
                 }
                 .build()
+        }
+    }
+
+    /**
+     * Absolute URL of a raw file read (`GET /api/files/raw`), for handing to Coil
+     * or a media player. The caller's client must add the Authorization header —
+     * this only shapes the URL (endpoint + encoded query).
+     */
+    fun fileRawUrl(baseUrl: String, workspaceId: String?, root: String?, path: String): String {
+        val query = listOfNotNull(
+            workspaceId?.let { "workspaceId=${encode(it)}" },
+            root?.let { "root=${encode(it)}" },
+            "path=${encode(path)}",
+        ).joinToString("&")
+        return normalizeBaseUrl(baseUrl) + "api/files/raw?$query"
+    }
+
+    private fun encode(value: String): String =
+        java.net.URLEncoder.encode(value, Charsets.UTF_8.name())
+
+    /** Build (or reuse) an API instance that injects `Authorization: Bearer <token>` on every call. */
+    @Synchronized
+    fun create(baseUrl: String, token: String): AiremoteApi {
+        val normalized = normalizeBaseUrl(baseUrl)
+        val key = "$normalized|$token"
+        return apiCache.getOrPut(key) {
             Retrofit.Builder()
                 .baseUrl(normalized)
-                .client(client)
+                .client(authedHttpClient(normalized, token))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
                 .create(AiremoteApi::class.java)

@@ -2,6 +2,7 @@ package com.airemote.airemote.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.airemote.airemote.data.MediaKind
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.ChangesRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
@@ -14,6 +15,7 @@ import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 
 enum class FilesMode { Changes, All }
 
@@ -51,6 +53,15 @@ sealed class FileContentUiState {
     data class Loading(val path: String) : FileContentUiState()
     data class Ready(val content: FileContentDto) : FileContentUiState()
     data class Error(val path: String, val message: String) : FileContentUiState()
+}
+
+/**
+ * 媒体预览状态。URL 是本地拼出来的（daemon 只吐字节，取数据交给 Coil / ExoPlayer），
+ * 所以没有「加载中」——只有拼不出地址时的错误态。
+ */
+sealed class MediaUiState {
+    data class Ready(val path: String, val kind: MediaKind, val url: String) : MediaUiState()
+    data class Error(val path: String, val message: String) : MediaUiState()
 }
 
 class FilesViewModel(
@@ -106,11 +117,15 @@ class FilesViewModel(
     private val _fileContent = MutableStateFlow<FileContentUiState?>(null)
     val fileContent = _fileContent.asStateFlow()
 
+    private val _media = MutableStateFlow<MediaUiState?>(null)
+    val media = _media.asStateFlow()
+
     init {
         viewModelScope.launch {
             WorkspaceSelection.selectedId.collect { workspaceId ->
                 _diffState.value = null
                 _fileContent.value = null
+                _media.value = null
                 _uiState.value = FilesUiState.Loading
                 _fileBrowser.value = FileBrowserUiState()
                 // 换工作区就回到它的主目录，否则会拿着上一个工作区的根不放。
@@ -144,6 +159,7 @@ class FilesViewModel(
         _root.value = normalized
         _diffState.value = null
         _fileContent.value = null
+        _media.value = null
         _uiState.value = FilesUiState.Loading
         _fileBrowser.value = FileBrowserUiState()
         viewModelScope.launch {
@@ -247,8 +263,9 @@ class FilesViewModel(
         }
     }
 
-    /** 正在看 diff / 文件内容时页面显示的不是列表，刷新没有意义。 */
-    private fun listIsBehindOverlay(): Boolean = _fileContent.value != null || _diffState.value != null
+    /** 正在看 diff / 文件内容 / 媒体时页面显示的不是列表，刷新没有意义。 */
+    private fun listIsBehindOverlay(): Boolean =
+        _fileContent.value != null || _diffState.value != null || _media.value != null
 
     /**
      * 重新拉取当前分段的数据。页面每次进入 tab 都会调它（见 `FilesScreen` 的
@@ -388,12 +405,38 @@ class FilesViewModel(
 
     fun openFile(entry: FileEntryDto) {
         if (entry.type != "file") return
-        openFileContent(entry.path)
+        openPath(entry.path)
     }
+
+    /** 按扩展名分流：图片 / 视频进媒体预览，其余进文本查看器。 */
+    private fun openPath(path: String) {
+        val kind = MediaKind.of(path)
+        if (kind != null) openMedia(path, kind) else openFileContent(path)
+    }
+
+    /**
+     * 图片 / 视频走独立的预览层：不预取内容，只把 raw URL 拼好交给 Coil / ExoPlayer。
+     * 拼不出地址（未配置连接）时给错误态，而不是静默无反应。
+     */
+    private fun openMedia(path: String, kind: MediaKind) {
+        val url = repository.mediaUrl(WorkspaceSelection.current(), path, _root.value)
+        _media.value = if (url != null) {
+            MediaUiState.Ready(path, kind, url)
+        } else {
+            MediaUiState.Error(path, "未配置连接")
+        }
+    }
+
+    fun closeMedia() {
+        _media.value = null
+    }
+
+    /** Coil / ExoPlayer 复用的带鉴权客户端；未配置连接时为 null。 */
+    fun mediaClient(): OkHttpClient? = repository.mediaClient()
 
     fun openDiffFileContent() {
         val path = (_diffState.value as? DiffUiState.Ready)?.diff?.path ?: return
-        openFileContent(path)
+        openPath(path)
     }
 
     private fun openFileContent(path: String) {
