@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.PendingNewSession
 import com.airemote.airemote.data.repository.ChatRepository
 import com.airemote.airemote.data.repository.SessionRepository
+import com.airemote.airemote.notify.ChatVisibility
+import com.airemote.airemote.notify.RunWatchCenter
+import com.airemote.airemote.util.ReconnectPolicy
 import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
@@ -109,6 +112,9 @@ class ChatViewModel(
         // 切会话时先掐掉在途的流，否则旧 run 的帧会灌进新会话。
         cancelStream()
         this.sessionId = sessionId
+        // 通知的抑制条件：用户此刻正看着这个会话（新会话先登记 null，拿到 id 后再更新）
+        ChatVisibility.enter(sessionId)
+        sessionId?.let { RunWatchCenter.clearFor(it) }
         if (sessionId == null) {
             PendingNewSession.take()?.let {
                 initialClaudeSessionId = it.claudeSessionId
@@ -368,12 +374,21 @@ class ChatViewModel(
         val e = frame.event
         if (e is NormalizedEvent.Status && e.sessionId != null && sessionId == null) {
             sessionId = e.sessionId
+            ChatVisibility.enter(sessionId)
+            sessionId?.let { RunWatchCenter.clearFor(it) }
+        }
+        // 登记后台监听：离开会话页（或锁屏后进程被回收）时，审批 / 完成仍能弹通知。
+        // 同一 run 重复登记只更新标题，daemon 允许同一 run 有多个订阅者。
+        // 终局帧不登记：run 即将收口，登记等于立刻又发起一条注定落空的连接。
+        val terminal = isTerminal(e)
+        if (!terminal) {
+            sessionId?.let { RunWatchCenter.watch(frame.runId, it, _sessionTitle.value) }
         }
         when (e) {
             is NormalizedEvent.PermissionRequest -> enqueuePermission(e)
             else -> applyEvent(e)
         }
-        if (isTerminal(e)) finish()
+        if (terminal) finish()
     }
 
     private fun isTerminal(e: NormalizedEvent): Boolean = when (e) {
@@ -606,5 +621,11 @@ class ChatViewModel(
 
     fun consumeError() {
         _error.value = null
+    }
+
+    override fun onCleared() {
+        // 离开聊天页：不再算「用户正看着这个会话」
+        ChatVisibility.exit(sessionId)
+        super.onCleared()
     }
 }

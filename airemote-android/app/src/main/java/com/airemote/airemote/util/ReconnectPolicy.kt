@@ -1,7 +1,8 @@
-package com.airemote.airemote.viewmodel
+package com.airemote.airemote.util
 
 /**
- * 聊天流断线后的重连策略。**纯逻辑、无 Android 依赖**，便于单测。
+ * run 流断线后的重连策略。**纯逻辑、无 Android 依赖**，便于单测；聊天页
+ * （`ChatViewModel`）与后台监听（`RunWatchCenter`）共用同一套判定。
  *
  * 一轮（一次 `runStream` 的 collect）结束后，[decide] 给出下一步：收口、放弃、还是退避重连。
  * 状态的累积（连续失败轮数、连不上 daemon 的时长）由调用方维护，这里只管判定。

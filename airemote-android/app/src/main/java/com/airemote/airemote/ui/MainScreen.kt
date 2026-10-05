@@ -127,6 +127,7 @@ fun MainScreen(
                 MainTab.Sessions -> SessionListScreen(
                     onOpenSession = onOpenSession,
                     onNewSession = onNewSession,
+                    onReconnect = onReconnect,
                 )
                 MainTab.Files -> FilesScreen()
                 MainTab.Settings -> SettingsScreen(

@@ -68,7 +68,16 @@ class SessionListViewModel(
             is NetworkResult.Success -> _uiState.value = SessionListUiState.Content(
                 groupByCwd(r.data, WorkspaceSelection.selectedPath.value),
             )
-            is NetworkResult.Error -> onError(r)
+            is NetworkResult.Error -> {
+                // 本地选中的工作区在 daemon 上已经不存在（换过 daemon、或在那边删掉了）：
+                // 清掉本地选择，selectedId 的 collector 会用「不过滤」重拉一次。不处理就会
+                // 停在一条不可重试的错误上——「重试」永远失败，用户也看不出该去哪。
+                if (r.apiCode == "workspace_not_found" && workspaceId != null) {
+                    WorkspaceSelection.select(null)
+                    return
+                }
+                onError(r)
+            }
         }
     }
 

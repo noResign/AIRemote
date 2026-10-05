@@ -18,6 +18,8 @@ object SettingsStore {
     private const val KEY_SELECTED_WORKSPACE_ID = "selected_workspace_id"
     private const val KEY_SELECTED_WORKSPACE_PATH = "selected_workspace_path"
     private const val KEY_SAVED_CONNECTIONS = "saved_connections"
+    private const val KEY_BACKGROUND_NOTIFICATIONS = "background_notifications"
+    private const val KEY_NOTIFICATION_PROMPT_SHOWN = "notification_prompt_shown"
 
     private const val MAX_SAVED_CONNECTIONS = 5
     private const val ENTRY_SEPARATOR = "\n"
@@ -86,6 +88,25 @@ object SettingsStore {
                     else -> null
                 }
             }
+
+    /**
+     * 后台任务提醒（审批 / 完成时弹系统通知）。
+     *
+     * 关掉后不再建立后台监听连接，也不会有常驻的「正在监听」提示；任务本身照旧在电脑上跑。
+     * 默认开：这个功能的价值就在「人不在会话页」的时候，默认关等于没做。
+     */
+    var backgroundNotifications: Boolean
+        get() = !kv.containsKey(KEY_BACKGROUND_NOTIFICATIONS) || kv.decodeBool(KEY_BACKGROUND_NOTIFICATIONS)
+        set(value) {
+            kv.encode(KEY_BACKGROUND_NOTIFICATIONS, value)
+        }
+
+    /** 是否已经弹过系统通知权限框。只弹一次，之后由设置页引导去系统设置。 */
+    var notificationPromptShown: Boolean
+        get() = kv.decodeBool(KEY_NOTIFICATION_PROMPT_SHOWN)
+        set(value) {
+            kv.encode(KEY_NOTIFICATION_PROMPT_SHOWN, value)
+        }
 
     /** 记录一次成功的连接：同一地址只保留最新一条（token 轮换或改名后自动覆盖）。 */
     fun rememberConnection(name: String, baseUrl: String, token: String) {

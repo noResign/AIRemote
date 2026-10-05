@@ -4,6 +4,13 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- 后台任务提醒：审批 / 完成时弹系统通知（13+ 为运行时权限） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 通知振动（没有它，通知不会振） -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 有任务在跑时用前台服务保住进程，否则锁屏后收不到事件 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- 语音输入占位预留（§7.6，ASR 未接，先声明权限） -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -31,6 +38,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:label="@string/app_name"
             android:theme="@style/Theme.AIRemote">
             <intent-filter>
@@ -39,6 +47,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".notify.RunWatchService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- 通知深链的中转站：解析目标会话再拉起主界面，自身透明无 UI、不进最近任务。
+             独立一个 Activity 是为了让通知的 PendingIntent 直接指向 Activity
+             （Android 12+ 禁止经 Service/Receiver 中转的 trampoline）。 -->
+        <activity
+            android:name=".notify.DeepLinkActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.AIRemote.DeepLink" />
     </application>
 
 </manifest>

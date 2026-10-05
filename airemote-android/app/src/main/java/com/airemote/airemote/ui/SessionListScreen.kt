@@ -70,6 +70,7 @@ import com.airemote.airemote.viewmodel.SessionListViewModel
 fun SessionListScreen(
     onOpenSession: (String) -> Unit,
     onNewSession: () -> Unit,
+    onReconnect: () -> Unit,
     viewModel: SessionListViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -130,6 +131,8 @@ fun SessionListScreen(
                     ) {
                         Text(state.message, style = MaterialTheme.typography.bodyMedium)
                         OutlinedButton(onClick = viewModel::refresh) { Text("重试") }
+                        // 连接层面的错（token 失效 / 地址变了）重试是没用的，给一条明确的出路
+                        OutlinedButton(onClick = onReconnect) { Text("重新连接") }
                     }
                 }
                 is SessionListUiState.Content -> {

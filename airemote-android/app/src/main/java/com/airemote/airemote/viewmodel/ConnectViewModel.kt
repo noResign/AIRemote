@@ -8,6 +8,7 @@ import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.repository.ConnectRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
 import com.airemote.airemote.model.connect.ConnectResponse
+import com.airemote.airemote.notify.RunWatchCenter
 import com.airemote.airemote.util.friendlyError
 import com.airemote.network.http.NetworkResult
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -101,10 +102,16 @@ class ConnectViewModel(
         viewModelScope.launch {
             when (val result = repository.testConnection(url, tk)) {
                 is NetworkResult.Success -> {
+                    val previousBaseUrl = settings.baseUrl
                     settings.name = nm
                     settings.baseUrl = url
                     settings.token = tk
                     settings.workspace = result.data.workspace
+                    // 换了 daemon：旧 runId 的监听与残留通知在新 daemon 上没有意义。
+                    // 同一地址重连不动监听，任务照旧接着提醒。
+                    if (previousBaseUrl != null && previousBaseUrl != url) {
+                        RunWatchCenter.clearAll()
+                    }
                     settings.rememberConnection(nm, url, tk)
                     _savedConnections.value = settings.savedConnections
                     val workspaces = workspaceRepository.listWorkspaces()

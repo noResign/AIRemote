@@ -1,4 +1,4 @@
-package com.airemote.airemote.viewmodel
+package com.airemote.airemote.util
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

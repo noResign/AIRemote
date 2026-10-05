@@ -1,5 +1,7 @@
 package com.airemote.airemote.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -40,12 +42,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.airemote.airemote.ui.theme.LocalSemanticColors
+import com.airemote.airemote.data.local.SettingsStore
+import com.airemote.airemote.notify.NotificationPermission
+import com.airemote.airemote.notify.RunNotifications
 import com.airemote.airemote.viewmodel.SessionPermissionsUiState
 import com.airemote.airemote.ui.chat.InputBar
 import com.airemote.airemote.ui.chat.MessageList
@@ -76,12 +82,29 @@ fun ChatScreen(
 
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     var input by remember { mutableStateOf("") }
     var todoExpanded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(sessionId) { viewModel.load(sessionId) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
+    LaunchedEffect(sessionId) {
+        // 人已经进来了，这条会话的旧提醒就没用了
+        sessionId?.let { RunNotifications.clear(context, it) }
+        viewModel.load(sessionId)
+    }
+    // 任务真的跑起来了才要通知权限：此刻用途最明确，也最不像「一进来就要权限」
+    LaunchedEffect(streaming) {
+        if (!streaming || SettingsStore.notificationPromptShown) return@LaunchedEffect
+        if (NotificationPermission.isGranted(context)) return@LaunchedEffect
+        val permission = NotificationPermission.requiredPermission ?: return@LaunchedEffect
+        SettingsStore.notificationPromptShown = true
+        notificationPermissionLauncher.launch(permission)
+    }
     LaunchedEffect(error) {
         error?.let {
             snackbarHostState.showSnackbar(it)

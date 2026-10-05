@@ -1,5 +1,7 @@
 package com.airemote.airemote.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,21 +22,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.airemote.airemote.BuildConfig
 import com.airemote.airemote.data.local.SettingsStore
 import com.airemote.airemote.data.update.AppUpdater
+import com.airemote.airemote.notify.NotificationPermission
+import com.airemote.airemote.notify.RunWatchCenter
 import com.airemote.airemote.ui.update.UpdateHost
 import com.airemote.airemote.viewmodel.DirectoryPickerUiState
 import com.airemote.airemote.viewmodel.SettingsUiState
@@ -57,6 +70,38 @@ fun SettingsScreen(
     val baseUrl = SettingsStore.baseUrl ?: ""
     val token = SettingsStore.token ?: ""
     val daemonVersion = (uiState as? SettingsUiState.Ready)?.version
+
+    val context = LocalContext.current
+    var notificationsEnabled by remember { mutableStateOf(SettingsStore.backgroundNotifications) }
+    var notificationsGranted by remember { mutableStateOf(NotificationPermission.isGranted(context)) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { notificationsGranted = NotificationPermission.isGranted(context) }
+
+    // 从系统通知设置页返回时刷新授权状态（用户在那边开关了通知）
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsGranted = NotificationPermission.isGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    fun applyNotifications(enabled: Boolean) {
+        notificationsEnabled = enabled
+        RunWatchCenter.setEnabled(context, enabled)
+        if (!enabled || NotificationPermission.isGranted(context)) return
+        val permission = NotificationPermission.requiredPermission
+        if (permission != null && !SettingsStore.notificationPromptShown) {
+            SettingsStore.notificationPromptShown = true
+            notificationPermissionLauncher.launch(permission)
+        } else {
+            NotificationPermission.openSettings(context)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -131,6 +176,39 @@ fun SettingsScreen(
                             text = it,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    SectionTitle("通知")
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { applyNotifications(!notificationsEnabled) }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("后台任务提醒", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "任务完成、失败或需要审批时，若你不在该会话页就弹系统通知",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Switch(
+                            checked = notificationsEnabled && notificationsGranted,
+                            onCheckedChange = { checked -> applyNotifications(checked) },
+                        )
+                    }
+                    if (notificationsEnabled && !notificationsGranted) {
+                        Text(
+                            text = "系统通知未授权，点这里去系统设置开启",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { NotificationPermission.openSettings(context) }
+                                .padding(vertical = 4.dp),
                         )
                     }
 
