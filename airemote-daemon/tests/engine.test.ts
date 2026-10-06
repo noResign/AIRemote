@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { startRun } from '../src/runtimes/engine';
+import { claudeAdapter } from '../src/runtimes/claude/adapter';
 import { defaultCapabilities, type RuntimeAdapter } from '../src/runtimes/types';
 import type { NormalizedEvent } from '../src/types/api';
 
@@ -40,6 +41,48 @@ const fakeAdapter: RuntimeAdapter = {
 };
 
 describe('run event stream', () => {
+  it.each([
+    ['default', 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'],
+    ['acceptEdits', 'Bash|mcp__.*'],
+  ])('passes read grants and remote approval hooks to Claude in %s mode', async (permissionMode, matcher) => {
+    let claudeArgs: string[] = [];
+    const run = startRun({
+      id: `read-grants-${permissionMode}`,
+      adapter: {
+        ...fakeAdapter,
+        buildArgs: (ctx) => {
+          claudeArgs = claudeAdapter.buildArgs(ctx);
+          return ['-e', 'process.exit(0)'];
+        },
+      },
+      prompt: 'hi',
+      cwd: process.cwd(),
+      permissionMode,
+      capabilities: { ...defaultCapabilities, permissionHook: true },
+      env: process.env,
+      permissionHook: {
+        hookPath: '/tmp/permission-hook.js',
+        daemonUrl: 'http://127.0.0.1:1',
+        token: 'test-token',
+        timeoutMs: 120_000,
+        matcher,
+      },
+      onEvent: () => {},
+    });
+    expect((await run.promise).status).toBe('succeeded');
+    const settingsIndex = claudeArgs.indexOf('--settings');
+    expect(settingsIndex).toBeGreaterThan(-1);
+    const settings = JSON.parse(claudeArgs[settingsIndex + 1]);
+    expect(settings.permissions).toEqual({ allow: ['Read', 'Grep'] });
+    expect(settings.hooks.PreToolUse).toEqual([
+      {
+        matcher,
+        hooks: [{ type: 'command', command: `${process.execPath} /tmp/permission-hook.js`, timeout: 150 }],
+      },
+    ]);
+    expect(claudeArgs[claudeArgs.indexOf('--permission-mode') + 1]).toBe(permissionMode);
+  });
+
   it('closes a tool call that is still in flight when the run is cancelled', async () => {
     const events: NormalizedEvent[] = [];
     const run = startRun({

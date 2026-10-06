@@ -95,7 +95,7 @@ interface AiremoteApi {
         @Query("showHidden") showHidden: Boolean? = null,
     ): DirectoriesResponse
 
-    /** 额外目录授予工作区；同一份列表也可由聊天里的越界读取审批写入。 */
+    /** 给工作区添加一个额外可达目录（附加目录）。 */
     @POST("api/workspaces/{id}/dirs")
     suspend fun addWorkspaceDir(
         @Path("id") id: String,

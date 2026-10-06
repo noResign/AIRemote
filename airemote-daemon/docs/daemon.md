@@ -187,24 +187,20 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 **注意 `roots` 与 `shortcutDirs` 的语义差别**：`roots` 里的目录对 agent 是可达的（主目录是
 spawn cwd，附加目录走 `--add-dir`），而 `shortcutDirs` **只是文件 Tab 的书签**，不进
-`--add-dir`、不进 `AIREMOTE_ALLOWED_DIRS`、不参与任何越界判定。两者分开存就是为了让
+`--add-dir`、不参与任何可达性判定。两者分开存就是为了让
 「我想在这儿留个入口」和「我允许 agent 碰这里」不会互相污染。
 
 **不变式：同一个目录不会同时是根和书签**（否则 tab 行上会重复出现两次）。两个方向都要管：
 
 - 给已有的根（主目录/附加目录/已有书签）加书签 → 路由 **409 `shortcut_exists`**；
-- 把已有书签的目录改成授权目录 → `Db.addWorkspaceDir` **顺手删掉该书签**（放在数据层，
-  因为两条写入路径——客户端加目录、聊天里批准越界读取——都走它）。
+- 把已有书签的目录改成授权目录 → `Db.addWorkspaceDir` **顺手删掉该书签**（放在数据层）。
   另外启动时有一次幂等清理，抹掉早期版本留下的重复行。
 
 **附加目录（`workspace_dirs`）与 `--add-dir`**：一个工作区 = 主目录 + N 个附加目录。
-附加目录有两个来源、**同一份存储**：
+附加目录现在只有**一个来源**：手机在「工作区管理」里手动增删（早期版本还会在批准越界读取时
+自动写入，该机制已随读取门控一并移除，见 §7.1）。
 
-1. agent 越界读取被远程批准（见 §7）时写入；
-2. 手机在「工作区管理」里手动增删。
-
-spawn 时把「主目录 + 附加目录」中**除 cwd 之外**的部分逐个传给 `claude --add-dir`，
-并把完整列表通过 `AIREMOTE_ALLOWED_DIRS` 传给 PreToolUse hook 做本地判定。
+spawn 时把「主目录 + 附加目录」中**除 cwd 之外**的部分逐个传给 `claude --add-dir`。
 `--add-dir <directories...>` 是**变长参数**，因此它必须排在 argv 最末；prompt 走 stdin
 （`--input-format stream-json`），不是位置参数，这一点不能改。
 存储在磁盘上已消失的目录在 spawn 时被过滤掉（`existingDirs`），但**不**从配置里静默删除。
@@ -249,42 +245,25 @@ acceptEdits  -> acceptEdits
 bypass       -> bypassPermissions
 ```
 
-`ask` 模式下 PreToolUse hook 的 matcher 为
-`Bash|Write|Edit|MultiEdit|NotebookEdit|Read|Grep|mcp__.*`；`acceptEdits` 匹配
-`Bash|Read|Grep|mcp__.*`；`bypass` 不注入 hook。
+`Read` / `Grep` **不纳入门禁**：读工作区外的文件不审批（见 §7.1）。`ask` 模式下 PreToolUse
+hook 的 matcher 为 `Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*`；`acceptEdits` 匹配
+`Bash|mcp__.*`；`bypass` 不注入 hook。
 
 `Glob` **不纳入**：它只返回文件名、不返回内容，却是探索阶段最频繁的调用，
 每加一个受门禁的工具就多一次 hook 进程 spawn。
 
-### 7.1 越界读取：审批 + 目录授权
+### 7.1 读取不门控
 
-`Read` / `Grep` 的「可达范围」就是路径本身，所以它们按**目录**门禁，而不是按工具门禁：
+`Read` / `Grep` 不纳入 PreToolUse matcher；在 `ask` / `acceptEdits` 下，engine 同时在
+传给 Claude Code 的 `--settings` 中注入 `permissions.allow: ["Read", "Grep"]`。
+仅移除 hook 不会解除 CLI 自身的目录检查，显式允许规则才使工作区外的读取默认无需审批。
+因此读工作区外的文件——包括 agent 自己的 `~/.claude/...` 记忆文件——默认**不审批、
+不弹框，也不往工作区加任何目录**。用户或管理员显式配置的 `deny` / `ask` 规则仍优先，
+其他 CLI / OS 限制也不被这份允许规则覆盖。配置在下一次 spawn 时生效。
 
-| 情况 | 行为 |
-|---|---|
-| 落在工作区某个根（主目录或附加目录）内 | **hook 本地直接放行**，不打 daemon、不弹框 |
-| 落在所有根之外 | 打 daemon → 广播到手机 → 用户决定 |
-
-本地快路径是性能设计：hook 的允许列表由 spawn 时下发的 `AIREMOTE_ALLOWED_DIRS` 提供
-（realpath 后的 `[cwd, ...附加目录]`，位置 0 恒为 cwd，同时用作相对路径的解析基准）。
-命中就返回 `permissionDecision: allow`，省掉 HTTP 往返。实测编译产物启动约 27ms，
-这是每次受门禁调用的固定成本。
-
-判定用的路径解析在 `permission-paths.ts`（纯字符串运算，不碰文件系统，hook 与路由共用）：
-`Read` 取 `file_path`（批准的粒度是**其父目录**——agent 一个目录下往往连读多文件，
-按文件记会导致反复询问）；`Grep` 取 `path`（缺省 = cwd）、并检查 `glob` 含 `..` 时转人工；
-`pattern` 是内容正则、不是路径，不参与判定。hook 侧再做一次 `realpath` 防 symlink 逃逸。
-
-批准后的落点是**工作区级**（`workspace_dirs`，见 §6）：批准一次，该工作区所有会话
-（含正在跑的与以后新建的）都不再询问。手机审批卡片必须写明这个作用域。
-
-生效时机（spawn 参数改不了正在跑的进程）：
-
-- **当前 run**：`AIREMOTE_ALLOWED_DIRS` 是 spawn 时固定的，看不到新批准的目录，所以仍会打
-  daemon——但 daemon 查 `workspace_dirs` 后直接放行、不弹框。同一工作区的其他并发会话同理；
-- **下一个 run**：`--add-dir` 才真正下发，此后该目录连 hook 都不触发。
-
-撤销：在「工作区管理」里移除该附加目录即可，`--add-dir` 与允许列表都会随之收回。
+> 安全提示：这意味着 agent 可无审批读取本机任意文件（含密钥、配置）。远程驱动一个带 shell
+> 的 agent 时，这是刻意的取舍——之前那套「越界读取→审批→目录授权」的机制已整体移除
+> （`permission-paths.ts`、hook 的离线放行、`AIREMOTE_ALLOWED_DIRS` 均已删除）。
 
 **MCP 工具**（`mcp__<server>__<tool>`）与 Bash/Write/Edit 是平级的顶层工具，不属于其中任何
 一类，但**在 `ask` 和 `acceptEdits` 下都纳入远程审批**：MCP 工具能调用外部服务、产生任意副
@@ -310,15 +289,6 @@ claude 要执行工具 → hook(permission-hook.js) → POST /api/internal/permi
   普通工具是 toolName 本身（`Bash`、`Write`…），**MCP 工具是 server 级通配**
   `mcp__<server>__*`——一个 server 往往暴露几十个工具，逐个批准没法用；key 映射见
   `tool-grants.ts`（`toGrantKey` / `grantKeyCandidates`）；
-- **`Read` / `Grep` 不接受 `allow_all`**：对它们来说那等于「本 Session 内读任意路径」——
-  比「允许此目录」大得多，而且走过之后 daemon 会在 `hasPermissionGrant` 那一步直接
-  `auto-allowed`，**目录授权再也不会被写入**，整套目录机制静默失效。两层防护：
-  1. 客户端不提供该按钮（`docs/ui/pages/permission-approval.md` §6.7）；
-  2. daemon 收到针对目录门禁工具的 `allow_all` 返回 **400 `allow_all_unsupported`**，
-     并记 `log.warn`；请求保持 pending，客户端改发 `allow` 仍可通过。不做降级兼容——
-     这类「全盘读取」的授权一旦存在就会架空目录机制，宁可显式失败。
-  同理，**目录门禁工具不吃 Session 级 tool 授权**：`create` 里的 `hasPermissionGrant`
-  自动放行会跳过它们，否则一个遗留的 `Read` 授权就能让全盘读取静默复活；
 - 查 grant 时 MCP 工具会同时匹配 server 级通配与早期写入的精确名字，旧 grant 继续有效；
 - 「允许全部」会把当前已 pending 的、同一 grant key 覆盖的请求一并放行，并广播最终状态；
 - grant 持久化到 SQLite，daemon 重启/App 重连后仍有效；
@@ -379,14 +349,13 @@ Claude 启动后，访问别的目录由「工具权限」决定，与 workspace
 
 | 工具 | 行为 |
 |---|---|
-| Read / Grep | 落在工作区内 → 自动放行；区外 → 弹审批，批准后该目录记入工作区（§7.1） |
+| Read / Grep | **不受 AIRemote 门禁**（matcher 不含它们），读任意路径都放行（§7.1） |
 | Glob | 不受 AIRemote 门禁（matcher 不含它），只返回文件名 |
 | Write / Edit / MultiEdit | `ask` 下弹审批；`acceptEdits` / `bypass` 下**直接放行**，可写任意路径 |
 | Bash 只读（`cat`/`ls`/`grep`…） | 自动放行，**完全不看路径**——`cat <工作区外文件>` 一样放行 |
 | Bash 有副作用 | 弹审批（审批的是命令本身，不专门按目录拦截） |
 
-**因此 §7.1 的读取审批是「解除 Claude Code 拦截」的便利机制，不是隔离边界**：
-同一条越界读取，走 `Read` 会被问、走 `cat` 从来不会被问，两者终点一致，差别只在于是否经过用户。
+**因此读取从来不构成边界**：`Read` 与 `cat` 都放行，终点一致——AIRemote 对读取不做任何拦截。
 曾评估给只读 Bash 白名单补路径校验以堵住这条，**已决定不做**——读命令放行的影响可接受，
 而 agent 本就有 Bash 权限，堵住 `cat` 收益有限。（`env` 泄露 `AIREMOTE_TOKEN` 同理：
 `cat <data-dir>/token` 一直可达且两者是同一个值，摘掉 `env` 只是装饰。）
@@ -394,17 +363,13 @@ Claude 启动后，访问别的目录由「工具权限」决定，与 workspace
 要做到文件级物理隔离，需要 OS 层沙箱（bwrap / firejail / 容器 / sandbox-exec），纯靠 Claude
 Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**」，不是「只能碰哪些目录」。
 
-### 目录授权的作用域
+### 授权的作用域
 
-两个「允许」的作用域**刻意不同**，不要当成不一致：
+只剩一个「允许」：工具授权（「允许全部」），作用域 **Session + toolName**（MCP 为 server 级
+通配），落点 `session_permission_grants`，在 Session 权限页撤销。
 
-| 授权 | 作用域 | 落点 | 撤销入口 |
-|---|---|---|---|
-| 工具授权（「允许全部」） | Session + toolName | `session_permission_grants` | Session 权限页 |
-| 目录授权（越界读取批准） | **工作区** | `workspace_dirs` | 工作区管理页 |
-
-理由：目录本来就是工作区的属性（工作区 = 从哪个目录干活），批准一次就该校内所有会话复用，
-否则同一个工作区每开一个新会话都要重批一遍；而工具授权的风险随会话场景变化，跟着 Session 更合适。
+早期还有一类「目录授权」——批准越界读取后把目录记到工作区；随读取门控一并移除了。
+现在 `workspace_dirs` 只是「手动添加的附加目录」（见 §6），不来自任何审批。
 
 ## 10. 配置参数参考
 

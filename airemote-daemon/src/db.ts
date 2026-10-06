@@ -457,7 +457,6 @@ export class Db {
       .run(workspaceId, dir, Date.now());
     // 授权之后，指向同一目录的浏览书签就多余了（tab 行上会重复出现两次）。
     // 反向（给已有的授权目录加书签）由路由拒掉；这里管的是「先有书签、后授权」。
-    // 放在数据层是因为两条写入路径（客户端加目录、聊天里批准越界读取）都走这里。
     this.db.prepare(`DELETE FROM workspace_shortcut_dirs WHERE workspace_id = ? AND path = ?`).run(workspaceId, dir);
   }
 

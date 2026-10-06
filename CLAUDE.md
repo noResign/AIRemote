@@ -112,7 +112,8 @@ AIRemote/
 
 - **权限审批**：每个 Session 独立模式 `ask` / `acceptEdits` / `bypass`；`ask` 下 Bash/Write/Edit
   经 PreToolUse hook 远程审批，Bash 内只读白名单自动放行；「允许全部」为 Session + toolName 级
-  持久化 grant，默认拒绝、超时自动拒绝。
+  持久化 grant，默认拒绝、超时自动拒绝。**读（`Read`/`Grep`）不门控**——读工作区外不审批、
+  不加目录；工作区边界只约束写入。
 - **工作空间**：`--workspace` 只在工作区表为空时注册一次（首次安装），删掉的工作区不会在重启后回来；
   手机可新增/切换 Workspace。删工作区默认只删注册信息，`?cascade=1` 才连它的 Session 一起删；
   **默认工作区不可删**（要删先设别的为默认，顺带保证最后一个工作区删不掉）。

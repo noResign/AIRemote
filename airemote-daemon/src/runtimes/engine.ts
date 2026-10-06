@@ -72,6 +72,10 @@ export function startRun(req: RunRequest): ActiveRun {
   const hookSettings = req.permissionHook && req.capabilities.permissionHook
     ? {
         settingsJson: JSON.stringify({
+          // Omitting reads from the hook does not grant CLI permission to read
+          // outside the working directories. Explicit allow rules do that;
+          // user/managed deny and ask rules still take precedence.
+          permissions: { allow: ['Read', 'Grep'] },
           hooks: {
             PreToolUse: [
               {
@@ -100,10 +104,6 @@ export function startRun(req: RunRequest): ActiveRun {
     spawnEnv.AIREMOTE_TOKEN = req.permissionHook.token;
     spawnEnv.AIREMOTE_RUN_ID = req.id;
     spawnEnv.AIREMOTE_PERMISSION_TIMEOUT_MS = String(req.permissionHook.timeoutMs);
-    // The hook consults this list locally so a read inside an already-granted
-    // root costs no HTTP round-trip. Fixed at spawn time: a dir granted later
-    // (mid-run) is caught by the daemon's own grant lookup instead.
-    spawnEnv.AIREMOTE_ALLOWED_DIRS = JSON.stringify([req.cwd, ...(req.extraDirs ?? [])]);
   }
 
   // `--add-dir` support is probed from `--help`; on a CLI without it the extra

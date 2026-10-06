@@ -429,8 +429,7 @@ private fun WorkspaceCard(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    // 附加目录是这个工作区所有会话共用的允许列表；聊天里批准越界读取
-                    // 也会写到这里，所以这里既是查看处也是撤销处。
+                    // 附加目录是这个工作区所有会话共用的可达目录；这里是唯一的增删入口。
                     workspace.dirs.forEach { dir ->
                         ExpandablePath(
                             path = dir,

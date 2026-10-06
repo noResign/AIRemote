@@ -185,7 +185,7 @@ class FilesViewModel(
      * 所以去掉了。代价是「去看一眼」会留下一个 tab，不想要就点「×」。
      *
      * 注意它**不写授权目录**：agent 不会因此获得任何权限。要授权请走工作区管理页的
-     * 「+ 附加目录」或聊天里的越界读取审批。
+     * 「+ 附加目录」。
      */
     fun openAddShortcutPicker() {
         rootPickerHidden = false

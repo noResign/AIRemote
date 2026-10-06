@@ -23,7 +23,8 @@
 coding-agent CLI (Claude Code today; Codex and DeepSeek Harness planned) headlessly, turns
 its output into one normalized stream of events, and pushes it to your phone over HTTP/SSE:
 watch the stream live, approve tool calls, browse the computer's files, switch workspaces —
-and it is not limited to writing code.
+Android system notifications alert you to approvals and task results while you are away
+from the conversation. It is not limited to writing code.
 
 Your phone is a remote terminal; **the work always runs on your computer** — losing the
 connection does not stop a run, and reconnecting picks up where you left off.
@@ -72,9 +73,12 @@ Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
 
 1. Open the app, enter the daemon address (the LAN address printed above) and the token, connect
 2. Create a session → pick a workspace directory → send a prompt
-3. The agent works on your computer: watch the stream on your phone, and answer the
-   approval card whenever it wants to run Bash or write files
-4. Walk away whenever you like — the run keeps going on your computer, and reconnecting
+3. The agent works on your computer: watch the stream on your phone and answer approval
+   cards when a tool call needs your confirmation
+4. Enable background task alerts under Settings → Notifications and grant notification
+   permission. Approvals and completed, failed or cancelled tasks trigger alerts when you
+   are not viewing that conversation; tap an alert to open it
+5. Walk away whenever you like — the run keeps going on your computer, and reconnecting
    picks it back up
 
 ### 4. Connecting from outside your LAN (optional)
@@ -120,12 +124,15 @@ worry about.
 | Capability | Notes |
 |---|---|
 | Streaming output | Text and thinking stream in live; tool calls render as expandable cards |
-| Tool approval | Bash / file writes / MCP calls are forwarded to the phone for allow-or-deny. **Timeout or disconnect ⇒ deny** |
+| Tool approval | Forward Bash / file writes / MCP calls according to the session mode; allow once, deny, or allow all. **Unanswered requests are denied on timeout** |
+| Session permissions | Choose `ask` / `acceptEdits` / `bypass` per session; save and revoke persistent grants by tool name, or by server for MCP tools |
+| Android notifications | Get alerts for approvals and completed, failed or cancelled tasks when you are not viewing that conversation; tap to open it, with no duplicate alerts while watching |
 | Read-only allowlist | Read-only commands like `ls`, `cat`, `git status` are auto-approved, so they do not bother you |
 | Reconnect-safe runs | Runs are decoupled from connections: losing signal, backgrounding the app or locking the phone does not stop the work on your computer |
 | Concurrent sessions | Many sessions and runs in parallel, with no global lock |
 | Two-way resume | Import a desktop Claude Code session into the phone, or resume an AIRemote session on the desktop with `claude --resume` |
-| Workspaces | Add / switch workspaces from the phone; each session binds to a workspace directory, and reaching outside it needs approval |
+| Workspaces & additional directories | Add / switch workspaces and manage additional directories from the phone; sessions in the same workspace share those directories |
+| Directory shortcuts | Bookmark frequently browsed directories separately from the agent’s additional directories |
 | Files & diffs | Browse uncommitted Git changes, per-file diffs, directory trees and text files from the phone; images / MP4s preview in place |
 
 ## Screenshots
@@ -141,17 +148,18 @@ worry about.
 ## Security model ⚠️
 
 **`workspace` is not a sandbox.** It only decides which directory the agent is spawned
-from — it does not restrict which paths the agent can touch. Under `acceptEdits`,
-`Read`/`Write`/`Edit` can read and write files outside the workspace. Real file-level
-isolation needs an OS sandbox (bwrap / firejail / container); the CLI alone cannot
-provide it.
+from — it does not restrict which paths the agent can touch. `Read` / `Grep` are explicitly
+allowed by default, with no phone approval or automatic directory grants; explicit user
+or administrator restrictions still apply. Writes follow the session mode, tool approvals
+and Claude Code’s own rules. `acceptEdits` does not grant writes to every path. File-level
+isolation requires an OS sandbox (bwrap / firejail / container).
 
 What the daemon does enforce:
 
 - **Auth**: every non-health `/api/*` route requires a bearer token (constant-time compare)
 - **Permission modes**: `ask` by default; `bypass` must be explicitly enabled on the phone
-- **Deny by default**: approval timeouts and client disconnects resolve to deny
-- **Read-only allowlist**: only read-only Bash without shell metacharacters passes through
+- **Deny by default**: unanswered approvals time out to deny; disconnecting the phone does not immediately deny requests or end the run
+- **Bash auto-approval**: commands without shell metacharacters that match the allowlist pass through; matching currently uses command prefixes and does not guarantee that every argument combination is read-only
 - **Audit log**: chat / cancel / permission_decision / rename / delete are all recorded
 
 On an untrusted network, put the devices on an encrypted virtual network first (Tailscale /
@@ -161,7 +169,7 @@ For local-only use, `--host 127.0.0.1`.
 ## Status
 
 - **daemon**: usable (sessions / approvals / workspaces / files)
-- **Android**: implemented (connect, session list, chat, approvals, new session, settings, files, workspace management)
+- **Android**: implemented (connect, session list, chat, approvals, session permissions, system notifications, new session, settings, files, workspace management)
 - **iOS**: reserved, not implemented
 - **Multiple runtimes**: the abstraction is in place; only Claude Code is supported today
 
