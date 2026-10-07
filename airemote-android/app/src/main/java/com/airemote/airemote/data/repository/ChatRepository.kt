@@ -10,6 +10,7 @@ import com.airemote.network.airemote.dto.PermissionDecisionRequest
 import com.airemote.network.http.NetworkResult
 import com.airemote.network.http.safeApiCall
 import com.airemote.network.airemote.dto.SessionDetailResponse
+import kotlinx.serialization.json.JsonElement
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 
@@ -78,9 +79,9 @@ class ChatRepository(
         }
     }
 
-    suspend fun decidePermission(permissionId: String, decision: String, reason: String? = null): NetworkResult<Unit> {
+    suspend fun decidePermission(permissionId: String, decision: String, reason: String? = null, response: JsonElement? = null): NetworkResult<Unit> {
         val api = api() ?: return NetworkResult.Error(-2, "未配置连接")
-        return when (val r = safeApiCall { api.decidePermission(permissionId, PermissionDecisionRequest(decision, reason)) }) {
+        return when (val r = safeApiCall { api.decidePermission(permissionId, PermissionDecisionRequest(decision, reason, response)) }) {
             is NetworkResult.Success -> NetworkResult.Success(Unit)
             is NetworkResult.Error -> r
         }

@@ -56,6 +56,32 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
   let currentMessageId: string | null = null;
   let currentMessageStreamedText = false;
   let currentMessageStreamedThinking = false;
+  let contextTokens: number | null = null;
+
+  /**
+   * Report how full the context window is. Anthropic splits a request's input
+   * into the uncached part (`input_tokens`) plus two cache buckets, and the
+   * three are disjoint, so their sum is what the next request resends.
+   *
+   * Emitted as its own frame with `usage: null` — that keeps it out of the
+   * per-run usage line on the client (`parseUsage` returns null and the message
+   * keeps its previous value) and out of the monotonic total it would otherwise
+   * corrupt. Deduped by value: every message carries this figure, and unlike a
+   * running total it can go back down (compaction).
+   *
+   * Claude Code never reports the window size, so there is no denominator.
+   */
+  function emitContext(usage: unknown): void {
+    if (!isRecord(usage)) return;
+    const count = (key: string): number => {
+      const value = usage[key];
+      return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
+    };
+    const used = count('input_tokens') + count('cache_read_input_tokens') + count('cache_creation_input_tokens');
+    if (used === 0 || used === contextTokens) return;
+    contextTokens = used;
+    onEvent({ type: 'usage', usage: null, contextTokens: used, contextWindow: null });
+  }
 
   const blockKey = (index: unknown): string => `${currentMessageId ?? 'anon'}:${String(index)}`;
 
@@ -199,6 +225,11 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         }
       }
 
+      // Sub-agent frames have their own context window, so only the main
+      // turn's occupancy describes this session. (Checked here rather than in
+      // `message_start`: stream_event frames carry no parent id.)
+      if (obj.parent_tool_use_id == null) emitContext(obj.message.usage);
+
       // Only the MAIN turn's boundary counts. Sub-agent frames carry a
       // non-null parent_tool_use_id and must not close the run early.
       if (stopReason && obj.parent_tool_use_id == null) {
@@ -235,6 +266,8 @@ export function createClaudeStreamParser(onEvent: EventSink): StreamParser {
         durationMs: typeof obj.duration_ms === 'number' ? obj.duration_ms : null,
         stopReason,
         ...(isError ? { isError: true } : {}),
+        // Self-contained last frame: history rebuild lands on this one.
+        ...(contextTokens !== null ? { contextTokens, contextWindow: null } : {}),
       });
       // `result` is the authoritative "this turn actually finished" signal (the
       // `assistant` frame's stop_reason is null in recent Claude versions).

@@ -2,6 +2,7 @@ package com.airemote.network.airemote
 
 import com.airemote.network.airemote.dto.ChatRequest
 import com.airemote.network.airemote.dto.SseFrame
+import com.airemote.network.http.parseApiErrorBody
 import com.airemote.network.sse.OkHttpSseSource
 import com.airemote.network.sse.SseException
 import com.airemote.network.sse.SseSource
@@ -62,7 +63,7 @@ class AiremoteStream(
             // 传输层异常 / 协议解码失败 → Failed（其余异常照旧抛出）
             .catch { cause ->
                 when (cause) {
-                    is SseException -> emit(ChatStreamEvent.Failed(describe(cause), cause.httpCode))
+                    is SseException -> emit(describe(cause))
                     is SerializationException -> emit(ChatStreamEvent.Failed("无法解析 daemon 事件帧（协议可能不兼容）"))
                     else -> throw cause
                 }
@@ -71,10 +72,26 @@ class AiremoteStream(
 
     private fun decode(payload: String): SseFrame = json.decodeFromString(SseFrame.serializer(), payload)
 
-    private fun describe(e: SseException): String = when {
-        e.isUnauthorized -> "token 无效（401）"
-        e.httpCode != null -> "HTTP ${e.httpCode}"
-        else -> e.message ?: "SSE 连接失败"
+    /**
+     * 传输层失败 → [ChatStreamEvent.Failed]。
+     *
+     * `/api/chat` 的所有前置校验（未知 runtime、runtime 未安装、会话不存在…）都在 SSE 头
+     * 之前返回，所以它们只能以非 2xx 正文的形式到达这里。正文里的 `{error, code}` 是唯一
+     * 能说明原因的信息，HTTP 状态码只作兜底；`code` 一并带上去，让业务层用同一张文案表映射。
+     */
+    private fun describe(e: SseException): ChatStreamEvent.Failed {
+        val api = parseApiErrorBody(e.body)
+        return ChatStreamEvent.Failed(
+            message = when {
+                e.isUnauthorized -> "token 无效（401）"
+                api?.error != null -> api.error
+                api?.message != null -> api.message
+                e.httpCode != null -> "HTTP ${e.httpCode}"
+                else -> e.message ?: "SSE 连接失败"
+            },
+            httpCode = e.httpCode,
+            apiCode = api?.code,
+        )
     }
 
     companion object {

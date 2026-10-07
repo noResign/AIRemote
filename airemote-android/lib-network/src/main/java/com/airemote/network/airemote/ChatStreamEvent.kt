@@ -16,8 +16,15 @@ sealed interface ChatStreamEvent {
      *
      * [httpCode] 为 HTTP 状态码，连接层失败（超时、断网）时为 null。调用方据此区分
      * 「可重试」（网络错误 / 5xx）与「重试无意义」（400 / 401 / 403 / 404）。
+     *
+     * [apiCode] 是 daemon 错误正文里的 `code`。业务层用它做精确文案映射；[message] 是
+     * daemon 的英文原文，只作兜底。
      */
-    data class Failed(val message: String, val httpCode: Int? = null) : ChatStreamEvent
+    data class Failed(
+        val message: String,
+        val httpCode: Int? = null,
+        val apiCode: String? = null,
+    ) : ChatStreamEvent
 
     /** 服务端正常结束流。 */
     data object Closed : ChatStreamEvent

@@ -1,3 +1,5 @@
+import { registerActiveRun } from './active-runs.js';
+export { getActiveRun, listActiveRuns } from './active-runs.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { NormalizedEvent } from '../types/api.js';
 import { log } from '../log.js';
@@ -36,16 +38,6 @@ export interface ActiveRun {
   promise: Promise<RunOutcome>;
   cancel(reason?: string): void;
   writeUserMessage(text: string): void;
-}
-
-const activeRuns = new Map<string, ActiveRun>();
-
-export function getActiveRun(id: string): ActiveRun | undefined {
-  return activeRuns.get(id);
-}
-
-export function listActiveRuns(): ActiveRun[] {
-  return [...activeRuns.values()];
 }
 
 /**
@@ -254,9 +246,8 @@ export function startRun(req: RunRequest): ActiveRun {
   }
 
   const run: ActiveRun = { id: req.id, promise, cancel, writeUserMessage };
-  activeRuns.set(req.id, run);
+  registerActiveRun(run);
   void promise.finally(() => {
-    activeRuns.delete(req.id);
     if (watchdog) clearInterval(watchdog);
   });
   return run;

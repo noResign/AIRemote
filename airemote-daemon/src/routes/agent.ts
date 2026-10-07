@@ -8,10 +8,22 @@ export function registerAgentRoutes(app: Express, ctx: AppContext): void {
     res.json({ agent: detection });
   });
 
-  // Enumerate registered runtimes (adapter inventory, no probing).
-  app.get('/api/agents', (_req, res) => {
-    res.json({
-      agents: ctx.registry.list().map((a) => ({ id: a.id, name: a.name, bin: a.bin })),
-    });
+  // Enumerate registered runtimes with availability. The registry caches each
+  // detection, so only the first call after boot pays for the probes — which is
+  // why this is allowed to probe at all (it used to be a pure inventory read).
+  app.get('/api/agents', async (_req, res) => {
+    const agents = await Promise.all(
+      ctx.registry.list().map(async (entry) => {
+        const detection =
+          ctx.registry.detection(entry.id) ?? (await ctx.registry.detect(entry.id, process.env));
+        return {
+          id: entry.id,
+          name: entry.name,
+          bin: entry.bin,
+          available: detection?.available ?? false,
+        };
+      }),
+    );
+    res.json({ agents });
   });
 }

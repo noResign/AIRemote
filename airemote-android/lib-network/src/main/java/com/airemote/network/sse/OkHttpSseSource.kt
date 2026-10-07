@@ -29,7 +29,10 @@ class OkHttpSseSource(
             try {
                 call.execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw SseException(response.code, "HTTP ${response.code}")
+                        // daemon 在非 2xx 正文里给出 {error, code}；不读走，上层只能显示
+                        // 一个 HTTP 状态码，用户看不出失败原因（例如「Codex 没装」）。
+                        val body = runCatching { response.body?.string() }.getOrNull()
+                        throw SseException(response.code, "HTTP ${response.code}", body = body)
                     }
                     val source = response.body?.source()
                         ?: throw SseException(response.code, "empty response body")

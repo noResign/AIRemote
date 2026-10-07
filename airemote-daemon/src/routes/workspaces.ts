@@ -3,7 +3,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { WorkspaceRow } from '../db.js';
 import { canonicalizeExistingDirectory, existingDirs, WorkspaceValidationError } from '../workspace-service.js';
-import { listActiveRuns } from '../runtimes/engine.js';
+import { listActiveRuns } from '../runtimes/active-runs.js';
 
 function workspaceDto(w: WorkspaceRow, sessionCount = 0, dirs: string[] = [], shortcutDirs: string[] = []) {
   return {

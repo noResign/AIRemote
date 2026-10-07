@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -31,6 +34,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.airemote.airemote.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -42,9 +46,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -58,6 +65,9 @@ import com.airemote.airemote.ui.chat.MessageList
 import com.airemote.airemote.ui.chat.PermissionDialog
 import com.airemote.airemote.ui.chat.TodoListPanel
 import com.airemote.airemote.ui.chat.toolLabel
+import com.airemote.airemote.model.chat.ContextUsage
+import com.airemote.airemote.ui.component.ContextRing
+import com.airemote.airemote.util.formatTokens
 import com.airemote.airemote.viewmodel.ChatViewModel
 import kotlinx.coroutines.launch
 
@@ -76,6 +86,9 @@ fun ChatScreen(
     val title by viewModel.sessionTitle.collectAsState()
     val cwd by viewModel.sessionCwd.collectAsState()
     val runtime by viewModel.sessionRuntime.collectAsState()
+    val contextUsage by viewModel.contextUsage.collectAsState()
+    val permissionSubmitting by viewModel.permissionSubmitting.collectAsState()
+    val permissionInputError by viewModel.permissionInputError.collectAsState()
     val todos by viewModel.todos.collectAsState()
     val sessionPermissions by viewModel.sessionPermissions.collectAsState()
     val reconnecting by viewModel.reconnecting.collectAsState()
@@ -135,6 +148,7 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    contextUsage?.let { ContextIndicator(it) }
                     TextButton(onClick = viewModel::openSessionPermissions) { Text("权限") }
                 },
             )
@@ -187,6 +201,9 @@ fun ChatScreen(
     permission?.let { req ->
         PermissionDialog(
             permission = req,
+            runtime = runtime,
+            submitting = permissionSubmitting,
+            inputError = permissionInputError,
             onDecide = viewModel::decidePermission,
         )
     }
@@ -208,11 +225,7 @@ fun ChatScreen(
                         TextButton(onClick = viewModel::closeSessionPermissions) { Text("关闭") }
                     }
                     is SessionPermissionsUiState.Ready -> {
-                        listOf(
-                            "ask" to "修改类操作询问",
-                            "acceptEdits" to "编辑自动放行，Bash 仍询问",
-                            "bypass" to "全部通过（高风险）",
-                        ).forEach { (mode, desc) ->
+                        permissionModeOptions(runtime).forEach { (mode, desc) ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -260,7 +273,7 @@ fun ChatScreen(
                             TextButton(onClick = viewModel::revokeAllPermissionGrants) { Text("全部撤销") }
                         }
                         Text(
-                            "权限模式只对后续 Run 生效；当前运行中的 Run 不受影响。",
+                            "权限模式只对后续 Run 生效。撤销授权会重新询问后续请求，但不会撤回已批准的操作；Codex 权限扩展可持续到当前轮结束，需要立即收回时请停止运行。",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -295,5 +308,41 @@ private fun ReconnectBanner() {
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/**
+ * 顶栏的上下文占用指示（docs/ui/pages/chat.md §6.3）：平时只占一个圆环，把宽度留给 cwd，
+ * 点开才显示具体数值与百分比。
+ *
+ * 运行时不给窗口大小（Claude）时画不出比例，改用等宽小字显示占用量——一个空圆环会被读成
+ * 「0%」，比不画还糟。
+ */
+@Composable
+private fun ContextIndicator(usage: ContextUsage) {
+    var expanded by remember { mutableStateOf(false) }
+    // percent 是算出来的（自定义 getter），取一次复用，别每处再算一遍。
+    val percent = usage.percent
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.semantics { contentDescription = "上下文占用 ${usage.display}" },
+        ) {
+            if (percent != null) {
+                ContextRing(percent = percent)
+            } else {
+                Text(
+                    text = formatTokens(usage.tokens),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("上下文 ${usage.display}") },
+                onClick = { expanded = false },
+            )
+        }
     }
 }

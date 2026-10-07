@@ -3,6 +3,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
 import { startRun } from '../runtimes/engine.js';
+import { startCodexRun } from '../runtimes/codex/session.js';
 import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
@@ -32,7 +33,7 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
   app.post('/api/chat', async (req, res) => {
     const body = (req.body ?? {}) as ChatBody;
     const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-    const runtime = typeof body.runtime === 'string' && body.runtime ? body.runtime : 'claude';
+    const requestedRuntime = typeof body.runtime === 'string' && body.runtime ? body.runtime : undefined;
     const model = typeof body.model === 'string' && body.model ? body.model : undefined;
 
     if (!prompt) {
@@ -44,8 +45,28 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       return;
     }
 
+    // Resolve or create the session, and decide resume vs. fresh-start.
+    let session = body.sessionId ? ctx.db.getSession(body.sessionId) : undefined;
+    if (body.sessionId && !session) {
+      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
+      return;
+    }
+
+    if (session && requestedRuntime && requestedRuntime !== session.runtime) {
+      res.status(400).json({ error: 'runtime does not match session', code: 'runtime_mismatch' });
+      return;
+    }
+    const runtime = session?.runtime ?? requestedRuntime ?? 'claude';
+    if (body.claudeSessionId && runtime !== 'claude') {
+      res.status(400).json({ error: 'Claude sessions require the claude runtime', code: 'runtime_mismatch' });
+      return;
+    }
+
+    // Codex has no `RuntimeAdapter` — it is driven over RPC, not argv — so
+    // "has an adapter" is not the test for "is a known runtime".
+    const isCodex = runtime === 'codex';
     const adapter = ctx.registry.get(runtime);
-    if (!adapter) {
+    if (!adapter && !isCodex) {
       res.status(400).json({ error: `unknown runtime: ${runtime}`, code: 'unknown_runtime' });
       return;
     }
@@ -53,13 +74,6 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     const detection = ctx.registry.detection(runtime) ?? (await ctx.registry.detect(runtime, process.env));
     if (!detection?.available) {
       res.status(503).json({ error: `runtime not available: ${runtime}`, code: 'runtime_unavailable' });
-      return;
-    }
-
-    // Resolve or create the session, and decide resume vs. fresh-start.
-    let session = body.sessionId ? ctx.db.getSession(body.sessionId) : undefined;
-    if (body.sessionId && !session) {
-      res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
     }
 
@@ -106,6 +120,9 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
 
     let resumeSessionId: string | undefined;
     let newSessionId: string | undefined;
+    // Claude takes a host-chosen `--session-id`; Codex allocates its own thread
+    // id and reports it after `thread/start`, so there is nothing to pre-make.
+    const hostPicksSessionId = runtime !== 'codex';
     if (!session) {
       const id = randomUUID();
       if (body.claudeSessionId && importedCwd) {
@@ -116,26 +133,28 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
           workspaceId: workspace.id,
           permissionMode: sessionPermissionMode,
           cwd: importedCwd,
-          claude_session_id: body.claudeSessionId,
+          native_session_id: body.claudeSessionId,
           title: importedTitle ?? null,
         });
       } else {
-        newSessionId = randomUUID();
+        newSessionId = hostPicksSessionId ? randomUUID() : undefined;
         session = ctx.db.createSession({
           id,
           runtime,
           workspaceId: workspace.id,
           permissionMode: sessionPermissionMode,
           cwd: workspace.path,
-          claude_session_id: newSessionId,
+          native_session_id: newSessionId ?? null,
           title: titleFromPrompt(prompt),
         });
       }
-    } else if (!session.claude_session_id) {
-      newSessionId = randomUUID();
-      ctx.db.setClaudeSessionId(session.id, newSessionId);
+    } else if (!session.native_session_id) {
+      if (hostPicksSessionId) {
+        newSessionId = randomUUID();
+        ctx.db.setNativeSessionId(session.id, newSessionId);
+      }
     } else {
-      resumeSessionId = session.claude_session_id;
+      resumeSessionId = session.native_session_id;
     }
     ctx.db.touchWorkspace(workspace.id);
 
@@ -186,32 +205,54 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
       log.warn(`run ${runId}: ignoring missing workspace dir(s): ${dropped.join(', ')}`);
     }
 
-    const active = startRun({
-      id: runId,
-      adapter,
-      prompt,
-      cwd: session.cwd,
-      model,
-      resumeSessionId,
-      newSessionId,
-      permissionMode: toClaudePermissionMode(sessionPermissionMode),
-      capabilities: detection.capabilities,
-      env: process.env,
-      extraDirs,
-      permissionHook: sessionPermissionMode === 'bypass'
-        ? undefined
-        : {
-            hookPath: ctx.hookPath,
-            daemonUrl,
-            token: ctx.config.token,
-            timeoutMs: ctx.config.permissionTimeoutMs,
-            matcher: sessionPermissionMode === 'ask'
-              ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
-              : 'Bash|mcp__.*',
-          },
-      idleTimeoutMs: ctx.config.runIdleTimeoutMs,
-      onEvent: send,
-    });
+    // Captured so the closure below keeps the narrowed, non-optional session.
+    const sessionId = session.id;
+
+    const active = adapter
+      ? startRun({
+          id: runId,
+          adapter,
+          prompt,
+          cwd: session.cwd,
+          model,
+          resumeSessionId,
+          newSessionId,
+          permissionMode: toClaudePermissionMode(sessionPermissionMode),
+          capabilities: detection.capabilities,
+          env: process.env,
+          extraDirs,
+          permissionHook:
+            sessionPermissionMode === 'bypass'
+              ? undefined
+              : {
+                  hookPath: ctx.hookPath,
+                  daemonUrl,
+                  token: ctx.config.token,
+                  timeoutMs: ctx.config.permissionTimeoutMs,
+                  matcher:
+                    sessionPermissionMode === 'ask'
+                      ? 'Bash|Write|Edit|MultiEdit|NotebookEdit|mcp__.*'
+                      : 'Bash|mcp__.*',
+                },
+          idleTimeoutMs: ctx.config.runIdleTimeoutMs,
+          onEvent: send,
+        })
+      : startCodexRun({
+          id: runId,
+          sessionId,
+          prompt,
+          cwd: session.cwd,
+          model,
+          resumeThreadId: resumeSessionId,
+          extraDirs,
+          // Codex picks its own thread id; persist it so the next run resumes.
+          onNativeSessionId: (threadId) => ctx.db.setNativeSessionId(sessionId, threadId),
+          permissionMode: sessionPermissionMode,
+          env: process.env,
+          idleTimeoutMs: ctx.config.runIdleTimeoutMs,
+          deps: { permissions: ctx.permissions, notifier: ctx.notifier, db: ctx.db },
+          onEvent: send,
+        });
 
     ctx.notifier.register(runId, send);
 

@@ -9,7 +9,11 @@ const SEEDED_WORKSPACE_KEY = 'workspace_seeded';
 export interface SessionRow {
   id: string;
   runtime: string;
-  claude_session_id: string | null;
+  /**
+   * The provider's own session handle: a Claude session id or a Codex thread
+   * id. Name it for the role, not the provider — `runtime` already says which.
+   */
+  native_session_id: string | null;
   workspace_id: string | null;
   permission_mode: string;
   cwd: string;
@@ -102,7 +106,7 @@ export class Db {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         runtime TEXT NOT NULL,
-        claude_session_id TEXT,
+        native_session_id TEXT,
         cwd TEXT NOT NULL,
         title TEXT,
         created_at INTEGER NOT NULL,
@@ -202,6 +206,10 @@ export class Db {
         updated_at INTEGER NOT NULL
       );
     `);
+    // Only Claude existed when this column was named for it; Codex stores its
+    // thread id in the same slot. Rename before any read so old daemons keep
+    // their sessions instead of silently starting fresh ones.
+    this.ensureRenamedColumn('sessions', 'claude_session_id', 'native_session_id');
     this.ensureColumn('sessions', 'workspace_id', 'TEXT');
     this.ensureColumn('sessions', 'permission_mode', "TEXT NOT NULL DEFAULT 'ask'");
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions (workspace_id, last_active_at DESC);`);
@@ -223,10 +231,19 @@ export class Db {
 
   /** SQLite has no `ADD COLUMN IF NOT EXISTS`; probe PRAGMA before altering. */
   private ensureColumn(table: string, column: string, ddl: string): void {
+    if (this.hasColumn(table, column)) return;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+
+  /** Rename is a no-op on a fresh database, where the new name already exists. */
+  private ensureRenamedColumn(table: string, from: string, to: string): void {
+    if (!this.hasColumn(table, from) || this.hasColumn(table, to)) return;
+    this.db.exec(`ALTER TABLE ${table} RENAME COLUMN ${from} TO ${to}`);
+  }
+
+  private hasColumn(table: string, column: string): boolean {
     const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
-    if (!columns.some((c) => c.name === column)) {
-      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
-    }
+    return columns.some((c) => c.name === column);
   }
 
   close(): void {
@@ -241,19 +258,19 @@ export class Db {
     workspaceId: string;
     permissionMode: string;
     cwd: string;
-    claude_session_id?: string | null;
+    native_session_id?: string | null;
     title?: string | null;
   }): SessionRow {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO sessions (id, runtime, claude_session_id, workspace_id, permission_mode, cwd, title, created_at, last_active_at)
+        `INSERT INTO sessions (id, runtime, native_session_id, workspace_id, permission_mode, cwd, title, created_at, last_active_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
         input.runtime,
-        input.claude_session_id ?? null,
+        input.native_session_id ?? null,
         input.workspaceId,
         input.permissionMode,
         input.cwd,
@@ -287,8 +304,8 @@ export class Db {
     this.db.prepare(`UPDATE sessions SET title = ? WHERE id = ?`).run(title, id);
   }
 
-  setClaudeSessionId(id: string, claudeSessionId: string): void {
-    this.db.prepare(`UPDATE sessions SET claude_session_id = ? WHERE id = ?`).run(claudeSessionId, id);
+  setNativeSessionId(id: string, nativeSessionId: string): void {
+    this.db.prepare(`UPDATE sessions SET native_session_id = ? WHERE id = ?`).run(nativeSessionId, id);
   }
 
   setSessionPermissionMode(id: string, mode: string): void {

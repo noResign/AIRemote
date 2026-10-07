@@ -257,18 +257,22 @@ UI 必须对「agent 身份」可扩展——每个 agent 由 `id` 唯一标识�
 
 ### 5.2 Runtime（Agent）身份系统
 
-后端 `GET /api/agents` 返回 `[{id, name, bin}]`，`id` 是稳定标识（当前 `claude`）。
-UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色、展示名**。未知 id 用通用兜底（`build` 图标 + 中性色 + 直接用后端 `name`）。
+后端 `GET /api/agents` 返回 `[{id, name, bin, available}]`，`id` 是稳定标识（当前 `claude`、`codex`）。
+`available` 是 daemon 探测 `--version` 的结果；**没装的 agent 仍要列出来但置灰不可选**（用户能知道它
+存在，而不是发出去换回一个 503）。UI 侧维护一份 **`id → 身份`** 映射表，包含：**图标、主题色、展示名**。
+未知 id 用通用兜底（`build` 图标 + 中性色 + 直接用后端 `name`）。
 
-建议初始映射：
+当前映射：
 
 | id | 展示名 | 图标（语义名） | 主题色 |
 |---|---|---|---|
 | `claude` | Claude Code | `smart_toy` / 品牌图标 | `#D97757`（Claude 暖橙） |
-| `codex`（预留） | Codex | `terminal` | 待定 |
+| `codex` | Codex | `terminal` | `#10A37F`（OpenAI 绿） |
 | `opencode`（预留） | OpenCode | `code` | 待定 |
 | `deepseek-harness`（预留） | DeepSeek Harness | `build` | 待定 |
 | *（未知）* | 后端 `name` | `build` | `text-secondary` |
+
+> 每个 runtime 的图标必须互不相同：同图标时选择器里只剩颜色可分辨，等于没有身份。
 
 出现位置：会话列表卡片、聊天页顶栏、新建会话的 agent 选择器、设置页默认 agent。设计时把这套身份做成**可配置的映射**，新增 agent 只需加一行，不改布局。
 

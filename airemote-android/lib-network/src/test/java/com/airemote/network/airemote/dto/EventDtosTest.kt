@@ -3,6 +3,7 @@ package com.airemote.network.airemote.dto
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -59,6 +60,33 @@ class EventDtosTest {
         )
 
         assertEquals("end_turn", (event as NormalizedEvent.TurnEnd).stopReason)
+    }
+
+    @Test
+    fun `usage decodes context occupancy, and old frames leave it unset`() {
+        // 后加的两个字段：缺省 = 本帧不含此信息（客户端必须保留上一个已知值，不能当 0）。
+        val withContext = json.decodeFromString(
+            NormalizedEvent.serializer(),
+            """{"type":"usage","usage":null,"contextTokens":45200,"contextWindow":168000}""",
+        ) as NormalizedEvent.Usage
+        assertEquals(45_200L, withContext.contextTokens)
+        assertEquals(168_000L, withContext.contextWindow)
+
+        // 只有占用的帧（Claude 不给窗口）：占用量在，分母必须为 null 而不是 0。
+        val noWindow = json.decodeFromString(
+            NormalizedEvent.serializer(),
+            """{"type":"usage","contextTokens":5300,"contextWindow":null}""",
+        ) as NormalizedEvent.Usage
+        assertEquals(5_300L, noWindow.contextTokens)
+        assertNull(noWindow.contextWindow)
+
+        // 旧 daemon 的形状：两个字段都不出现。
+        val legacy = json.decodeFromString(
+            NormalizedEvent.serializer(),
+            """{"type":"usage","costUsd":0.01}""",
+        ) as NormalizedEvent.Usage
+        assertNull(legacy.contextTokens)
+        assertNull(legacy.contextWindow)
     }
 
     @Test

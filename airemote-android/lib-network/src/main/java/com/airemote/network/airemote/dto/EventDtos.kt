@@ -74,6 +74,10 @@ sealed class NormalizedEvent {
         val durationMs: Double? = null,
         val stopReason: String? = null,
         val isError: Boolean? = null,
+        /** 上下文窗口当前占用量（token）；缺省 = 本帧不含此信息，保留上一个已知值。 */
+        val contextTokens: Long? = null,
+        /** 窗口总容量；null = 占用已知但容量未知（Claude 不报窗口）。 */
+        val contextWindow: Long? = null,
     ) : NormalizedEvent()
 
     @Serializable
@@ -133,4 +137,6 @@ data class ChatRequest(
 data class PermissionDecisionRequest(
     val decision: String,
     val reason: String? = null,
+    /** UserInput answers: returned to the provider, not saved in history. */
+    val response: JsonElement? = null,
 )

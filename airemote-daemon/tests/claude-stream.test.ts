@@ -97,4 +97,53 @@ describe('createClaudeStreamParser', () => {
     expect(turns).toHaveLength(1);
     expect(turns[0]).toMatchObject({ type: 'turn_end', stopReason: 'end_turn' });
   });
+
+  it('reports context occupancy from the three disjoint input buckets', () => {
+    const events = parse([
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          id: 'm1',
+          stop_reason: null,
+          content: [{ type: 'text', text: 'hi' }],
+          usage: { input_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 200, output_tokens: 30 },
+        },
+      }),
+    ]);
+    const usages = events.filter((e) => e.type === 'usage');
+    expect(usages).toHaveLength(1);
+    // `usage: null` on purpose: the client's parseUsage returns null, so the
+    // per-run usage line keeps whatever it had and never sees this figure.
+    expect(usages[0]).toEqual({ type: 'usage', usage: null, contextTokens: 5300, contextWindow: null });
+  });
+
+  it('skips sub-agent frames and repeats, and repeats the value on the result frame', () => {
+    const frame = (id: string, used: number, parent?: string) => JSON.stringify({
+      type: 'assistant',
+      ...(parent ? { parent_tool_use_id: parent } : {}),
+      message: {
+        id,
+        stop_reason: null,
+        content: [],
+        usage: { input_tokens: used, cache_read_input_tokens: 4000, cache_creation_input_tokens: 0, output_tokens: 1 },
+      },
+    });
+    const events = parse([
+      frame('m1', 100),
+      frame('m1', 100),            // same message arriving twice -> one frame
+      frame('sub', 90_000, 'p1'),  // a sub-agent has its own window
+      frame('m2', 300),
+      JSON.stringify({ type: 'result', subtype: 'success', result: 'ok', stop_reason: 'end_turn', usage: { input_tokens: 5, output_tokens: 5 } }),
+    ]);
+    // Context-only frames are the ones that carry `usage: null`; the result
+    // frame repeats the value but is asserted separately below.
+    const contexts = events.filter(
+      (e): e is Extract<NormalizedEvent, { type: 'usage' }> =>
+        e.type === 'usage' && e.usage === null && typeof e.contextTokens === 'number',
+    );
+    expect(contexts.map((e) => e.contextTokens)).toEqual([4100, 4300]);
+    // History rebuild lands on the last frame, so it has to be self-contained.
+    const result = events.find((e) => e.type === 'usage' && e.usage !== null);
+    expect(result).toMatchObject({ type: 'usage', contextTokens: 4300, contextWindow: null });
+  });
 });

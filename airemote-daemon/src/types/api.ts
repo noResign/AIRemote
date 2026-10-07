@@ -53,6 +53,23 @@ export type NormalizedEvent =
       durationMs?: number | null;
       stopReason?: string | null;
       isError?: boolean;
+      /**
+       * How full the context window is right now: the input side of this
+       * session's most recent model request, i.e. the number that decides
+       * whether the next call triggers compaction.
+       *
+       * Distinct from `usage` (a monotonically growing per-run total) because
+       * this is instantaneous state that can go *down* after a compaction, so
+       * it rides alongside the blob rather than inside it. Absent = this frame
+       * carries no such information (clients keep the last known value).
+       */
+      contextTokens?: number | null;
+      /**
+       * The model's context window capacity, for the denominator. `null` means
+       * "occupied is known, capacity is not" — Claude Code never reports it, and
+       * guessing a window would show a wrong percentage.
+       */
+      contextWindow?: number | null;
     }
   | { type: 'turn_end'; stopReason: string }
   | { type: 'error'; code?: string; message: string; terminal?: boolean }
@@ -168,6 +185,15 @@ export interface SseFrame {
 }
 
 export type PermissionDecision = 'allow' | 'deny';
+
+/** UserInput uses the permission queue for pending/resolved lifecycle only.
+ * Its toolInput has kind: questions|form|url|unsupported and provider fields.
+ * Answers are returned directly to the provider; never persisted in SSE/history. */
+export interface PermissionDecisionRequest {
+  decision: PermissionDecision | 'allow_all';
+  reason?: string;
+  response?: unknown;
+}
 
 export type PermissionStatus = 'pending' | 'allowed' | 'denied' | 'timed_out';
 

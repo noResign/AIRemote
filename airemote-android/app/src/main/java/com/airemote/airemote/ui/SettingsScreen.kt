@@ -26,6 +26,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import com.airemote.airemote.ui.identity.permissionModeOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
@@ -143,11 +144,7 @@ fun SettingsScreen(
                     ) { Text("管理工作区") }
 
                     SectionTitle("新会话默认权限")
-                    listOf(
-                        "ask" to "修改类操作询问",
-                        "acceptEdits" to "编辑自动放行，Bash 仍询问",
-                        "bypass" to "全部通过（高风险）",
-                    ).forEach { (mode, desc) ->
+                    permissionModeOptions(null).forEach { (mode, desc) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

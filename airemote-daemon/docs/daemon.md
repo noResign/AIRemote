@@ -16,6 +16,41 @@ agent CLI（目前 Claude Code，架构上预留多 agent），以无头方式�
 **关键心智模型**：手机只是遥控器，任务在电脑上执行。**手机断连不影响任务**——daemon 继续
 跑，重连后能续上。
 
+### Codex 接入（实验性）
+
+Codex 通过 `codex app-server` 的 stdio JSON-RPC 接入。`GET /api/agents` 同时列出 Claude
+和 Codex；安装与登录状态在启动对应运行时检查。续接会话以数据库中的 `runtime` 为准，客户端
+后续请求可省略 runtime；显式传入不同 runtime 会返回 `400 runtime_mismatch`。
+
+- `sessions.native_session_id` 保存 Claude session ID 或 Codex thread ID；旧数据库的
+  `claude_session_id` 列自动迁移。提供方 ID 不改变客户端使用的 AIRemote 会话 ID。
+- 两种运行时共享 `runtimes/active-runs.ts` 的运行注册表，供运行列表、运行中标记、取消、
+  断线回放后续直播及删除会话时的清理使用。run 结束后移除注册。
+- 生命周期与 Claude 对齐：空闲看门狗（`AIREMOTE_RUN_IDLE_TIMEOUT_SECONDS`）同样作用于
+  Codex run，长时间无事件的 app-server 会被取消；取消在握手期（`initialize` / 打开 thread
+  期间）也记为 `cancelled`——那时底层会 reject 掉在途的 RPC，不能当成崩溃。
+- 命令和文件审批返回 `decision`；`item/permissions/requestApproval` 独立返回
+  `permissions` 和 `scope`，拒绝返回空权限，允许只返回请求中包含的权限，允许全部使用
+  `session` 作用域。审批超时或 run 清理仍按拒绝处理。
+- 文件审批按 `itemId` 关联先前 `item/started` 的 `changes`，通过 `Edit.toolInput.changes`
+  向客户端传递多文件路径、修改类型和 diff；缺少前置事件时保留 reason / grantRoot 供查看。
+- 权限档案里 Codex 正把 `fileSystem.read/write` 迁到 `entries`，其中路径可能是
+  `special`（`root` / `project_roots` / `tmpdir` …）而不是字符串。审批卡片把它展开成路径
+  列表时会给这些项可读标签——**显示少于授权**是危险方向，取不到字符串就丢项是不允许的。
+- 「允许全部」对 `Permissions` 的语义是「本会话后续**任意**权限扩展都自动批准」（不限于卡片
+  上列的路径），撤销只影响后续请求；客户端文案必须写明这一点。
+- **stderr 会转发给客户端**：app-server 把自身的运行故障（网络不可达、额度用尽、沙箱起不来、
+  鉴权失效）只写在 stderr 上，wire 上没有任何对应通知。`rpc.ts` 按**整行**交付 stderr，
+  `session.ts` 只挑含 `ERROR`/`WARN` 的行，去重、截断到 300 字、上限 20 条，以**非终态**
+  `error`（`code: 'codex_stderr'`）事件推给客户端。没有这一步，「跑不动」在手机上就是
+  一个永远转圈、不给任何原因的「运行中」。完整的 stderr 仍然逐字进 daemon 日志。
+
+尚未覆盖的 app-server 交互：`item/tool/call`（客户端侧工具）、`account/chatgptAuthTokens/refresh`、
+`openai/form` 与 `openai/userVerification` 两种 elicitation 模式（按不支持处理，客户端只能拒绝）、
+`turn/steer`（中途追加指令）、工具输出的流式增量、以及工作区附加目录（`--add-dir` 的等价物）。
+不能视为与 Claude 功能完全一致。协议以本机 `codex app-server generate-json-schema` 为准，
+实现里用到的字段都对着它核过。
+
 ## 2. 总体架构
 
 ```
@@ -204,6 +239,35 @@ spawn 时把「主目录 + 附加目录」中**除 cwd 之外**的部分逐个�
 `--add-dir <directories...>` 是**变长参数**，因此它必须排在 argv 最末；prompt 走 stdin
 （`--input-format stream-json`），不是位置参数，这一点不能改。
 存储在磁盘上已消失的目录在 spawn 时被过滤掉（`existingDirs`），但**不**从配置里静默删除。
+
+Codex 在每次 `turn/start` 时将 cwd 和有效附加目录传入
+`sandboxPolicy: { type: "workspaceWrite", writableRoots: [...] }`，保持网络默认受限；
+新会话和续接会话都重新读取目录授权，因此增删授权在下一轮生效。书签不授予写权限。
+`bypass` 使用 `dangerFullAccess`，不受这些目录限制。
+
+Codex 的 `usage` 统一为当前 Run 的累计 `input_tokens` / `output_tokens`，包含工具调用前后
+的各次模型请求，不包含此前轮次。优先使用续接时的线程累计快照作为基线；服务端未发送
+快照时，首个用量更新的 `total - last` 用于恢复基线。重复快照不重复计数，结束事件保留合计。
+
+**上下文窗口占用**与 `usage` 是两回事，走 `usage` 事件上的两个**兄弟字段**（不在 `usage` 里）：
+
+- `contextTokens`：当前装了多少（「下一次请求会重发多少输入」），客户端顶栏显示的就是它；
+- `contextWindow`：窗口总容量，用来算百分比。**`null` = 占用已知、容量未知**（Claude Code
+  从不报窗口，猜一个会给出错误的百分比）；**字段缺省 = 本帧不含此信息**，客户端保留上一个
+  已知值。这两个语义必须区分，不要用 0 兜底。
+
+放进 `usage` blob 是不行的：blob 是「单调累计的跑量」（codex 按轮累加、claude 取 result 帧），
+而上下文占用是**瞬时值、压缩后会回落**，混进去会污染消息末尾的用量条。
+
+| runtime | 占用算法 | 窗口 |
+|---|---|---|
+| codex | `thread/tokenUsage/updated` 的 `last.inputTokens`（已是最近一次请求的完整输入，含缓存部分） | `modelContextWindow` |
+| claude | 最近一条主回合 assistant 消息的 `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`（三段互不相交，故相加） | 无 |
+
+claude 每来一条主回合 assistant 帧就发一次（值相同则跳过；子代理帧有自己的窗口，不参与），
+`result` 帧带上最后一次的值以便历史重建确定性收尾。这些帧 `usage: null`，所以客户端不会
+把它们当成本轮累计用量。
+
 
 SSE 每帧 `{ runId, seq, event }`，`seq` 单调递增（重连游标）。`event` 是 `NormalizedEvent`：
 

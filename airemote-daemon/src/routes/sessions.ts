@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { RunRow, SessionRow } from '../db.js';
-import { listActiveRuns } from '../runtimes/engine.js';
+import { listActiveRuns } from '../runtimes/active-runs.js';
 
 /** Map each in-flight run's session id → run id, for the running indicator. */
 function runningRunBySession(ctx: AppContext): Map<string, string> {

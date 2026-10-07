@@ -10,13 +10,29 @@ import retrofit2.HttpException
  * 具体取值由调用方（业务层）解释，故不依赖 `airemote/` 协议层。
  */
 @Serializable
-private data class ApiErrorBody(
+internal data class ApiErrorBody(
     val error: String? = null,
     val code: String? = null,
     val message: String? = null,
 )
 
 private val ERROR_JSON = Json { ignoreUnknownKeys = true }
+
+/**
+ * 解析 daemon 的 `{error?, code?, message?}` 错误正文。
+ *
+ * SSE 失败路径（见 [com.airemote.network.airemote.AiremoteStream]）拿到的是非 2xx 的原始
+ * 正文，而那个正文里的 `code` 是唯一能说明「为什么」的信息；两条路必须解析同一形状，
+ * 所以解析器放这里共用。
+ */
+internal fun parseApiErrorBody(raw: String?): ApiErrorBody? {
+    if (raw.isNullOrBlank()) return null
+    return try {
+        ERROR_JSON.decodeFromString<ApiErrorBody>(raw)
+    } catch (_: Exception) {
+        null
+    }
+}
 
 sealed class NetworkResult<out T> {
     data class Success<T>(val data: T) : NetworkResult<T>()
@@ -32,13 +48,7 @@ sealed class NetworkResult<out T> {
 suspend fun <T> safeApiCall(call: suspend () -> T): NetworkResult<T> = try {
     NetworkResult.Success(call())
 } catch (e: HttpException) {
-    val body = e.response()?.errorBody()?.let { raw ->
-        try {
-            ERROR_JSON.decodeFromString<ApiErrorBody>(raw.string())
-        } catch (_: Exception) {
-            null
-        }
-    }
+    val body = parseApiErrorBody(e.response()?.errorBody()?.string())
     NetworkResult.Error(
         code = e.code(),
         message = body?.error ?: body?.message ?: e.message() ?: "Http错误: ${e.code()}",

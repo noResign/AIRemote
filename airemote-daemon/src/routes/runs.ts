@@ -1,7 +1,7 @@
 import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { NormalizedEvent, SseFrame } from '../types/api.js';
-import { getActiveRun, listActiveRuns } from '../runtimes/engine.js';
+import { getActiveRun, listActiveRuns } from '../runtimes/active-runs.js';
 import { isTerminalEvent, sseHeaders, writeSseFrame } from '../sse.js';
 
 function parseAfter(raw: unknown): number | null {

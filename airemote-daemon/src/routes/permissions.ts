@@ -35,8 +35,27 @@ function toDto(p: PermissionRequest): PermissionDto {
 export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
   app.post('/api/permissions/:id/decision', (req, res) => {
     const id = req.params.id;
-    const body = (req.body ?? {}) as { decision?: string; reason?: string };
+    const body = (req.body ?? {}) as { decision?: string; reason?: string; response?: unknown };
     const raw = body.decision;
+
+    const pending = ctx.permissions.get(id);
+    if (pending?.toolName === 'UserInput') {
+      if (pending.status !== 'pending') {
+        res.status(409).json({ error: 'request already resolved', code: 'permission_resolved' });
+        return;
+      }
+      // A question cannot be "always allowed" — there is no answer to remember,
+      // and remembering one would invent an answer the user never gave.
+      if (raw === 'allow_all') {
+        res.status(400).json({ error: 'user input cannot be granted automatically', code: 'bad_decision' });
+        return;
+      }
+      const invalid = raw === 'allow' ? pending.validateResponse?.(body.response) : null;
+      if (invalid) {
+        res.status(400).json({ error: invalid, code: 'bad_response' });
+        return;
+      }
+    }
 
     if (raw === 'allow_all') {
       const p = ctx.permissions.get(id);
@@ -61,7 +80,7 @@ export function registerPermissionRoutes(app: Express, ctx: AppContext): void {
       res.status(400).json({ error: 'decision must be "allow", "deny", or "allow_all"', code: 'bad_decision' });
       return;
     }
-    const p = ctx.permissions.decide(id, decision, typeof body.reason === 'string' ? body.reason : undefined);
+    const p = ctx.permissions.decide(id, decision, typeof body.reason === 'string' ? body.reason : undefined, body.response);
     if (!p) {
       res.status(404).json({ error: 'permission not found', code: 'permission_not_found' });
       return;

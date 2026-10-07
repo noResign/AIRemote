@@ -10,9 +10,11 @@ import com.airemote.airemote.notify.ChatVisibility
 import com.airemote.airemote.notify.RunWatchCenter
 import com.airemote.airemote.util.ReconnectPolicy
 import com.airemote.airemote.util.friendlyError
+import com.airemote.airemote.util.friendlyMessage
 import com.airemote.network.airemote.ChatStreamEvent
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
+import com.airemote.airemote.model.chat.ContextUsage
 import com.airemote.airemote.model.chat.TodoItem
 import com.airemote.airemote.model.chat.UsageInfo
 import com.airemote.airemote.model.chat.parseTodos
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.random.Random
@@ -77,8 +80,28 @@ class ChatViewModel(
     private val _sessionRuntime = MutableStateFlow<String?>(null)
     val sessionRuntime = _sessionRuntime.asStateFlow()
 
+    /**
+     * 会话级：当前上下文窗口占用（顶栏展示）。
+     *
+     * 只在切换会话时清空——重连走 `?after=` 只回放缺口，缺口里没有 context 帧，
+     * 一重置就再也补不回来，顶栏会永久空着。
+     */
+    private val _contextUsage = MutableStateFlow<ContextUsage?>(null)
+    val contextUsage = _contextUsage.asStateFlow()
+
     private val _permission = MutableStateFlow<NormalizedEvent.PermissionRequest?>(null)
     val permission = _permission.asStateFlow()
+    private val _permissionSubmitting = MutableStateFlow(false)
+    val permissionSubmitting = _permissionSubmitting.asStateFlow()
+
+    /**
+     * 服务端对回答的校验失败（`bad_response`）——只在弹窗内展示。
+     *
+     * 这类错误必须贴着输入框说，不能走 [error] 的 snackbar：snackbar 在 Activity 的
+     * Scaffold 里，被模态弹窗的遮罩压住，用户只会看到「点了没反应」。
+     */
+    private val _permissionInputError = MutableStateFlow<String?>(null)
+    val permissionInputError = _permissionInputError.asStateFlow()
 
     // 并发工具调用会同时推多个 permission_request，排队逐个弹窗，避免后到的覆盖先到的
     private val permissionQueue = ArrayDeque<NormalizedEvent.PermissionRequest>()
@@ -111,6 +134,8 @@ class ChatViewModel(
     fun load(sessionId: String?) {
         // 切会话时先掐掉在途的流，否则旧 run 的帧会灌进新会话。
         cancelStream()
+        // 上下文占用属于上一个会话，必须先清；打开会话时由历史重建填回。
+        _contextUsage.value = null
         this.sessionId = sessionId
         // 通知的抑制条件：用户此刻正看着这个会话（新会话先登记 null，拿到 id 后再更新）
         ChatVisibility.enter(sessionId)
@@ -119,6 +144,7 @@ class ChatViewModel(
             PendingNewSession.take()?.let {
                 initialClaudeSessionId = it.claudeSessionId
                 initialRuntime = it.runtime
+                _sessionRuntime.value = it.runtime ?: "claude"
                 initialWorkspaceId = it.workspaceId
                 initialPermissionMode = it.permissionMode
             }
@@ -190,6 +216,9 @@ class ChatViewModel(
                 _todos.value = parseTodos(e.input)
                 continue
             }
+            // 重建这条路不经过 applyEvent，所以上下文占用要在这里也喂一次，
+            // 否则打开会话时顶栏会一直空着，直到下一次模型调用。
+            trackContext(e)
             a = updateAssistant(a, e)
         }
         return finalizeAssistant(a)
@@ -334,7 +363,10 @@ class ChatViewModel(
                         return@launch
                     }
                     ReconnectPolicy.Decision.GiveUp -> {
-                        _error.value = failure?.message
+                        // 走同一张文案表：daemon 的错误码在这里才第一次变成人能看懂的话
+                        // （例如 runtime_unavailable → 「该 Agent 未安装…」）。
+                        _error.value = failure
+                            ?.let { friendlyMessage(it.apiCode, it.httpCode, it.message) }
                             ?: if (resumable == null) "请求未送达，请重新发送" else "连接已断开"
                         finish(clearPermissions = false, markDone = false)
                         return@launch
@@ -372,6 +404,7 @@ class ChatViewModel(
         val frame = evt.frame
         _runId.value = frame.runId
         val e = frame.event
+        if (e is NormalizedEvent.Status) e.runtime?.let { _sessionRuntime.value = it }
         if (e is NormalizedEvent.Status && e.sessionId != null && sessionId == null) {
             sessionId = e.sessionId
             ChatVisibility.enter(sessionId)
@@ -388,7 +421,22 @@ class ChatViewModel(
             is NormalizedEvent.PermissionRequest -> enqueuePermission(e)
             else -> applyEvent(e)
         }
-        if (terminal) finish()
+        if (terminal) {
+            // 非终态 error 是"过程中的告警"（如 Codex 偶尔的模型列表刷新失败），运行最终
+            // 成功时不该在一条好回答上留一条红字；失败时那条 error 事件本身就是结论。
+            if (e is NormalizedEvent.Status && e.label == "succeeded") clearLastAssistantError()
+            finish()
+        }
+    }
+
+    private fun clearLastAssistantError() {
+        _messages.update { list ->
+            val last = list.lastIndex
+            if (last < 0) return@update list
+            list.mapIndexed { i, m ->
+                if (i == last && m is ChatUiMessage.Assistant && m.error != null) m.copy(error = null) else m
+            }
+        }
     }
 
     private fun isTerminal(e: NormalizedEvent): Boolean = when (e) {
@@ -455,6 +503,7 @@ class ChatViewModel(
         _runId.value = null
         if (clearPermissions) {
             _permission.value = null
+            _permissionInputError.value = null
             permissionQueue.clear()
             queuedPermissionIds.clear()
         }
@@ -473,6 +522,7 @@ class ChatViewModel(
             _todos.value = parseTodos(e.input)
             return
         }
+        trackContext(e)
         _messages.update { list ->
             val idx = list.indexOfLast { it is ChatUiMessage.Assistant }
             if (idx < 0) {
@@ -507,7 +557,7 @@ class ChatViewModel(
                 }
             }
         )
-        is NormalizedEvent.Usage -> a.copy(usage = parseUsage(e))
+        is NormalizedEvent.Usage -> a.copy(usage = parseUsage(e) ?: a.usage)
         is NormalizedEvent.TurnEnd -> a
         is NormalizedEvent.Error ->
             if (e.terminal == true) finalizeAssistant(a.copy(error = e.message)) else a.copy(error = e.message)
@@ -551,6 +601,18 @@ class ChatViewModel(
         }
     }
 
+    /**
+     * 会话级上下文占用：只认带 `contextTokens` 的帧。
+     *
+     * 字段缺省表示「本帧不含此信息」（例如运行时的传输层错误帧），必须保留上一个已知值，
+     * 不能当成 0 或清空。
+     */
+    private fun trackContext(e: NormalizedEvent) {
+        if (e !is NormalizedEvent.Usage) return
+        val tokens = e.contextTokens ?: return
+        _contextUsage.value = ContextUsage(tokens = tokens, window = e.contextWindow)
+    }
+
     private fun parseUsage(u: NormalizedEvent.Usage): UsageInfo? {
         val obj = u.usage as? JsonObject
         val input = (obj?.get("input_tokens") as? JsonPrimitive)?.content?.toLongOrNull()
@@ -574,13 +636,29 @@ class ChatViewModel(
         send(answerText)
     }
 
-    fun decidePermission(decision: String, reason: String? = null) {
+    fun decidePermission(decision: String, reason: String? = null, response: JsonElement? = null) {
         val p = _permission.value ?: return
-        queuedPermissionIds.remove(p.permissionId)
-        _permission.value = permissionQueue.removeFirstOrNull()
+        if (_permissionSubmitting.value) return
+        _permissionSubmitting.value = true
+        _permissionInputError.value = null
         viewModelScope.launch {
-            val r = repository.decidePermission(p.permissionId, decision, reason)
-            if (r is NetworkResult.Error) _error.value = friendlyError(r)
+            try {
+                when (val r = repository.decidePermission(p.permissionId, decision, reason, response)) {
+                    is NetworkResult.Success -> dismissPermission(p.permissionId)
+                    is NetworkResult.Error -> {
+                        // 回答没通过服务端校验：错误属于这次输入，回填进弹窗而不是 snackbar。
+                        if (r.apiCode == "bad_response") {
+                            _permissionInputError.value = friendlyError(r)
+                        } else {
+                            _error.value = friendlyError(r)
+                        }
+                        // Keep the input on transient failures so the operator can retry.
+                        if (r.code == 404 || r.code == 409) dismissPermission(p.permissionId)
+                    }
+                }
+            } finally {
+                _permissionSubmitting.value = false
+            }
         }
     }
 
@@ -593,6 +671,7 @@ class ChatViewModel(
         }
         if (!queuedPermissionIds.add(req.permissionId)) return
         if (_permission.value == null) {
+            _permissionInputError.value = null
             _permission.value = req
         } else {
             permissionQueue.addLast(req)
@@ -605,6 +684,8 @@ class ChatViewModel(
         permissionQueue.clear()
         permissionQueue.addAll(remaining)
         if (_permission.value?.permissionId == permissionId) {
+            // 弹窗换人：上一条请求的输入错误不能跟到下一条。
+            _permissionInputError.value = null
             _permission.value = permissionQueue.removeFirstOrNull()
         }
     }

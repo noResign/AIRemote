@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.airemote.airemote.data.WorkspaceSelection
 import com.airemote.airemote.data.repository.MetaRepository
 import com.airemote.airemote.data.repository.WorkspaceRepository
+import com.airemote.airemote.ui.identity.defaultAgentId
 import com.airemote.airemote.util.friendlyError
 import com.airemote.network.airemote.dto.AgentDto
 import com.airemote.network.airemote.dto.ClaudeSessionDto
@@ -89,7 +90,7 @@ class NewSessionViewModel(
                 _permissionMode.value = config.data.defaultPermissionMode
             }
 
-            if (_selectedAgent.value == null) _selectedAgent.value = agentList.firstOrNull()?.id
+            if (_selectedAgent.value == null) _selectedAgent.value = defaultAgentId(agentList)
             _uiState.value = NewSessionUiState.Ready(
                 agents = agentList,
                 claudeSessions = (claudeSessions as NetworkResult.Success).data.sessions,
@@ -98,7 +99,10 @@ class NewSessionViewModel(
         }
     }
 
+    /** 未安装的 Agent 不可选——选中它只会在发送时换来一个 503。 */
     fun selectAgent(id: String) {
+        val ready = _uiState.value as? NewSessionUiState.Ready ?: return
+        if (ready.agents.none { it.id == id && it.available }) return
         _selectedAgent.value = id
     }
 

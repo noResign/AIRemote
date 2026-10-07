@@ -11,11 +11,15 @@
 2. **Workspace**（只读）：显示当前选中的 Workspace 名，**不可在 Sheet 内切换**。新会话固定归属当前
    Workspace；要在其他 Workspace 建会话，先去 ⑧ 工作区管理切换当前 Workspace。
 3. **方式 A · 新建空会话**：
-   - Agent 选择（单选，来自 `GET /api/agents`）。
+   - Agent 选择（单选，来自 `GET /api/agents`）：带 `available`，**没装的置灰不可选**并标「未安装」，
+     列表顺序不变（用户仍能看到有哪些 agent）；默认选中**第一个可用的**，而不是列表里的第一个。
+   - 模型与推理强度不在手机端选，用电脑端 Agent 的默认配置（此处只有一行说明文字）。
    - **权限模式**：默认继承当前 Session 所属 Workspace 的全局默认值，可在这里覆盖为 `ask` / `acceptEdits` / `bypass`。
-4. **方式 B · 续接本机 Claude 会话**：
+     **每个 runtime 的三档语义不同，描述文案随之切换**（见 ⑩ 会话权限设置）；未知 runtime 用中性文案。
+4. **方式 B · 续接 Claude 本机会话**：
    - 会话列表来自 `GET /api/claude-sessions?workspaceId=<当前Workspace>`；
-   - 每项显示摘要 `summary` + cwd + 相对时间。
+   - 每项显示摘要 `summary` + cwd + 相对时间；
+   - 该方式固定是 Claude 会话（`claudeSessionId`），不受 Agent 选择影响，所以选项标签要写明「Claude」。
 5. 主按钮「创建/开始」：**固定在 Sheet 底部**，不随内容滚动。Sheet 主体（Agent / 权限模式 / 会话
    列表）内部滚动，列表再长也不会把主按钮挤出屏幕。
 

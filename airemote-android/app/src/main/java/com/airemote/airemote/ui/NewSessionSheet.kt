@@ -30,16 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.airemote.airemote.ui.identity.permissionModeOptions
 import com.airemote.airemote.data.NewSessionConfig
 import com.airemote.airemote.util.relativeTime
 import com.airemote.airemote.viewmodel.NewSessionUiState
 import com.airemote.airemote.viewmodel.NewSessionViewModel
-
-private val permissionModeOptions = listOf(
-    "ask" to "修改类操作询问",
-    "acceptEdits" to "编辑自动放行，Bash 仍询问",
-    "bypass" to "全部通过（高风险）",
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +78,7 @@ fun NewSessionSheet(
                         FilterChip(
                             selected = mode == "resume",
                             onClick = { mode = "resume" },
-                            label = { Text("续接本机会话") },
+                            label = { Text("续接 Claude 本机会话") },
                         )
                     }
                 }
@@ -160,27 +155,45 @@ fun NewSessionSheet(
                         } else {
                             item { Text("Agent", style = MaterialTheme.typography.labelLarge) }
                             items(state.agents, key = { it.id }) { agent ->
+                                // 没装的 Agent 仍列出来（用户能知道它存在），但置灰不可选：
+                                // 选中它只会在发送时换回一个 503。
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { viewModel.selectAgent(agent.id) }
+                                        .clickable(enabled = agent.available) { viewModel.selectAgent(agent.id) }
                                         .padding(vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     RadioButton(
                                         selected = selectedAgent == agent.id,
                                         onClick = { viewModel.selectAgent(agent.id) },
+                                        enabled = agent.available,
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        agent.name.ifBlank { agent.id },
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            agent.name.ifBlank { agent.id },
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (agent.available) {
+                                                MaterialTheme.colorScheme.onSurface
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                            },
+                                        )
+                                        if (!agent.available) {
+                                            Text(
+                                                "未安装",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
+                            item { Text("模型与推理强度使用电脑端 Agent 默认配置", style = MaterialTheme.typography.bodySmall) }
                             item { Text("权限模式", style = MaterialTheme.typography.labelLarge) }
-                            items(permissionModeOptions) { (value, desc) ->
+                            items(permissionModeOptions(selectedAgent)) { (value, desc) ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
