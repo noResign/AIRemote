@@ -1,0 +1,6 @@
+# Not a workspace definition — pnpm 11 reads build-script approvals from this
+# file (the package.json "pnpm" field is no longer honoured). Keep it free of a
+# `packages:` key so this stays a standalone app root.
+allowBuilds:
+  esbuild: true
+  electron: true

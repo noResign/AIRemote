@@ -1,0 +1,39 @@
+{
+  "name": "airemote-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AIRemote desktop client (Electron + React).",
+  "license": "Apache-2.0",
+  "author": "noResign",
+  "main": "out/main/index.js",
+  "scripts": {
+    "predev": "node ../airemote-daemon/node_modules/typescript/bin/tsc -p ../airemote-daemon/tsconfig.json",
+    "dev": "electron-vite dev",
+    "prebuild": "node ../airemote-daemon/node_modules/typescript/bin/tsc -p ../airemote-daemon/tsconfig.json",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:web": "tsc -p tsconfig.web.json --noEmit",
+    "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@noresign/airemote": "link:../airemote-daemon",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "44.4.2",
+    "electron-vite": "^4.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.0",
+    "zustand": "^5.0.8"
+  }
+}

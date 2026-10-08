@@ -1,0 +1,26 @@
+/**
+ * Every daemon path the client touches, in one place. The renderer's typed API
+ * facade (renderer/src/ipc/client.ts) builds on these, so a path typo is a
+ * compile error here rather than a runtime 404 there.
+ */
+export const ROUTES = {
+  health: '/api/health',
+  agents: '/api/agents',
+  agent: '/api/agent',
+  workspaces: '/api/workspaces',
+  sessions: '/api/sessions',
+  session: (id: string) => `/api/sessions/${encodeURIComponent(id)}`,
+  runs: '/api/runs',
+  run: (id: string) => `/api/runs/${encodeURIComponent(id)}`,
+  runStream: (id: string) => `/api/runs/${encodeURIComponent(id)}/stream`,
+  runCancel: (id: string) => `/api/runs/${encodeURIComponent(id)}/cancel`,
+  runEvents: (id: string) => `/api/runs/${encodeURIComponent(id)}/events`,
+  chat: '/api/chat',
+  permissions: '/api/permissions',
+  permissionDecision: (id: string) => `/api/permissions/${encodeURIComponent(id)}/decision`,
+  claudeSessions: '/api/claude-sessions',
+  sessionPermissions: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permissions`,
+  sessionPermissionGrants: (id: string) => `/api/sessions/${encodeURIComponent(id)}/permissions/grants`,
+  sessionPermissionGrant: (id: string, toolName: string) =>
+    `/api/sessions/${encodeURIComponent(id)}/permissions/grants/${encodeURIComponent(toolName)}`,
+} as const;

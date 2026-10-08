@@ -1,0 +1,97 @@
+/*
+ * Design tokens, ported verbatim from docs/ui/design-principles.md §4.1 /
+ * docs/ui/preview.html so the desktop client and mobile share one palette.
+ * Desktop-only adjustments (density, radius, hit target) live below the
+ * colour block — see desktop_ui_design.md §4.
+ */
+:root {
+  --bg: #f6f8f7;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --border: #e3eae6;
+  --text-primary: #16211d;
+  --text-secondary: #5a6b64;
+  --text-muted: #93a29a;
+  --primary: #0e9f86;
+  --primary-deep: #0a7d6b;
+  --primary-subtle: #e2f3ee;
+  --success: #18a058;
+  --warning: #b7791f;
+  --error: #d6423e;
+  --thinking: #9aa8a2;
+  --code-bg: #f2f5f3;
+  --elevation-1: 0 1px 2px rgba(22, 33, 29, 0.06);
+  --elevation-2: 0 8px 24px rgba(22, 33, 29, 0.1);
+  --elevation-3: 0 16px 48px rgba(22, 33, 29, 0.18);
+  --grad: linear-gradient(135deg, #0e9f86, #18c9a6);
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1512;
+  --surface: #17201c;
+  --surface-2: #1e2823;
+  --border: #293430;
+  --text-primary: #e7efeb;
+  --text-secondary: #a2b0aa;
+  --text-muted: #6d7c75;
+  --primary: #2bc7a4;
+  --primary-deep: #4ad8b8;
+  --primary-subtle: #12332b;
+  --success: #4cc38a;
+  --warning: #e0b14a;
+  --error: #f26d6d;
+  --thinking: #85938c;
+  --code-bg: #101815;
+  --elevation-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --elevation-2: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --elevation-3: 0 16px 48px rgba(0, 0, 0, 0.6);
+  --grad: linear-gradient(135deg, #2bc7a4, #4ad8b8);
+}
+
+/* Desktop density: 48px touch targets shrink, radii tighten, blocks compress. */
+:root {
+  --r-card: 10px;
+  --r-bubble: 12px;
+  --r-modal: 12px;
+  --space-block: 18px;
+  --ctl-h: 30px;
+  --rail-w: 300px;
+  --font-ui: -apple-system, 'Segoe UI', Inter, 'Noto Sans SC', Roboto, 'PingFang SC', 'Microsoft YaHei',
+    sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
