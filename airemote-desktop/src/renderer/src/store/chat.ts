@@ -8,7 +8,7 @@ import type { PendingPermission } from './chat/types';
 import type { ChatMessage, ChatSessionState, TodoItem } from './chat/types';
 import type { ContextUsage } from '../../../shared/format';
 import type { RunDto, SseFrame } from '../../../shared/contract';
-import type { ChatStreamSpec, StreamEvent, StreamSpec } from '../../../shared/ipc';
+import type { AttachStreamSpec, ChatStreamSpec, StreamEvent, StreamSpec } from '../../../shared/ipc';
 import { useSessions } from './sessions';
 import { closePermissionNotification, notifyPermission, notifyRunFinished } from '../notify/notifier';
 
@@ -23,6 +23,14 @@ export function chatKey(connectionId: string, sessionId: string | null): string 
 
 let idCounter = 0;
 const nextId = (prefix: string): string => `${prefix}${++idCounter}`;
+
+/** `Omit` over a union collapses its discriminant, so distribute it by hand. */
+type WithoutStreamId<T> = T extends unknown ? Omit<T, 'streamId'> : never;
+type StreamRequest = WithoutStreamId<StreamSpec>;
+
+function newStreamId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `s-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+}
 
 export interface NewSessionOptions {
   runtime: string | null;
@@ -149,7 +157,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
 
     // A new session's first prompt is what creates the session server-side.
-    const spec: ChatStreamSpec = {
+    const spec: Omit<ChatStreamSpec, 'streamId'> = {
       kind: 'chat',
       sessionId: chat.sessionId,
       prompt,
@@ -369,33 +377,42 @@ async function attachRun(set: SetState, key: string, runId: string): Promise<voi
       return { ...chat, messages: [...chat.messages, newAssistant(nextId('a'))] };
     }),
   }));
-  await startStream(set, key, { kind: 'attach', runId, after: null });
+  const attach: Omit<AttachStreamSpec, 'streamId'> = { kind: 'attach', runId, after: null };
+  await startStream(set, key, attach);
 }
 
-async function startStream(set: SetState, key: string, spec: StreamSpec): Promise<void> {
+/**
+ * Open a stream and route its events to `key`.
+ *
+ * The id is minted here and registered **before** the request goes out. Main
+ * starts pushing events as soon as the stream is open, and a short run can be
+ * over before this call returns — registering afterwards silently dropped the
+ * whole run (a one-word reply showed up as an empty message).
+ */
+async function startStream(set: SetState, key: string, spec: StreamRequest): Promise<void> {
+  const streamId = newStreamId();
   set((state) => ({
-    byKey: patch(state, key, (chat) => ({ ...chat, phase: 'connecting', error: null })),
+    streamKeys: { ...state.streamKeys, [streamId]: key },
+    byKey: patch(state, key, (chat) => ({ ...chat, streamId, phase: 'connecting', error: null })),
   }));
 
-  const result = await connectionApi.streamStart(spec);
+  const request: StreamSpec =
+    spec.kind === 'chat' ? { ...spec, streamId } : { ...spec, streamId };
+
+  const result = await connectionApi.streamStart(request);
   if (!result.ok) {
     const message = friendlyMessage(result.apiCode, result.httpCode, result.message);
     set((state) => ({
+      streamKeys: withoutKey(state.streamKeys, streamId),
       byKey: patch(state, key, (chat) => ({
         ...chat,
+        streamId: null,
         phase: 'gaveup',
         messages: finalizeLast(chat.messages),
         error: message,
       })),
     }));
-    return;
   }
-
-  const streamId = result.streamId;
-  set((state) => ({
-    streamKeys: { ...state.streamKeys, [streamId]: key },
-    byKey: patch(state, key, (chat) => ({ ...chat, streamId })),
-  }));
 }
 
 /** Fold a batch of frames into one chat. */

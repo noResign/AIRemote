@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { RunStreamer } from './run-streamer';
 import { ROUTES } from '../../shared/routes';
 import type { DaemonClient } from '../daemon/client';
@@ -27,7 +26,8 @@ export class StreamManager {
     if (!client) {
       return { ok: false, httpCode: null, apiCode: 'not_connected', message: '尚未连接 daemon' };
     }
-    const streamId = randomUUID();
+    // Chosen by the renderer so it can register the id before any event lands.
+    const streamId = spec.streamId;
     const streamer = new RunStreamer(streamId, {
       client,
       emit: (event) => this.send(event),

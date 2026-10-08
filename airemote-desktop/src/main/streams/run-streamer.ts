@@ -180,7 +180,7 @@ export class RunStreamer {
       if (this.stopped || gen !== this.gen) return;
 
       after = this.lastSeq >= 0 ? this.lastSeq : after;
-      current = { kind: 'attach', runId: resumable as string, after };
+      current = { kind: 'attach', streamId: this.streamId, runId: resumable as string, after };
     }
   }
 

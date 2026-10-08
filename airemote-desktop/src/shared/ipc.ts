@@ -131,9 +131,16 @@ export interface BootstrapResult {
   autoAttached: boolean;
 }
 
-/** Start a brand-new run via `POST /api/chat`. */
+/**
+ * The id is chosen by the **renderer**, not by main. Main starts pushing events
+ * the moment the stream is open — and a short run finishes before `streamStart`
+ * could ever return — so if main picked the id, every event emitted before the
+ * renderer learned it would be dropped (a one-word reply would vanish whole).
+ * With the caller supplying it, the renderer can register the mapping first.
+ */
 export interface ChatStreamSpec {
   kind: 'chat';
+  streamId: string;
   /** null = a new session, created by this very request. */
   sessionId: string | null;
   prompt: string;
@@ -146,6 +153,7 @@ export interface ChatStreamSpec {
 /** Re-attach to a run that already exists, replaying from `after`. */
 export interface AttachStreamSpec {
   kind: 'attach';
+  streamId: string;
   runId: string;
   after: number | null;
 }

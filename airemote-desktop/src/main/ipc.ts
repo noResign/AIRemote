@@ -80,6 +80,9 @@ export function registerIpc(manager: ConnectionManager, streams: StreamManager, 
     if (!spec || (spec.kind !== 'chat' && spec.kind !== 'attach')) {
       return { ok: false, httpCode: null, apiCode: 'bad_request', message: '非法的流请求' };
     }
+    if (typeof spec.streamId !== 'string' || spec.streamId.length === 0 || spec.streamId.length > 64) {
+      return { ok: false, httpCode: null, apiCode: 'bad_request', message: '非法的流 id' };
+    }
     return streams.start(spec);
   });
 
