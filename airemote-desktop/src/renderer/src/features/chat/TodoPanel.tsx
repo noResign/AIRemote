@@ -10,8 +10,10 @@ const GLYPH: Record<string, string> = {
 /** The agent's own task list (TodoWrite), kept out of the transcript. */
 export function TodoPanel({ todos }: { todos: TodoItem[] }) {
   const [open, setOpen] = useState(true);
-  if (todos.length === 0) return null;
   const done = todos.filter((todo) => todo.status === 'completed').length;
+  // A fully finished list is historical noise: it would sit above every later
+  // answer as a permanent strip saying "done". Only show work still in flight.
+  if (todos.length === 0 || done === todos.length) return null;
 
   return (
     <div className="todo-panel">
