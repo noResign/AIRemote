@@ -8,6 +8,7 @@ import { log } from '../log.js';
 import { listClaudeSessions } from '../claude-sessions.js';
 import { sseHeaders, writeSseFrame } from '../sse.js';
 import { titleFromPrompt } from '../session-title.js';
+import { activeRunIdForSession } from '../session-runs.js';
 import { getDefaultPermissionMode, isProductPermissionMode, toClaudePermissionMode, type ProductPermissionMode } from '../permission-mode.js';
 import { existingDirs, resolveWorkspaceForRequest, workspaceContains, workspaceRoots } from '../workspace-service.js';
 
@@ -50,6 +51,23 @@ export function registerChatRoutes(app: Express, ctx: AppContext): void {
     if (body.sessionId && !session) {
       res.status(404).json({ error: 'session not found', code: 'session_not_found' });
       return;
+    }
+
+    // One prompt at a time per session. Without this, a second run would
+    // `--resume` the same native session id as the first, i.e. two agents
+    // appending to one transcript. Clients disable their composer while a run
+    // is live, but that is only politeness — two devices can race past it.
+    // Checked before runtime detection, which spawns the CLI.
+    if (session) {
+      const runningRunId = activeRunIdForSession(ctx, session.id);
+      if (runningRunId) {
+        res.status(409).json({
+          error: 'session already has a running run',
+          code: 'session_busy',
+          runId: runningRunId,
+        });
+        return;
+      }
     }
 
     if (session && requestedRuntime && requestedRuntime !== session.runtime) {

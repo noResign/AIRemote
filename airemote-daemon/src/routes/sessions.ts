@@ -2,16 +2,7 @@ import type { Express } from 'express';
 import type { AppContext } from '../context.js';
 import type { RunRow, SessionRow } from '../db.js';
 import { listActiveRuns } from '../runtimes/active-runs.js';
-
-/** Map each in-flight run's session id → run id, for the running indicator. */
-function runningRunBySession(ctx: AppContext): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const active of listActiveRuns()) {
-    const row = ctx.db.getRun(active.id);
-    if (row) map.set(row.session_id, row.id);
-  }
-  return map;
-}
+import { runningRunBySession } from '../session-runs.js';
 
 function sessionDto(s: SessionRow, runningRunId: string | null = null) {
   return {

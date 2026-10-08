@@ -113,6 +113,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `runtimes/engine.ts` | 通用 spawn 生命周期（见 §3） |
 | `permissions.ts` | `PermissionManager`：pending 请求 + 超时默认拒绝 + 同 Session allow-all 结算 |
 | `run-notifier.ts` | `RunNotifier`：runId → 该 run 的多个 SSE 订阅者（emitter + listeners） |
+| `session-runs.ts` | 「在跑的 run 按 session 索引」的查询：会话列表的运行标记、`/api/chat` 的同会话守卫 |
+| `runtime-info.ts` | 写/刷/删 `<data-dir>/daemon_runtime.json`（见 §14） |
 | `command-safety.ts` | Bash 只读命令白名单（只读自动放行，其余询问） |
 | `tool-grants.ts` | grant key 映射：MCP 工具 → server 级 `mcp__<server>__*`，其余用 toolName |
 | `workspace.ts` / `workspace-service.ts` | Workspace 路径校验/包含关系；目录选择器复用 |
@@ -124,7 +126,8 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 
 ## 5. 数据模型（SQLite）
 
-数据根默认 `~/.airemote`（`--data-dir` 可改），下面有 `airemote.sqlite` 与 `token`。
+数据根默认 `~/.airemote`（`--data-dir` 可改），下面有 `airemote.sqlite`、`token`
+与 `daemon_runtime.json`（运行信息，见 §14）。
 
 | 表 | 内容 |
 |---|---|
@@ -169,7 +172,7 @@ SIGTERM→SIGKILL 取消、退出码分类、**空闲看门狗**。当前唯一�
 | `GET /api/deploy` | 是 | 最近部署任务列表 |
 | `GET /api/deploy/:id` | 是 | 查询部署任务状态 |
 | `GET /api/claude-sessions` | 是 | 列出指定 Workspace 内的 Claude 会话（`?workspaceId=`） |
-| `POST /api/chat` | 是 | 发指令，返回 SSE 流 |
+| `POST /api/chat` | 是 | 发指令，返回 SSE 流。该 Session 已有在跑的 run → 409 `session_busy`（见 §6） |
 | `GET /api/runs` | 是 | 当前运行中的 run 列表（`?workspaceId=` 过滤） |
 | `POST /api/runs/:id/cancel` | 是 | 取消运行 |
 | `GET /api/runs/:id/events` | 是 | 一次性回放 run 事件，`?after=<seq>` 续传游标 |
@@ -286,10 +289,16 @@ content 说明未返回结果）。客户端因此可以把「没有配对的 to
 - 新会话使用 `workspaceId`（缺省用默认 Workspace）作为 cwd；`permissionMode` 可选 `ask` / `acceptEdits` / `bypass`，缺省用 `default_permission_mode`。
 - 续接已有会话沿用 Session 自己的 `workspace_id + cwd`，并**每次续接都重新校验**是否仍在该 Workspace 内，否则 400 `cwd_not_allowed`。
 - `permissionMode` 是 Session 级配置，切换后只影响后续 Run。
+- **一个 Session 同时只跑一个 Run**：该 Session 已有在跑的 run 时，请求返回 409
+  `session_busy`（响应带 `runId`，即正在跑的那个）。否则第二个 run 会 `--resume` 同一个
+  native session id，两个 agent 进程写同一份会话记录。客户端在 run 期间禁用发送只是礼貌，
+  多端（桌面 + 手机）可能同时发出，所以由 daemon 兜底。此检查排在 runtime 探测之前，
+  避免为必然被拒的请求去 spawn CLI。
 
 **断线续接**：`/api/chat` 客户端断开后，run **继续在 daemon 上运行**（不因断线取消）；重连
 用 `GET /api/runs` 找运行中的 run，再 `GET /api/runs/:id/stream?after=<seq>` 回放 + 续直播；
-显式停止用 `POST /api/runs/:id/cancel`。多 run 并发无全局锁。
+显式停止用 `POST /api/runs/:id/cancel`。**不同 Session 之间**多 run 并发无全局锁
+（同一 Session 见上面的 409 守卫）。
 
 ## 7. 权限审批
 
@@ -422,7 +431,8 @@ Claude 启动后，访问别的目录由「工具权限」决定，与 workspace
 **因此读取从来不构成边界**：`Read` 与 `cat` 都放行，终点一致——AIRemote 对读取不做任何拦截。
 曾评估给只读 Bash 白名单补路径校验以堵住这条，**已决定不做**——读命令放行的影响可接受，
 而 agent 本就有 Bash 权限，堵住 `cat` 收益有限。（`env` 泄露 `AIREMOTE_TOKEN` 同理：
-`cat <data-dir>/token` 一直可达且两者是同一个值，摘掉 `env` 只是装饰。）
+读命令本来就放行，摘掉 `env` 只是装饰。**但注意这不是「同一个值」**——见 §10.4，
+env 命中时 `<data-dir>/token` 里可能是旧值。）
 
 要做到文件级物理隔离，需要 OS 层沙箱（bwrap / firejail / 容器 / sandbox-exec），纯靠 Claude
 Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**」，不是「只能碰哪些目录」。
@@ -447,7 +457,7 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 | `--host <host>` | `0.0.0.0` | 监听地址；`127.0.0.1` = 仅本机 |
 | `--port <port>` | `4780` | 端口（1–65535） |
 | `--workspace <path>` | 当前目录 | 初始 Workspace 根目录（首次启动注册为默认 Workspace） |
-| `--data-dir <path>` | `~/.airemote` | 数据根（SQLite + token） |
+| `--data-dir <path>` | `~/.airemote` | 数据根（SQLite + token + `daemon_runtime.json`） |
 | `--token <token>` | 自动生成并持久化 | Bearer 鉴权密钥 |
 | `--permission-mode <mode>` | `default` | 初始 Workspace 默认权限模式 seed（见下） |
 | `--env-file <path>` | `./.env` | `.env` 文件路径 |
@@ -495,6 +505,11 @@ Code CLI 做不到。`workspace` 的准确语义是「**从哪个目录启动**�
 3. 否则生成 64 位 hex（32 字节随机），写入 `<data-dir>/token`（权限 0600）。
 
 删掉 `<data-dir>/token` 即轮换 token。
+
+⚠️ **文件只在「生成」那一步写入**，所以当第 1 条命中时，`<data-dir>/token` 里留着的是
+**上一次生成时的旧值**，与当前生效的 token 不同。因此：**读 `<data-dir>/token` 来取 token 之前，
+必须先确认当前 token 确实来自文件**——`daemon_runtime.json` 的 `tokenSource` 就是给这件事用的
+（`file` 才可读该文件；`env` / `flag` 时不要读，会拿到旧的、必然 401）。
 
 ### 10.5 `.env` 示例
 
@@ -583,3 +598,48 @@ airemote
 - **`workspace` 不是沙箱**（见 §9）——文件级隔离需 OS 层沙箱。
 - 会话列表无「最后一条消息预览」字段（客户端暂用标题/时间/运行态）。
 - Android 客户端已实现 M1；iOS 预留。传输契约（`types/api.ts`）已冻结，两端据此接入。
+
+## 14. 运行信息文件（`daemon_runtime.json`）
+
+**目的**：让同机的客户端（桌面端 / CLI / 部署脚本）不必猜端口就能找到本机 daemon。
+
+写在 `<data-dir>/daemon_runtime.json`，在 server **开始接受连接之后**写入；退出
+（`SIGTERM` / `SIGINT`）时删除。
+
+```json
+{
+  "pid": 3087570,
+  "startedAt": 1759930734000,
+  "serverId": "8fa14743-5888-4f1f-9cfd-50d2fb934a84",
+  "hostname": "ubuntu",
+  "listen": "127.0.0.1:4780",
+  "tls": false,
+  "version": "1.7.0",
+  "dataDir": "/home/renbin/.airemote",
+  "tokenSource": "env"
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `pid` | daemon 进程号，用于存活判断 |
+| `startedAt` | 本次启动时间（ms） |
+| `serverId` | **该 daemon 的稳定身份**：首次启动生成、持久化在 `settings` 表，重启不变。用于「同一台机器换了地址（LAN / 隧道 / 以后的 relay）」时识别为同一个 host |
+| `hostname` | 展示用 |
+| `listen` | **可直接连接的** `host:port`。绑定 `0.0.0.0` / `::` 会翻译成 `127.0.0.1` / `[::1]`——原样给出是连不上的 |
+| `tls` | 据此选 `http` / `https` |
+| `version` | daemon 版本 |
+| `dataDir` | 便于判断两个 daemon 是否共用同一个数据根 |
+| `tokenSource` | 见 §10.4：**只有 `file` 时** `<data-dir>/token` 才是权威值 |
+
+**约定**：
+
+- **不含 token**（秘密只在 `<data-dir>/token`，0600），所以这个文件是 0644、可直接读。
+- **文件存在 ⟹ 已在接受连接**：不存在「写了但还没 listen」的中间态，所以不需要
+  `listen: null` 这种占位。
+- **心跳就是 mtime**（没有 heartbeat 字段）：daemon 每 **30s** 刷新一次文件 mtime；
+  读方以 **mtime 比现在老 90s 以上** 判为过期（崩溃 / 硬杀留下的残留文件）。
+- ⚠️ **它是协调信息，不是权威**：被改过的地址、被复制的 `serverId`、被复用的 `pid`、
+  地址抢占，都在它能保证的范围之外。所以存活判断要三条件同时成立——
+  `mtime 新鲜` ∧ `pid 存活` ∧ `该地址的 /api/health 返回 airemote`。**鉴权仍然只认 token。**
+- 数据根不可写时只 WARN、不影响启动；客户端的发现流程退化为试探候选地址。

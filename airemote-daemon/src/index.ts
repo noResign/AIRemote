@@ -1,15 +1,18 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCliArgs, printHelp, VERSION, type CliOptions } from './cli.js';
 import { loadConfig, type Config } from './config.js';
 import type { AppContext } from './context.js';
+import type { Db } from './db.js';
 import { log } from './log.js';
 import { listLocalAddresses } from './network.js';
 import { PermissionManager } from './permissions.js';
 import { fromLegacyPermissionMode } from './permission-mode.js';
 import { RunNotifier } from './run-notifier.js';
 import { createRegistry } from './runtimes/registry.js';
+import { clearRuntimeInfo, startHeartbeat, writeRuntimeInfo } from './runtime-info.js';
 import { startServer } from './server.js';
 
 /**
@@ -47,6 +50,19 @@ function printConnectInfo(config: Config): void {
   } else {
     log.info(`listening on ${protocol}://${config.host}:${port} (no LAN IPv4 detected)`);
   }
+}
+
+/**
+ * This daemon's stable identity, minted once and kept in the DB so it survives
+ * restarts. Clients use it to recognise the same machine reached by a different
+ * address (LAN today, a tunnel or relay later).
+ */
+function resolveServerId(db: Db): string {
+  const existing = db.getSetting('server_id');
+  if (existing) return existing;
+  const id = randomUUID();
+  db.setSetting('server_id', id);
+  return id;
 }
 
 async function main(): Promise<void> {
@@ -124,8 +140,34 @@ async function main(): Promise<void> {
     hookPath: path.join(path.dirname(fileURLToPath(import.meta.url)), 'permission-hook.js'),
   };
 
-  startServer(ctx);
+  const server = startServer(ctx);
   printConnectInfo(config);
+
+  // Publish where we are — but only once the socket is actually accepting, so
+  // a client that reads the file can connect to what it names.
+  let stopHeartbeat: (() => void) | null = null;
+  server.once('listening', () => {
+    const info = writeRuntimeInfo(config, resolveServerId(db));
+    if (info) {
+      stopHeartbeat = startHeartbeat(config.dataDir);
+      log.info(`runtime info: ${info.listen} (serverId ${info.serverId})`);
+    }
+  });
+
+  // Until now a signal simply killed the process; now it also retracts the
+  // runtime info file so clients stop dialing us. Every event is committed
+  // before it reaches a socket, so exiting immediately is safe.
+  let stopping = false;
+  const shutdown = (signal: string): void => {
+    if (stopping) return;
+    stopping = true;
+    log.info(`${signal} received, shutting down`);
+    stopHeartbeat?.();
+    clearRuntimeInfo(config.dataDir);
+    process.exit(0);
+  };
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 
   log.info(`auth token: ${config.token}`);
   log.info(`  (${config.tokenGenerated ? 'generated and persisted at' : 'loaded from'} ${config.tokenPath})`);

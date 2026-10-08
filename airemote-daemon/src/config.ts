@@ -17,6 +17,12 @@ export interface Config {
   token: string;
   tokenPath: string;
   tokenGenerated: boolean;
+  /**
+   * Where the bearer token came from. Clients read it from `tokenPath`, so they
+   * must not do that unless this is `file` — otherwise they would pick up a
+   * stale token that a previous run generated (see {@link resolveToken}).
+   */
+  tokenSource: 'env' | 'flag' | 'file';
   permissionMode: string;
   /** 工具审批决策窗口（ms），超时自动拒绝。 */
   permissionTimeoutMs: number;
@@ -29,18 +35,27 @@ export interface Config {
   deployScript: string;
 }
 
-function resolveToken(env: NodeJS.ProcessEnv, dataDir: string): { token: string; tokenPath: string; generated: boolean } {
+/**
+ * Resolve the bearer token. `env` wins over the persisted file, and the file is
+ * only written when a token is generated — so an `env`-sourced token leaves the
+ * file holding whatever a previous run generated. That stale value is why the
+ * source is reported alongside the token: readers of `tokenPath` must check it.
+ */
+function resolveToken(
+  env: NodeJS.ProcessEnv,
+  dataDir: string,
+): { token: string; tokenPath: string; generated: boolean; source: 'env' | 'file' } {
   const tokenPath = path.join(dataDir, 'token');
   if (env.AIREMOTE_TOKEN && env.AIREMOTE_TOKEN.trim() !== '') {
-    return { token: env.AIREMOTE_TOKEN.trim(), tokenPath, generated: false };
+    return { token: env.AIREMOTE_TOKEN.trim(), tokenPath, generated: false, source: 'env' };
   }
   if (fs.existsSync(tokenPath)) {
     const existing = fs.readFileSync(tokenPath, 'utf8').trim();
-    if (existing) return { token: existing, tokenPath, generated: false };
+    if (existing) return { token: existing, tokenPath, generated: false, source: 'file' };
   }
   const token = randomBytes(32).toString('hex');
   fs.writeFileSync(tokenPath, `${token}\n`, { mode: 0o600 });
-  return { token, tokenPath, generated: true };
+  return { token, tokenPath, generated: true, source: 'file' };
 }
 
 function resolveTls(env: NodeJS.ProcessEnv): TlsConfig | null {
@@ -98,7 +113,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
   const workspace = path.resolve(overrides.workspace ?? env.AIREMOTE_WORKSPACE ?? process.cwd());
   fs.mkdirSync(workspace, { recursive: true });
 
-  const { token: resolvedToken, tokenPath, generated } = resolveToken(env, dataDir);
+  const { token: resolvedToken, tokenPath, generated, source } = resolveToken(env, dataDir);
   const token = overrides.token ?? resolvedToken;
 
   const host = overrides.host ?? (env.AIREMOTE_HOST?.trim() || '0.0.0.0');
@@ -115,6 +130,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Conf
     token,
     tokenPath,
     tokenGenerated: overrides.token ? false : generated,
+    tokenSource: overrides.token ? 'flag' : source,
     permissionMode: overrides.permissionMode ?? resolvePermissionMode(env),
     permissionTimeoutMs: resolvePermissionTimeoutMs(env),
     runIdleTimeoutMs: resolveRunIdleTimeoutMs(env),
