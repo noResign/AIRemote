@@ -8,9 +8,12 @@ import { RuntimeBadge } from '../../ui/RuntimeIcon';
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { Composer } from './Composer';
+import { useStickToBottom } from './useStickToBottom';
+import { transcriptSignature } from './transcriptSignature';
 import { TodoPanel } from './TodoPanel';
 import { PermissionDialog, InlinePermissionCard } from '../permissions/PermissionDialog';
 import { SessionPermissionsDialog } from '../permissions/SessionPermissionsDialog';
+import { TranscriptSkeleton } from '../../ui/Skeleton';
 import type { ChatSessionState } from '../../store/chat/types';
 
 interface Props {
@@ -28,6 +31,12 @@ export function ChatView({ workspaceName }: Props) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [showPerms, setShowPerms] = useState(false);
+
+  // Hooks must run before the early return below.
+  const { ref: scrollRef, showJump, jumpToBottom, onScroll } = useStickToBottom({
+    resetKey: chat?.key ?? null,
+    signature: transcriptSignature(chat?.messages ?? []),
+  });
 
   if (!chat) {
     return <div className="main-body">从左侧选择一个会话</div>;
@@ -117,15 +126,27 @@ export function ChatView({ workspaceName }: Props) {
         />
       )}
 
-      <div className="chat-scroll">
+      <div className="chat-scroll" ref={scrollRef} onScroll={onScroll}>
         {chat.historyLoading ? (
-          <div className="main-body">正在加载对话…</div>
+          <TranscriptSkeleton />
         ) : chat.messages.length === 0 ? (
           <div className="main-body">发送一条消息开始对话</div>
         ) : (
-          <Transcript messages={chat.messages} />
+          <Transcript messages={chat.messages} scrollRef={scrollRef} />
         )}
       </div>
+
+      {showJump && (
+        <button className="jump-latest" onClick={jumpToBottom} title="有新内容，跳到最新">
+          ↓ 跳到最新
+        </button>
+      )}
+
+      {busy && (
+        <div className="composer-note">
+          该会话正在运行，输入暂时禁用 —— 运行中的任务在 daemon 上执行，切换会话不受影响。
+        </div>
+      )}
 
       <Composer
         disabled={busy || chat.historyLoading}

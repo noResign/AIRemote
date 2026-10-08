@@ -28,6 +28,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'zoom-in', combo: 'mod+=', label: '放大界面' },
   { id: 'zoom-out', combo: 'mod+-', label: '缩小界面' },
   { id: 'zoom-reset', combo: 'mod+0', label: '重置缩放' },
+  { id: 'toggle-tool-groups', combo: 'mod+shift+e', label: '展开/折叠全部工具组' },
   { id: 'help', combo: '?', label: '快捷键帮助' },
 ] as const;
 

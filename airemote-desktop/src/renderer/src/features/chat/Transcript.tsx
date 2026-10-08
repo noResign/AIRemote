@@ -1,25 +1,71 @@
-import { useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeToolGroup, segmentBlocks, toolGroupStatus } from './segments';
 import { Markdown } from './Markdown';
+import { useToolGroups } from './toolGroups';
 import type { ChatMessage, ContentBlock } from '../../store/chat/types';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
 const VISIBLE = 80;
 const PAGE = 40;
+/** Distance from the top that triggers loading the previous page. */
+const REVEAL_AT_PX = 48;
 
 /**
  * The message list.
  *
- * Partial virtualization by design: past a threshold only the most recent slice
- * stays mounted, with a button to reveal older turns. The plan's concern is the
- * bottom-anchored streaming scroll fighting measurement — keeping the live tail
- * small and mounted avoids that without a measurement library.
+ * Only the most recent window stays mounted (docs/local/pages/chat.md §6.3:
+ * "虚拟化历史、保留最近 N 条始终挂载"). Scrolling to the top pulls in more,
+ * which is what makes scrolling back through a long session feel continuous
+ * without a measurement-based virtualizer.
+ *
+ * Windowing the loaded head would need dynamic height measurement, and with the
+ * transcript anchored at the bottom that is exactly the combination that makes
+ * the scrollbar jump per frame — the risk the spec calls out. Capping what is
+ * mounted gets the memory/layout win without that failure mode.
  */
-export function Transcript({ messages }: { messages: ChatMessage[] }) {
+export function Transcript({ messages, scrollRef }: { messages: ChatMessage[]; scrollRef: React.RefObject<HTMLDivElement | null> }) {
   const [limit, setLimit] = useState(VISIBLE);
   const shown = messages.length > limit ? messages.slice(messages.length - limit) : messages;
   const hidden = messages.length - shown.length;
+
+  // Reveal more as the user reaches the top. Prepending shifts everything
+  // down, so the row the reader is looking at has to be pinned back to where it
+  // was — otherwise loading history yanks the text out from under them.
+  const anchor = useRef<{ id: string; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const pinned = anchor.current;
+    if (!scroller || !pinned) return;
+    anchor.current = null;
+    const row = scroller.querySelector<HTMLElement>(`[data-msg-id="${CSS.escape(pinned.id)}"]`);
+    if (!row) return;
+    const offset = row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTop += offset - pinned.top;
+  }, [limit, scrollRef]);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const capture = (): void => {
+      const base = scroller.getBoundingClientRect().top;
+      for (const row of scroller.querySelectorAll<HTMLElement>('[data-msg-id]')) {
+        const top = row.getBoundingClientRect().top - base;
+        if (top >= 0) {
+          anchor.current = { id: row.dataset['msgId'] ?? '', top };
+          return;
+        }
+      }
+    };
+    const onScroll = (): void => {
+      if (scroller.scrollTop > REVEAL_AT_PX || hidden === 0) return;
+      capture();
+      setLimit((value) => value + PAGE);
+    };
+    scroller.addEventListener('scroll', onScroll);
+    return () => scroller.removeEventListener('scroll', onScroll);
+  }, [scrollRef, hidden]);
 
   return (
     <div className="transcript">
@@ -30,9 +76,7 @@ export function Transcript({ messages }: { messages: ChatMessage[] }) {
       )}
       {shown.map((message) =>
         message.kind === 'user' ? (
-          <div key={message.id} className="msg user">
-            <div className="bubble">{message.text}</div>
-          </div>
+          <UserRow key={message.id} id={message.id} text={message.text} />
         ) : (
           <AssistantRow key={message.id} message={message} />
         ),
@@ -41,16 +85,56 @@ export function Transcript({ messages }: { messages: ChatMessage[] }) {
   );
 }
 
-function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assistant' }> }) {
-  const segments = segmentBlocks(message.blocks);
+/** Hover-revealed copy affordance, in place of the mobile long-press. */
+function CopyButton({ text, className = '' }: { text: string; className?: string }) {
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+
+  return (
+    <button
+      className={`icon-btn copy ${className}`}
+      title="复制"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => setCopied(true));
+      }}
+    >
+      {copied ? '✓' : '⧉'}
+    </button>
+  );
+}
+
+function UserRow({ id, text }: { id: string; text: string }) {
+  return (
+    <div className="msg user" data-msg-id={id}>
+      <div className="bubble">{text}</div>
+      <div className="msg-actions">
+        <CopyButton text={text} />
+      </div>
+    </div>
+  );
+}
+
+function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assistant' }> }) {
+  const id = message.id;
+  const segments = segmentBlocks(message.blocks);
   const text = message.blocks
     .filter((block): block is Extract<ContentBlock, { kind: 'text' }> => block.kind === 'text')
     .map((block) => block.text)
     .join('\n\n');
 
   return (
-    <div className="msg assistant">
+    <div className="msg assistant" data-msg-id={id}>
+      {text && (
+        <div className="msg-actions">
+          <CopyButton text={text} />
+        </div>
+      )}
+
       {segments.map((segment, index) => {
         switch (segment.kind) {
           case 'text':
@@ -73,7 +157,7 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
                     </div>
                   </div>
                 ))}
-                <div className="hint">在桌面端回答提问属于 M2；先在手机端处理，或让 Agent 超时后重试。</div>
+                <div className="hint">这个会话的提问可以在左侧审批弹窗里回答。</div>
               </div>
             );
           case 'tools':
@@ -83,21 +167,34 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
 
       {message.error && <div className="msg-error">{message.error}</div>}
       {!message.done && <div className="msg-pending">● 正在执行…</div>}
-
-      {text && (
-        <div className="msg-tools">
-          <button
-            className="btn ghost tiny"
-            onClick={() => {
-              void navigator.clipboard.writeText(text);
-              setCopied(true);
-            }}
-          >
-            {copied ? '已复制' : '复制'}
-          </button>
-        </div>
-      )}
     </div>
+  );
+}
+
+/**
+ * Folds usually collapse: the folded line and the thinking line are the same
+ * height so a mixed turn does not produce a ragged column
+ * (docs/local/pages/chat.md §6.3).
+ */
+function FoldRow({
+  open,
+  onToggle,
+  label,
+  children,
+}: {
+  open: boolean;
+  onToggle(): void;
+  label: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <>
+      <button className="fold-head" onClick={onToggle}>
+        <span className="chevron">{open ? '▾' : '▸'}</span>
+        {label}
+      </button>
+      {children}
+    </>
   );
 }
 
@@ -105,9 +202,7 @@ function ThinkingBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="block-thinking">
-      <button className="fold-head" onClick={() => setOpen((value) => !value)}>
-        <span className="chevron">{open ? '▾' : '▸'}</span> 思考
-      </button>
+      <FoldRow open={open} onToggle={() => setOpen((value) => !value)} label={<span>思考</span>} />
       {open && <div className="thinking-body">{text}</div>}
     </div>
   );
@@ -118,18 +213,31 @@ function ThinkingBlock({ text }: { text: string }) {
  * of calls; showing a card each would push the actual answer off screen.
  */
 function ToolGroup({ tools }: { tools: ToolBlock[] }) {
-  const [open, setOpen] = useState(false);
+  const all = useToolGroups((state) => state.all);
+  const revision = useToolGroups((state) => state.revision);
+  const [local, setLocal] = useState<boolean | null>(null);
+
+  // A global toggle discards per-group overrides.
+  useEffect(() => {
+    setLocal(null);
+  }, [revision]);
+
+  const open = local ?? all ?? false;
   const status = toolGroupStatus(tools);
+  const summary = toolGroupStatusSummary(status);
 
   return (
     <div className="tool-group">
-      <button className="fold-head" onClick={() => setOpen((value) => !value)}>
-        <span className="chevron">{open ? '▾' : '▸'}</span>
-        <span>{describeToolGroup(tools)}</span>
-        {status.running > 0 && <span className="pulse" />}
-        {status.failed > 0 && <span className="badge warn">✗ {status.failed}</span>}
-        {status.interrupted > 0 && <span className="badge">中断 {status.interrupted}</span>}
-      </button>
+      <FoldRow
+        open={open}
+        onToggle={() => setLocal(!open)}
+        label={
+          <span className="tool-group-label" title={summary || undefined}>
+            {describeToolGroup(tools)}
+            {summary && <span className="tool-group-status">{summary}</span>}
+          </span>
+        }
+      />
       {open && (
         <div className="tool-list">
           {tools.map((tool) => (
@@ -141,6 +249,14 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
   );
 }
 
+function toolGroupStatusSummary(status: { running: number; failed: number; interrupted: number }): string {
+  const parts: string[] = [];
+  if (status.running) parts.push(`${status.running} 个运行中`);
+  if (status.failed) parts.push(`${status.failed} 个失败`);
+  if (status.interrupted) parts.push(`${status.interrupted} 个中断`);
+  return parts.join(' · ');
+}
+
 function ToolCard({ tool }: { tool: ToolBlock }) {
   const state = tool.running ? 'running' : tool.isError ? 'error' : tool.interrupted ? 'interrupted' : 'done';
   return (
@@ -148,6 +264,7 @@ function ToolCard({ tool }: { tool: ToolBlock }) {
       <summary>
         <span className="mono tool-name">{tool.name}</span>
         <span className="tool-state">{STATE_LABEL[state]}</span>
+        <CopyButton text={JSON.stringify(tool.input, null, 2)} className="tool-copy" />
       </summary>
       <pre className="mono tool-io">{JSON.stringify(tool.input, null, 2)}</pre>
       {tool.result !== null && <pre className="mono tool-io result">{tool.result}</pre>}

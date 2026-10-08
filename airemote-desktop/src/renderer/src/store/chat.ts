@@ -38,6 +38,8 @@ interface ChatStore {
   byKey: Record<string, ChatSessionState>;
   /** streamId → chat key, so pushed events can find their conversation. */
   streamKeys: Record<string, string>;
+  /** Session ids whose latest run this client watched fail. */
+  failedIds: string[];
   activeKey: string | null;
 
   openSession(connectionId: string, sessionId: string): Promise<void>;
@@ -56,6 +58,7 @@ interface ChatStore {
 export const useChat = create<ChatStore>((set, get) => ({
   byKey: {},
   streamKeys: {},
+  failedIds: [],
   activeKey: null,
 
   async openSession(connectionId, sessionId) {
@@ -132,6 +135,8 @@ export const useChat = create<ChatStore>((set, get) => ({
     if (!chat || !prompt || isBusy(chat.phase)) return;
 
     set((state) => ({
+      // A fresh attempt clears the previous failure badge for this session.
+      failedIds: chat.sessionId ? state.failedIds.filter((id) => id !== chat.sessionId) : state.failedIds,
       byKey: patch(state, key, (current) => ({
         ...current,
         error: null,
@@ -318,6 +323,15 @@ export const useChat = create<ChatStore>((set, get) => ({
     // The rail carries `running` and the title, both of which just changed.
     const chat = get().byKey[key];
     if (chat) {
+      const failed = event.outcome === 'giveup' || chat.error !== null;
+      if (chat.sessionId) {
+        const id = chat.sessionId;
+        set((state) => ({
+          failedIds: failed
+            ? state.failedIds.includes(id) ? state.failedIds : [...state.failedIds, id]
+            : state.failedIds.filter((value) => value !== id),
+        }));
+      }
       if (event.outcome !== 'cancelled') {
         notifyRunFinished(
           event.outcome,

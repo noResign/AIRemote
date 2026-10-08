@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions } from '../../store/sessions';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useAppearance, type ThemePreference } from '../../store/appearance';
+import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
+import { api } from '../../ipc/client';
 import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
 import { SettingsPage } from '../settings/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
+import { ConnectionSwitcher } from '../connect/ConnectionSwitcher';
+import { useToolGroups } from '../chat/toolGroups';
 import { isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
 import type { PaletteItem } from '../../commands/palette';
 
@@ -25,17 +29,23 @@ export function AppShell() {
   const connectionId = view?.baseUrl ?? null;
   const scope = useScope(connectionId);
   const load = useSessions((state) => state.load);
+  const patchTitle = useSessions((state) => state.patchTitle);
+  const dropSession = useSessions((state) => state.remove);
 
   const openSession = useChat((state) => state.openSession);
   const startNew = useChat((state) => state.startNew);
   const stopRun = useChat((state) => state.stop);
   const activeChat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
+  // Stable primitives, so a streamed token does not re-render the whole shell.
+  const waitingKey = useChat((state) => needsInputKey(state.byKey));
+  const failedIds = useChat((state) => failedKey(state.failedIds));
 
   const railWidth = useAppearance((state) => state.railWidth);
   const setRailWidth = useAppearance((state) => state.setRailWidth);
   const zoom = useAppearance((state) => state.zoom);
   const setZoom = useAppearance((state) => state.setZoom);
   const setTheme = useAppearance((state) => state.setTheme);
+  const toggleToolGroups = useToolGroups((state) => state.toggleAll);
 
   const [workspaceId, setWorkspaceId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -44,6 +54,10 @@ export function AppShell() {
   const [railVisible, setRailVisible] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const needsInput = useMemo(() => parseNeedsInput(waitingKey), [waitingKey]);
+  const failed = useMemo(() => new Set(failedIds ? failedIds.split(',') : []), [failedIds]);
 
   useEffect(() => {
     if (!connectionId) return;
@@ -63,6 +77,12 @@ export function AppShell() {
   useEffect(() => {
     if (activeChat?.sessionId && activeChat.sessionId !== selectedId) setSelectedId(activeChat.sessionId);
   }, [activeChat?.sessionId, selectedId]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 2400);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // The tray lives in main; only the renderer knows what is running.
   useEffect(() => {
@@ -107,6 +127,37 @@ export function AppShell() {
     if (next) select(next.id);
   }
 
+  function refresh(): void {
+    if (connectionId) void load(connectionId, workspaceId || undefined);
+  }
+
+  async function renameSession(id: string, title: string): Promise<void> {
+    const res = await api.renameSession(id, title);
+    if (!res.ok) {
+      setToast('重命名失败');
+      return;
+    }
+    if (connectionId) patchTitle(connectionId, id, title);
+  }
+
+  async function deleteSession(id: string): Promise<void> {
+    const res = await api.deleteSession(id);
+    if (!res.ok) {
+      setToast('删除失败');
+      return;
+    }
+    if (connectionId) dropSession(connectionId, id);
+    if (selectedId === id) setSelectedId(null);
+    setToast('会话已删除');
+  }
+
+  function copyText(text: string): void {
+    void navigator.clipboard.writeText(text).then(
+      () => setToast('已复制'),
+      () => setToast('复制失败'),
+    );
+  }
+
   function createSession(options: NewSessionOptions): void {
     if (!connectionId) return;
     setNewSessionOpen(false);
@@ -115,14 +166,6 @@ export function AppShell() {
     startNew(connectionId, { ...options, workspaceId: workspaceId || null });
   }
 
-  function refresh(): void {
-    if (connectionId) void load(connectionId, workspaceId || undefined);
-  }
-
-  /**
-   * Dispatch table keyed by the stable shortcut ids in `shortcuts.ts`. Adding a
-   * binding means one row there plus one case here.
-   */
   const actions: Record<string, () => void> = {
     'command-palette': () => setPaletteOpen((open) => !open),
     'new-session': () => setNewSessionOpen(true),
@@ -136,6 +179,7 @@ export function AppShell() {
     'zoom-in': () => setZoom(zoom + 10),
     'zoom-out': () => setZoom(zoom - 10),
     'zoom-reset': () => setZoom(100),
+    'toggle-tool-groups': toggleToolGroups,
     help: () => setHelpOpen(true),
   };
 
@@ -143,9 +187,7 @@ export function AppShell() {
     const handler = (event: KeyboardEvent): void => {
       const shortcut = matchShortcut(event);
       if (!shortcut) return;
-      // A bare key must never be swallowed while the user is typing.
       if (isModifierless(shortcut.combo) && isEditableTarget(event.target)) return;
-      // With an overlay up, only the palette toggle still applies (to close it).
       if (overlayOpen && shortcut.id !== 'command-palette') return;
       const action = actions[shortcut.id];
       if (!action) return;
@@ -211,19 +253,15 @@ export function AppShell() {
   }
 
   return (
-    <div className="shell" style={{ '--rail-w': `${railWidth}px` } as React.CSSProperties}>
+    <div className={`shell${railVisible ? '' : ' rail-hidden'}`}>
       {railVisible && (
-        <aside className="rail">
+        <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
-            <div className="conn-pill">
-              <span className="dot ok" />
-              <span className="conn-name">{view?.name ?? view?.baseUrl}</span>
-              {view?.tokenSource && (
-                <span className="badge" title={`token 来源：${view.tokenSource}`}>
-                  token
-                </span>
-              )}
-            </div>
+            <ConnectionSwitcher
+              view={view}
+              onAddComputer={() => void disconnect()}
+              onDisconnect={() => void disconnect()}
+            />
             <select className="ws-select" value={workspaceId} onChange={(event) => switchWorkspace(event.target.value)}>
               {scope.workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>
@@ -231,20 +269,29 @@ export function AppShell() {
                 </option>
               ))}
             </select>
-            <button className="btn" onClick={() => setNewSessionOpen(true)} title="新建会话 ⌘N">
-              ＋ 新建会话 <kbd>⌘N</kbd>
+            <button className="btn primary" onClick={() => setNewSessionOpen(true)} title="新建会话 ⌘N">
+              ＋ 新建会话
             </button>
           </div>
 
           <div className="rail-list">
-            {scope.loading && scope.sessions.length === 0 ? (
-              <div className="empty">正在加载…</div>
-            ) : scope.error ? (
+            {scope.error ? (
               <div className="empty" style={{ color: 'var(--error)' }}>
                 {scope.error}
               </div>
             ) : (
-              <SessionList sessions={scope.sessions} selectedId={selectedId} onSelect={select} />
+              <SessionList
+                sessions={scope.sessions}
+                selectedId={selectedId}
+                needsInput={needsInput}
+                failed={failed}
+                loading={scope.loading}
+                onSelect={select}
+                onRename={(id, title) => void renameSession(id, title)}
+                onDelete={(id) => void deleteSession(id)}
+                onCopy={copyText}
+                onRefresh={refresh}
+              />
             )}
           </div>
 
@@ -255,10 +302,13 @@ export function AppShell() {
             <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => setPage('settings')}>
               ⚙ 设置
             </button>
+            <button className="link-btn" title="刷新 ⌘R" onClick={refresh}>
+              ⟳
+            </button>
             <button className="link-btn" title="命令面板 ⌘K" onClick={() => setPaletteOpen(true)}>
               ⌘K
             </button>
-            <span className="rail-running">{runningCount > 0 ? `● ${runningCount} 个任务运行中` : ''}</span>
+            <span className="rail-running">{runningCount > 0 ? `● ${runningCount}` : ''}</span>
           </div>
           <div className="rail-resize" onMouseDown={startResize} title="拖拽调整宽度" />
         </aside>
@@ -279,6 +329,7 @@ export function AppShell() {
 
       {paletteOpen && <CommandPalette items={buildPaletteItems()} onClose={() => setPaletteOpen(false)} />}
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
+      {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }

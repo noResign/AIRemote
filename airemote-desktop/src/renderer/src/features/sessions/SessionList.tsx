@@ -1,45 +1,206 @@
-import { bucketSessions } from '../../store/sessionBuckets';
+import { useMemo, useState } from 'react';
+import { bucketSessions, BUCKET_LABELS, type BucketId } from '../../store/sessionBuckets';
+import { ContextMenu, useContextMenu, type MenuItem } from '../../ui/ContextMenu';
+import { RuntimeIcon } from '../../ui/RuntimeIcon';
+import { runtimeIdentity } from '../../../../shared/runtime-identity';
+import { SessionListSkeleton } from '../../ui/Skeleton';
 import type { SessionDto } from '../../../../shared/contract';
 
 interface Props {
   sessions: SessionDto[];
   selectedId: string | null;
+  /** sessionId → number of approvals waiting in it. */
+  needsInput: ReadonlyMap<string, number>;
+  failed: ReadonlySet<string>;
+  loading: boolean;
   onSelect(id: string): void;
+  onRename(id: string, title: string): void;
+  onDelete(id: string): void;
+  onCopy(text: string): void;
+  onRefresh(): void;
 }
 
-/** Status-bucketed session list; the rail's reason for existing. */
-export function SessionList({ sessions, selectedId, onSelect }: Props) {
-  // Pending approvals arrive with the streaming work (M1 step 6); until then
-  // the set is empty and the "waiting on me" bucket stays hidden.
-  const buckets = bucketSessions({ sessions, needsInput: new Set(), failed: new Set() });
-  const visible = buckets.filter((b) => b.sessions.length > 0);
+/**
+ * The rail's reason for existing: see which session is running or waiting on
+ * you *without* switching sessions. Hence status buckets rather than a plain
+ * recency sort (docs/local/pages/sessions.md §6.2).
+ */
+export function SessionList({
+  sessions,
+  selectedId,
+  needsInput,
+  failed,
+  loading,
+  onSelect,
+  onRename,
+  onDelete,
+  onCopy,
+  onRefresh,
+}: Props) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const { menu, open, close } = useContextMenu();
 
-  if (visible.length === 0) {
-    return <div className="empty">还没有会话</div>;
+  const buckets = useMemo(
+    () => bucketSessions({ sessions, needsInput: new Set(needsInput.keys()), failed }),
+    [sessions, needsInput, failed],
+  );
+  const nonEmpty = buckets.filter((bucket) => bucket.sessions.length > 0);
+
+  // "Default: the first two open" reads as the first two that actually have
+  // something in them — collapsing by fixed index would hide 已完成 entirely
+  // whenever the two warning buckets are empty.
+  const defaultOpen = useMemo(
+    () => new Set(nonEmpty.slice(0, 2).map((bucket) => bucket.id as string)),
+    [nonEmpty],
+  );
+  const isOpen = (id: BucketId): boolean => collapsed[id] !== undefined ? !collapsed[id] : defaultOpen.has(id);
+
+  if (loading && sessions.length === 0) return <SessionListSkeleton />;
+  if (sessions.length === 0) {
+    return (
+      <div className="empty">
+        还没有会话
+        <br />
+        点上方「新建会话」，或从别的电脑连接一个 daemon
+      </div>
+    );
+  }
+
+  function menuFor(session: SessionDto): MenuItem[] {
+    return [
+      { id: 'rename', label: '重命名', run: () => setRenamingId(session.id) },
+      { id: 'copy-cwd', label: '复制工作目录', run: () => onCopy(session.cwd) },
+      { id: 'refresh', label: '刷新列表', run: onRefresh },
+      { id: 'delete', label: '删除会话', danger: true, run: () => setConfirmingId(session.id) },
+    ];
   }
 
   return (
     <>
-      {visible.map((bucket) => (
-        <div key={bucket.id}>
-          <div className="bucket-head">
-            <span>
-              {bucket.label} ({bucket.sessions.length})
-            </span>
-          </div>
-          {bucket.sessions.map((session) => (
+      {nonEmpty.map((bucket) => {
+        const open_ = isOpen(bucket.id);
+        return (
+          <section key={bucket.id} className="bucket">
             <button
-              key={session.id}
-              className={`session-row${session.id === selectedId ? ' selected' : ''}`}
-              onClick={() => onSelect(session.id)}
+              className={`bucket-head${open_ ? '' : ' collapsed'}`}
+              onClick={() => setCollapsed((state) => ({ ...state, [bucket.id]: open_ }))}
+              title={open_ ? '折叠' : '展开'}
             >
-              {session.running ? <span className="pulse" /> : <span className="dot" />}
-              <span className="title">{session.title ?? '未命名会话'}</span>
-              <span className="sub">{relativeTime(session.lastActiveAt)}</span>
+              <span className="chevron">{open_ ? '▾' : '▸'}</span>
+              <span className={`bucket-label ${bucket.id}`}>{BUCKET_LABELS[bucket.id]}</span>
+              <span className="bucket-count">{bucket.sessions.length}</span>
             </button>
-          ))}
-        </div>
-      ))}
+
+            {open_ &&
+              bucket.sessions.map((session) => {
+                const waiting = needsInput.get(session.id) ?? 0;
+                const identity = runtimeIdentity(session.runtime);
+                const isRenaming = renamingId === session.id;
+                const isConfirming = confirmingId === session.id;
+
+                return (
+                  <div
+                    key={session.id}
+                    className={[
+                      'session-row',
+                      session.id === selectedId ? 'selected' : '',
+                      session.running ? 'running' : '',
+                      waiting > 0 ? 'waiting' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() => onSelect(session.id)}
+                    onContextMenu={(event) => open(event, menuFor(session))}
+                  >
+                    <span className="row-marker" />
+
+                    <div className="session-info">
+                      {isRenaming ? (
+                        <input
+                          className="session-rename"
+                          autoFocus
+                          defaultValue={session.title ?? ''}
+                          onClick={(event) => event.stopPropagation()}
+                          onBlur={(event) => {
+                            setRenamingId(null);
+                            const next = event.target.value.trim();
+                            if (next && next !== session.title) onRename(session.id, next);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') event.currentTarget.blur();
+                            if (event.key === 'Escape') setRenamingId(null);
+                          }}
+                        />
+                      ) : (
+                        <div className="session-title">{session.title ?? '未命名会话'}</div>
+                      )}
+                      <div className="session-meta">
+                        <span className="agent" style={{ color: identity.color }} title={identity.displayName}>
+                          <RuntimeIcon id={session.runtime} size={11} />
+                          {identity.displayName}
+                        </span>
+                        <span className="sep">·</span>
+                        <span>{relativeTime(session.lastActiveAt)}</span>
+                      </div>
+                    </div>
+
+                    {waiting > 0 && (
+                      <span className="wait-badge" title={`${waiting} 个待审批请求`}>
+                        {waiting}
+                      </span>
+                    )}
+                    {waiting === 0 && session.running && <span className="pulse" />}
+
+                    <div className="row-actions">
+                      <button
+                        className="icon-btn"
+                        title="重命名"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setRenamingId(session.id);
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="icon-btn danger"
+                        title="删除"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setConfirmingId(session.id);
+                        }}
+                      >
+                        🗑
+                      </button>
+                    </div>
+
+                    {isConfirming && (
+                      <div className="row-confirm" onClick={(event) => event.stopPropagation()}>
+                        <span>删除该会话？</span>
+                        <button
+                          className="btn tiny danger"
+                          onClick={() => {
+                            setConfirmingId(null);
+                            onDelete(session.id);
+                          }}
+                        >
+                          删除
+                        </button>
+                        <button className="btn tiny ghost" onClick={() => setConfirmingId(null)}>
+                          取消
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </section>
+        );
+      })}
+
+      <ContextMenu menu={menu} onClose={close} />
     </>
   );
 }
@@ -51,5 +212,6 @@ function relativeTime(ts: number): string {
   if (diff < minute) return '刚刚';
   if (diff < 60 * minute) return `${Math.floor(diff / minute)} 分钟前`;
   if (diff < 24 * 60 * minute) return `${Math.floor(diff / (60 * minute))} 小时前`;
+  if (diff < 30 * 24 * 60 * minute) return `${Math.floor(diff / (24 * 60 * minute))} 天前`;
   return new Date(ts).toLocaleDateString();
 }
