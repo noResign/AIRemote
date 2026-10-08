@@ -455,22 +455,6 @@ kbd {
   color: var(--error);
 }
 
-.chat-scroll {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  display: flex;
-  justify-content: center;
-}
-.transcript {
-  width: 100%;
-  max-width: 760px;
-  padding: 18px 18px 8px;
-}
-.load-earlier {
-  display: block;
-  margin: 0 auto 12px;
-}
 .block-text {
   white-space: pre-wrap;
   word-break: break-word;
@@ -507,7 +491,7 @@ kbd {
   flex: none;
   border-top: 1px solid var(--border);
   background: var(--surface);
-  padding: 10px 18px 12px;
+  padding: 14px 18px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1479,11 +1463,16 @@ a.btn {
  * Wrapping the whole transcript in one bordered surface read as "both sides
  * live in one box".
  */
+/*
+ * The generous bottom padding is deliberate: pinned to the bottom, the last
+ * message would otherwise sit flush against the composer and read as "cut off,
+ * keep scrolling". A clear run of empty space is the "end of transcript" cue.
+ */
 .transcript {
   width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 18px 20px 14px;
+  padding: 18px 20px 48px;
 }
 .load-earlier {
   display: block;
