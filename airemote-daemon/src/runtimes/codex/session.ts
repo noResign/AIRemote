@@ -325,6 +325,11 @@ export function startCodexRun(req: CodexRunRequest): CodexActiveRun {
           : { type: 'workspaceWrite', writableRoots: [...new Set([req.cwd, ...(req.extraDirs ?? [])])], networkAccess: false },
         ...(req.model ? { model: req.model } : {}),
         approvalPolicy: codexApprovalPolicy(req.permissionMode),
+        // Ask for reasoning summaries explicitly: without them Codex reports
+        // `summary: []` / `content: []` and the phone shows no thinking card at
+        // all (`item/reasoning/*` deltas never fire). `concise` suits a phone —
+        // the alternatives are `auto`, `detailed` and `none`.
+        summary: 'concise',
       });
       turnId = readTurnId(response);
       log.info(`codex run ${req.id}: thread ${threadId} turn ${turnId ?? '?'}`);

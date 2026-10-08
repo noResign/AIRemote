@@ -74,6 +74,23 @@ function stringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/**
+ * The reasoning text a completed item carries: `summary` is the human-readable
+ * part, `content` the raw one (usually empty — reasoning arrives encrypted).
+ * Parts are plain strings today; tolerate `{text}` in case that shape moves.
+ * Which of the two is populated depends on the model, so try both.
+ */
+function reasoningText(item: CodexItem): string {
+  const parts = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value
+          .map((part) => (typeof part === 'string' ? part : readString(asRecord(part), 'text') ?? ''))
+          .filter(Boolean)
+      : [];
+  const summary = parts(item['summary']).join('');
+  return summary || parts(item['content']).join('');
+}
+
 // ---- item → tool shape ----
 
 /**
@@ -219,6 +236,7 @@ export function createCodexStreamMapper(
 
   const textStreamed = new Set<string>();
   const thinkingStarted = new Set<string>();
+  const thinkingStreamed = new Set<string>();
 
   const startThinking = (itemId: string | null): void => {
     if (itemId === null || thinkingStarted.has(itemId)) return;
@@ -258,7 +276,9 @@ export function createCodexStreamMapper(
         case 'item/reasoning/textDelta':
         case 'item/reasoning/summaryTextDelta': {
           // Reasoning can stream without a preceding summaryPartAdded.
-          startThinking(readString(p, 'itemId'));
+          const itemId = readString(p, 'itemId');
+          startThinking(itemId);
+          if (itemId) thinkingStreamed.add(itemId);
           const delta = readString(p, 'delta') ?? '';
           if (delta) onEvent({ type: 'thinking_delta', delta });
           return;
@@ -281,6 +301,19 @@ export function createCodexStreamMapper(
             if (!textStreamed.has(item.id)) {
               const text = readString(item, 'text') ?? '';
               if (text) onEvent({ type: 'text_delta', delta: text });
+            }
+            return;
+          }
+          if (item.type === 'reasoning') {
+            // Nothing streamed for this item: the model only hands the summary
+            // over at the end. Without this the thinking card stays empty even
+            // though the provider did report something.
+            if (!thinkingStreamed.has(item.id)) {
+              const text = reasoningText(item);
+              if (text) {
+                startThinking(item.id);
+                onEvent({ type: 'thinking_delta', delta: text });
+              }
             }
             return;
           }
@@ -331,7 +364,12 @@ export function createCodexStreamMapper(
           previous = total;
           hasUsage = true;
           context = contextOf(counts);
-          onEvent({ type: 'usage', usage: { ...usage }, ...(context ?? {}) });
+          // Mid-run we refresh *only* the context indicator (`usage: null`, so
+          // the client keeps the previous usage line). The usage bar is the
+          // run's final total, emitted once on `turn/completed` — the timing
+          // Claude already has (`result` frame), so both runtimes show it at the
+          // same moment instead of Codex ticking up while it works.
+          if (context) onEvent({ type: 'usage', usage: null, ...context });
           return;
         }
 

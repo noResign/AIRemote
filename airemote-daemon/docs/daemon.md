@@ -39,6 +39,11 @@ Codex 通过 `codex app-server` 的 stdio JSON-RPC 接入。`GET /api/agents` �
   列表时会给这些项可读标签——**显示少于授权**是危险方向，取不到字符串就丢项是不允许的。
 - 「允许全部」对 `Permissions` 的语义是「本会话后续**任意**权限扩展都自动批准」（不限于卡片
   上列的路径），撤销只影响后续请求；客户端文案必须写明这一点。
+- **主动请求思考摘要**：`turn/start` 带 `summary: 'concise'`（可选 `auto` / `detailed` / `none`）。
+  不请求的话 Codex 报的是 `summary: []` / `content: []`，`item/reasoning/*` 的流式 delta 一条
+  都不发，手机上就只剩一个空的「思考」痕迹（等于没有思考卡片）。模型只在真正推理时才产出摘要，
+  简单问题没有思考是正常现象。mapper 侧另有一层兜底：`item/completed` 的 reasoning 若没流过
+  delta，就用 `summary`/`content` 补一次文本（有些模型只在结束时给）。
 - **stderr 会转发给客户端**：app-server 把自身的运行故障（网络不可达、额度用尽、沙箱起不来、
   鉴权失效）只写在 stderr 上，wire 上没有任何对应通知。`rpc.ts` 按**整行**交付 stderr，
   `session.ts` 只挑含 `ERROR`/`WARN` 的行，去重、截断到 300 字、上限 20 条，以**非终态**
@@ -251,6 +256,11 @@ Codex 在每次 `turn/start` 时将 cwd 和有效附加目录传入
 Codex 的 `usage` 统一为当前 Run 的累计 `input_tokens` / `output_tokens`，包含工具调用前后
 的各次模型请求，不包含此前轮次。优先使用续接时的线程累计快照作为基线；服务端未发送
 快照时，首个用量更新的 `total - last` 用于恢复基线。重复快照不重复计数，结束事件保留合计。
+
+**发出时机与 Claude 对齐**：`usage` 只在 `turn/completed` 发一次（Claude 是 `result` 帧）。
+codex 每次模型调用都会推 `thread/tokenUsage/updated`，但中途只发「上下文占用」帧
+（`usage: null` + `contextTokens`/`contextWindow`）——否则手机上会看到用量条在任务还没跑完时
+就往上跳，和 Claude 行为不一致。
 
 **上下文窗口占用**与 `usage` 是两回事，走 `usage` 事件上的两个**兄弟字段**（不在 `usage` 里）：
 

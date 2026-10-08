@@ -123,6 +123,9 @@ describe('Codex HTTP integration', () => {
         sandboxPolicy: permissionMode === 'bypass'
           ? { type: 'dangerFullAccess' }
           : { type: 'workspaceWrite', writableRoots: [workspace.path, dir], networkAccess: false },
+        // Without this Codex reports empty summaries and the phone shows no
+        // thinking card at all.
+        summary: 'concise',
       }));
       complete(peer);
       await first.text();

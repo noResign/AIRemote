@@ -120,21 +120,24 @@ describe('Codex per-run token usage', () => {
     tokenUsage: { total: counts(...total), last: counts(...last) },
   });
 
-  it('counts all model calls, ignores duplicate snapshots, and preserves the final total', () => {
+  it('counts every model call but only reports the total once the turn ends', () => {
     const events: NormalizedEvent[] = [];
     const mapper = createCodexStreamMapper(ev => events.push(ev));
     mapper.beginTurn();
     mapper.onNotification('thread/tokenUsage/updated', update([100, 20], [100, 20]));
     mapper.onNotification('thread/tokenUsage/updated', update([250, 50], [150, 30]));
     mapper.onNotification('thread/tokenUsage/updated', update([250, 50], [150, 30]));
+
+    // Mid-run frames must not carry a usage line, or the phone shows the number
+    // ticking up while the turn is still running (Claude shows it only at the end).
+    const usageOf = (ev: NormalizedEvent) => (ev as { usage?: unknown }).usage;
+    const midRun = events.filter(ev => ev.type === 'usage');
+    expect(midRun.length).toBeGreaterThan(0);
+    expect(midRun.every(ev => usageOf(ev) === null)).toBe(true);
+
     mapper.onNotification('turn/completed', { turn: { status: 'completed' } });
-    const usages = events.filter(ev => ev.type === 'usage');
-    expect(usages.map(ev => ev.usage)).toEqual([
-      { input_tokens: 100, output_tokens: 20 },
-      { input_tokens: 250, output_tokens: 50 },
-      { input_tokens: 250, output_tokens: 50 },
-      { input_tokens: 250, output_tokens: 50 },
-    ]);
+    const finals = events.filter(ev => ev.type === 'usage' && usageOf(ev) !== null);
+    expect(finals.map(usageOf)).toEqual([{ input_tokens: 250, output_tokens: 50 }]);
   });
 
   it.each([true, false])('excludes previous turns on resume (initial snapshot: %s)', snapshot => {
@@ -145,7 +148,45 @@ describe('Codex per-run token usage', () => {
     mapper.beginTurn();
     mapper.onNotification('thread/tokenUsage/updated', update([1100, 220], [100, 20]));
     mapper.onNotification('thread/tokenUsage/updated', update([1250, 250], [150, 30]));
-    expect(events.at(-1)).toMatchObject({ type: 'usage', usage: { input_tokens: 250, output_tokens: 50 } });
+    mapper.onNotification('turn/completed', { turn: { status: 'completed' } });
+    const finals = events.filter(ev => ev.type === 'usage' && (ev as { usage?: unknown }).usage !== null);
+    expect(finals.at(-1)).toMatchObject({ type: 'usage', usage: { input_tokens: 250, output_tokens: 50 } });
+  });
+});
+
+describe('Codex reasoning', () => {
+  it('fills the thinking card from the completed item when nothing streamed', () => {
+    const events = collect([
+      ['item/started', { item: { id: 'rs-1', type: 'reasoning', summary: [], content: [] } }],
+      ['item/completed', { item: { id: 'rs-1', type: 'reasoning', summary: ['**Identifying requirement**'], content: [] } }],
+    ]);
+    expect(events.filter(ev => ev.type === 'thinking_delta')).toEqual([
+      { type: 'thinking_delta', delta: '**Identifying requirement**' },
+    ]);
+  });
+
+  it('does not repeat a summary that already streamed as deltas', () => {
+    const events = collect([
+      ['item/reasoning/summaryTextDelta', { itemId: 'rs-2', delta: 'part one ' }],
+      ['item/completed', { item: { id: 'rs-2', type: 'reasoning', summary: ['part one and the rest'] } }],
+    ]);
+    const deltas = events.filter(ev => ev.type === 'thinking_delta');
+    expect(deltas.map(ev => (ev as { delta: string }).delta)).toEqual(['part one ']);
+  });
+
+  it('falls back to raw reasoning content when there is no summary', () => {
+    const events = collect([
+      ['item/completed', { item: { id: 'rs-3', type: 'reasoning', summary: [], content: ['raw thought'] } }],
+    ]);
+    expect(events.find(ev => ev.type === 'thinking_delta')).toMatchObject({ delta: 'raw thought' });
+  });
+
+  it('stays silent for an empty reasoning item (no card with nothing in it)', () => {
+    const events = collect([
+      ['item/started', { item: { id: 'rs-4', type: 'reasoning', summary: [], content: [] } }],
+      ['item/completed', { item: { id: 'rs-4', type: 'reasoning', summary: [], content: [] } }],
+    ]);
+    expect(events.filter(ev => ev.type === 'thinking_delta')).toEqual([]);
   });
 });
 
@@ -172,11 +213,19 @@ describe('Codex context window occupancy', () => {
   };
 
   it('reports the last request input against the window, beside the accumulated total', () => {
-    const events = run([['thread/tokenUsage/updated', snapshot([45_200, 900], [45_200, 900], 168_000)]]);
-    expect(events.at(-1)).toEqual({
+    const events = run([
+      ['thread/tokenUsage/updated', snapshot([45_200, 900], [45_200, 900], 168_000)],
+      ['turn/completed', { turn: { status: 'completed' } }],
+    ]);
+    const usages = events.filter(ev => ev.type === 'usage');
+    // Mid-run: context only, no usage line yet.
+    expect(usages.at(0)).toEqual({ type: 'usage', usage: null, contextTokens: 45_200, contextWindow: 168_000 });
+    // Turn end: the run's total, carrying the last known occupancy with it.
+    expect(usages.at(-1)).toEqual({
       type: 'usage',
-      // The blob keeps its old per-run meaning — occupancy is a sibling.
       usage: { input_tokens: 45_200, output_tokens: 900 },
+      durationMs: null,
+      stopReason: 'completed',
       contextTokens: 45_200,
       contextWindow: 168_000,
     });
@@ -188,10 +237,14 @@ describe('Codex context window occupancy', () => {
   });
 
   it('adds no context fields when the snapshot carries no last input', () => {
-    const events = run([['thread/tokenUsage/updated', {
-      tokenUsage: { total: { inputTokens: 10, outputTokens: 1 }, last: {} },
-    }]]);
-    const last = events.at(-1) as Extract<NormalizedEvent, { type: 'usage' }>;
+    const events = run([
+      ['thread/tokenUsage/updated', { tokenUsage: { total: { inputTokens: 10, outputTokens: 1 }, last: {} } }],
+      ['turn/completed', { turn: { status: 'completed' } }],
+    ]);
+    // Nothing to report mid-run (no occupancy available), so the only usage
+    // frame is the final total — and it must not invent context fields.
+    const finals = events.filter(ev => ev.type === 'usage' && (ev as { usage?: unknown }).usage !== null);
+    const last = finals.at(-1) as Extract<NormalizedEvent, { type: 'usage' }>;
     expect(last.usage).toEqual({ input_tokens: 10, output_tokens: 1 });
     expect('contextTokens' in last).toBe(false);
     expect('contextWindow' in last).toBe(false);
