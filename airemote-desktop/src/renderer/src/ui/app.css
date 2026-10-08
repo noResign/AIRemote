@@ -1473,15 +1473,17 @@ a.btn {
   min-height: 0;
   background: var(--bg);
 }
+/*
+ * No card: assistant turns are plain content straight on the chat ground, and
+ * the user bubble is the only filled shape (mobile prototype does the same).
+ * Wrapping the whole transcript in one bordered surface read as "both sides
+ * live in one box".
+ */
 .transcript {
   width: 100%;
   max-width: 760px;
-  margin: 16px auto;
+  margin: 0 auto;
   padding: 18px 20px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--r-modal);
-  align-self: flex-start;
 }
 .load-earlier {
   display: block;
@@ -1502,9 +1504,10 @@ a.btn {
 .msg.user .bubble {
   max-width: 76%;
   background: var(--primary);
-  color: #04231c;
-  padding: 8px 12px;
-  border-radius: 12px;
+  color: #06231a;
+  padding: 9px 13px;
+  /* Asymmetric corner marks the speaker, as on mobile (§5 消息气泡). */
+  border-radius: 12px 12px 4px 12px;
   font-size: 13.5px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -1545,6 +1548,11 @@ a.btn {
   font-size: 11.5px;
 }
 
+/*
+ * These rows sit a tier *up* from `--thinking`, which reads as barely-there on
+ * a dark ground. `--thinking` stays unused for text here; the chevron carries
+ * the "quiet" cue instead (spec §4: tokens keep their values, usage may differ).
+ */
 .fold-head {
   display: flex;
   align-items: center;
@@ -1554,7 +1562,7 @@ a.btn {
   padding: 0 4px;
   border: none;
   background: transparent;
-  color: var(--thinking);
+  color: var(--text-secondary);
   font-size: 12.5px;
   cursor: pointer;
   text-align: left;
@@ -1562,15 +1570,16 @@ a.btn {
 }
 .fold-head:hover {
   background: var(--surface-2);
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 .fold-head .chevron {
   flex: none;
   width: 10px;
+  color: var(--text-muted);
 }
 .thinking-body {
   white-space: pre-wrap;
-  color: var(--thinking);
+  color: var(--text-secondary);
   font-size: 12.5px;
   line-height: 1.65;
   padding: 4px 4px 10px 20px;
@@ -1618,7 +1627,7 @@ a.btn {
 .tool-state {
   margin-left: auto;
   font-size: 11px;
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .tool-copy {
   width: 20px;
