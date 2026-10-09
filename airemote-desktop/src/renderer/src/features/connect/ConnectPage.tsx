@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react';
+import { connectionApi } from '../../ipc/client';
 import { useConnection } from '../../store/connection';
 import { isInsecure } from '../../../../shared/net';
 import { parseAddress } from './address';
-import type { DiscoveredDaemon, LocalTokenHint, PortConflict } from '../../../../shared/ipc';
+import type {
+  DiscoveredDaemon,
+  LocalTokenHint,
+  PortConflict,
+  RecentConnection,
+} from '../../../../shared/ipc';
 
 /** Connection gate. Discovery of a same-machine daemon is the primary path. */
 export function ConnectPage() {
@@ -18,16 +24,25 @@ export function ConnectPage() {
 
   const [address, setAddress] = useState('');
   const [token, setToken] = useState('');
+  const [recent, setRecent] = useState<RecentConnection[]>([]);
 
   useEffect(() => {
     if (!probe) void probeNow();
   }, [probe, probeNow]);
 
-  // A restored connection whose token could not be recovered still knows where
-  // it was pointing — asking the user to retype the address would be pointless.
+  // Addresses only, and this page is remounted on every disconnect, so the list
+  // is always current without a subscription.
   useEffect(() => {
-    if (view?.host && view.port) setAddress((current) => current || `${view.host}:${view.port}`);
-  }, [view?.host, view?.port]);
+    void connectionApi.recent().then(setRecent);
+  }, []);
+
+  // A restored connection whose token could not be recovered still knows where
+  // it was pointing, and a disconnected one still has its recent targets. The
+  // address is never the part worth making the user retype — the token is.
+  useEffect(() => {
+    const known = view?.baseUrl ?? recent[0]?.baseUrl ?? null;
+    if (known) setAddress((current) => current || known);
+  }, [view?.baseUrl, recent]);
 
   // A local daemon whose token lives in an env var can't be auto-read; hand the
   // user the address and ask for the token instead of failing generically.
@@ -92,6 +107,25 @@ export function ConnectPage() {
             autoComplete="off"
           />
         </div>
+        {recent.length > 0 && (
+          <div className="section-label recent-label">最近连接</div>
+        )}
+        {recent.length > 0 && (
+          <div className="recent">
+            {recent.map((entry) => (
+              <button
+                key={entry.baseUrl}
+                type="button"
+                className="recent-item"
+                title={entry.baseUrl}
+                onClick={() => setAddress(entry.baseUrl)}
+              >
+                <span className="recent-name">{entry.name ?? entry.baseUrl}</span>
+                {entry.name && <span className="recent-url mono">{entry.baseUrl}</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="field">
           <label htmlFor="token">Token</label>
           <input

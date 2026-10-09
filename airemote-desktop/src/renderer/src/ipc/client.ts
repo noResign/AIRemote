@@ -43,6 +43,7 @@ export const connectionApi = {
   set: (input: ConnectInput) => window.airemote.connSet(input),
   clear: () => window.airemote.connClear(),
   probe: () => window.airemote.connProbe(),
+  recent: () => window.airemote.recentList(),
   streamStart: (spec: StreamSpec) => window.airemote.streamStart(spec),
   streamCancel: (input: StreamCancelInput) => window.airemote.streamCancel(input),
 };

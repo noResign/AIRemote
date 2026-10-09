@@ -5,6 +5,7 @@ import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
 import { api } from '../../ipc/client';
+import { RefreshIcon } from '../../ui/RefreshIcon';
 import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
@@ -173,12 +174,23 @@ export function AppShell() {
     startNew(connectionId, { ...options, workspaceId: workspaceId || null });
   }
 
+  /**
+   * Leaving a full-area page. There are exactly two pages today, so "back" and
+   * "the conversation view" are the same move — but the settings page is not
+   * only reachable from a conversation, so this is named for the action. When a
+   * third page lands (files, M3) it has to become "the page you came from".
+   */
+  function goBack(): void {
+    setPage('chat');
+  }
+
   const actions: Record<string, () => void> = {
     'command-palette': () => setPaletteOpen((open) => !open),
     'new-session': () => setNewSessionOpen(true),
     'toggle-rail': () => setRailVisible((visible) => !visible),
     'go-sessions': () => setPage('chat'),
     'go-settings': () => setPage('settings'),
+    back: goBack,
     refresh,
     'stop-run': stopRun,
     'next-session': () => stepSession(1),
@@ -310,7 +322,7 @@ export function AppShell() {
               ⚙ 设置
             </button>
             <button className="link-btn" title="刷新 ⌘R" onClick={refresh}>
-              ⟳
+              <RefreshIcon />
             </button>
             <button className="link-btn" title="命令面板 ⌘K" onClick={() => setPaletteOpen(true)}>
               ⌘K
@@ -322,7 +334,11 @@ export function AppShell() {
       )}
 
       <main className="main">
-        {page === 'settings' ? <SettingsPage /> : <ChatView workspaceName={selectedWorkspace?.name ?? null} />}
+        {page === 'settings' ? (
+          <SettingsPage onBack={goBack} />
+        ) : (
+          <ChatView workspaceName={selectedWorkspace?.name ?? null} />
+        )}
       </main>
 
       {newSessionOpen && (

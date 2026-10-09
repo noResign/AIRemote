@@ -27,6 +27,7 @@ const api: AiremoteBridge = {
   connSet: (input: ConnectInput) => ipcRenderer.invoke(IPC.connSet, input),
   connClear: () => ipcRenderer.invoke(IPC.connClear),
   connProbe: () => ipcRenderer.invoke(IPC.connProbe),
+  recentList: () => ipcRenderer.invoke(IPC.recentList),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
   prefsGet: () => ipcRenderer.invoke(IPC.prefsGet),
   prefsSet: (patch: Partial<AppPrefs>) => ipcRenderer.invoke(IPC.prefsSet, patch),

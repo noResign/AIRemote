@@ -21,6 +21,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'toggle-rail', combo: 'mod+b', label: '切换左栏显隐' },
   { id: 'go-sessions', combo: 'mod+1', label: '切到会话' },
   { id: 'go-settings', combo: 'mod+,', label: '设置' },
+  // The way back out of a full-area page. Bare, so it stands down while a text
+  // field has focus (see `isModifierless`). Named for the action, not the
+  // destination: settings is not always entered from the conversation view.
+  { id: 'back', combo: 'escape', label: '返回' },
   { id: 'refresh', combo: 'mod+r', label: '刷新会话列表' },
   { id: 'stop-run', combo: 'mod+.', label: '停止当前运行' },
   { id: 'next-session', combo: 'mod+shift+]', label: '下一个会话' },
@@ -48,6 +52,9 @@ const KEY_ALIASES: Record<string, string[]> = {
 };
 
 const MODIFIER_KEYS = new Set(['shift', 'alt', 'mod']);
+
+/** Keys that are spelled out in a combo but not in the help panel. */
+const KEY_LABELS: Record<string, string> = { escape: 'Esc' };
 
 export interface ComboMatchInput {
   key: string;
@@ -96,7 +103,7 @@ export function formatCombo(combo: string, isMac: boolean): string {
         if (lower === 'shift') return isMac ? '⇧' : 'Shift';
         return isMac ? '⌥' : 'Alt';
       }
-      return part.trim().toUpperCase();
+      return KEY_LABELS[lower] ?? part.trim().toUpperCase();
     })
     .join(isMac ? '' : '+');
 }

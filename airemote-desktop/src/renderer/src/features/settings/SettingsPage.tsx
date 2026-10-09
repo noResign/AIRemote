@@ -13,7 +13,7 @@ const SOURCE_LABEL: Record<string, string> = {
   'port-scan': '端口探测',
 };
 
-export function SettingsPage() {
+export function SettingsPage({ onBack }: { onBack(): void }) {
   const view = useConnection((state) => state.view);
   const probe = useConnection((state) => state.probe);
   const probing = useConnection((state) => state.probing);
@@ -43,7 +43,12 @@ export function SettingsPage() {
 
   return (
     <div className="settings">
-      <div className="settings-head">设置</div>
+      <div className="settings-head">
+        <button className="btn ghost" onClick={onBack} title="返回（Esc）">
+          ← 返回
+        </button>
+        <span className="title">设置</span>
+      </div>
       <div className="settings-body">
         <section className="settings-section">
           <h3>连接</h3>

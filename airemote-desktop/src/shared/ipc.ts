@@ -12,6 +12,7 @@ export const IPC = {
   connSet: 'daemon:conn:set',
   connClear: 'daemon:conn:clear',
   connProbe: 'daemon:conn:probe',
+  recentList: 'app:recent:list',
   appInfo: 'app:info',
   prefsGet: 'app:prefs:get',
   prefsSet: 'app:prefs:set',
@@ -184,6 +185,18 @@ export type StartStreamResult =
   | { ok: true; streamId: string }
   | { ok: false; httpCode: number | null; apiCode: string | null; message: string };
 
+/**
+ * A daemon this client has connected to before, most recent first.
+ *
+ * Address only — never a token. The connect form fills the address from one of
+ * these so switching machines is a paste, not a retype.
+ */
+export interface RecentConnection {
+  baseUrl: string;
+  name: string | null;
+  lastUsedAt: number;
+}
+
 /** Process/app versions, for the About section. */
 export interface AppInfo {
   appVersion: string;
@@ -246,6 +259,7 @@ export interface AiremoteBridge {
   connSet(input: ConnectInput): Promise<ConnectResult>;
   connClear(): Promise<ConnectionView>;
   connProbe(): Promise<ProbeResult>;
+  recentList(): Promise<RecentConnection[]>;
   appInfo(): Promise<AppInfo>;
   prefsGet(): Promise<AppPrefs>;
   prefsSet(patch: Partial<AppPrefs>): Promise<AppPrefs>;

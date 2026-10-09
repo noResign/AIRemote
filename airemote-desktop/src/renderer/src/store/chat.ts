@@ -24,6 +24,21 @@ export function chatKey(connectionId: string, sessionId: string | null): string 
 let idCounter = 0;
 const nextId = (prefix: string): string => `${prefix}${++idCounter}`;
 
+/**
+ * Which "what is on screen" request is the current one.
+ *
+ * Opening a session is async and the rail stays clickable the whole time, so a
+ * superseded call has to be stopped before it finishes: it would stamp its
+ * (older) history over the newer attempt when both target the same key, and —
+ * worse — attach a live stream for a session nobody is looking at. `detach`
+ * only ever cancels the *current* chat's stream, so that orphan would run until
+ * its run ended by itself.
+ *
+ * Opening takes a number; every path that changes what is on screen bumps it,
+ * which is how "you are stale now" is said.
+ */
+let openSeq = 0;
+
 /** `Omit` over a union collapses its discriminant, so distribute it by hand. */
 type WithoutStreamId<T> = T extends unknown ? Omit<T, 'streamId'> : never;
 type StreamRequest = WithoutStreamId<StreamSpec>;
@@ -75,6 +90,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     // Drop the previous chat's stream first, so its frames cannot land in the
     // conversation we are about to open.
     get().detach();
+    const seq = ++openSeq;
     const key = chatKey(connectionId, sessionId);
     set((state) => ({
       activeKey: key,
@@ -87,6 +103,10 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
 
     const detail = await api.session(sessionId);
+    // A click during that round trip made this call stale: bail before it can
+    // write anything, and — the part that actually leaks — before it attaches a
+    // stream for a session that is no longer open.
+    if (seq !== openSeq) return;
     if (!detail.ok) {
       set((state) => ({
         byKey: patch(state, key, (chat) => ({
@@ -100,6 +120,8 @@ export const useChat = create<ChatStore>((set, get) => ({
 
     const { session, runs, messages } = detail.data;
     const rebuilt = await rebuildHistory(runs, session.runningRunId, messages);
+    // Rebuilding a long transcript is slow enough to be clicked through too.
+    if (seq !== openSeq) return;
     set((state) => ({
       byKey: patch(state, key, (chat) => ({
         ...chat,
@@ -121,6 +143,9 @@ export const useChat = create<ChatStore>((set, get) => ({
 
   startNew(connectionId, options) {
     get().detach();
+    // A session opened a moment ago may still be in flight; it must not attach
+    // its stream behind this blank one.
+    openSeq++;
     const key = chatKey(connectionId, null);
     set((state) => ({
       activeKey: key,
@@ -213,6 +238,8 @@ export const useChat = create<ChatStore>((set, get) => ({
 
   leave() {
     get().detach();
+    // Nothing is on screen now, so an in-flight open must not put anything back.
+    openSeq++;
     set({ activeKey: null });
   },
 
@@ -226,6 +253,9 @@ export const useChat = create<ChatStore>((set, get) => ({
    */
   reset() {
     get().detach();
+    // The target is gone, so any open still in flight is describing a daemon we
+    // have already dropped — it must not attach a stream to it.
+    openSeq++;
     set({ byKey: {}, streamKeys: {}, failedIds: [], activeKey: null });
   },
 

@@ -40,6 +40,13 @@ describe('matchShortcut', () => {
     expect(matchShortcut(key({ key: '?', shiftKey: true }))?.id).toBe('help');
     expect(matchShortcut(key({ key: '?', metaKey: true, shiftKey: true }))).toBeNull();
   });
+
+  it('binds Escape to back', () => {
+    // The event key is "Escape", the combo is spelled "escape" — the table is
+    // only correct if matching is case-insensitive.
+    expect(matchShortcut(key({ key: 'Escape' }))?.id).toBe('back');
+    expect(matchShortcut(key({ key: 'Escape', metaKey: true }))).toBeNull();
+  });
 });
 
 describe('formatCombo', () => {
@@ -47,5 +54,9 @@ describe('formatCombo', () => {
     expect(formatCombo('mod+k', true)).toBe('⌘K');
     expect(formatCombo('mod+k', false)).toBe('Ctrl+K');
     expect(formatCombo('mod+shift+]', true)).toBe('⌘⇧]');
+  });
+
+  it('spells named keys instead of uppercasing them', () => {
+    expect(formatCombo('escape', true)).toBe('Esc');
   });
 });

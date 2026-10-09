@@ -13,7 +13,7 @@ import type { ConnectionManager } from './connection/manager';
 import type { StreamManager } from './streams/manager';
 import type { AppTray } from './tray';
 import { closeNotification, showNotification } from './notify';
-import { loadPrefs, savePrefs } from './settings';
+import { listRecent, loadPrefs, savePrefs } from './settings';
 import { isAllowedMethod, isAllowedPath } from './daemon/proxy';
 
 export interface ShellDeps {
@@ -50,6 +50,9 @@ export function registerIpc(manager: ConnectionManager, streams: StreamManager, 
     return manager.view();
   });
   ipcMain.handle(IPC.connProbe, () => manager.probe());
+  // Addresses only (see `RecentConnection`) — the connect form fills one in so
+  // switching machines is a paste, not a retype.
+  ipcMain.handle(IPC.recentList, () => listRecent());
 
   ipcMain.handle(IPC.appInfo, () => ({
     appVersion: app.getVersion(),

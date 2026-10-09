@@ -2,7 +2,7 @@ import { app, safeStorage } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { isLoopback } from '../shared/net';
-import type { AppPrefs } from '../shared/ipc';
+import type { AppPrefs, RecentConnection } from '../shared/ipc';
 
 export { isLoopback };
 
@@ -17,12 +17,6 @@ export { isLoopback };
  *   back to plaintext — it lives in memory for this session only and the UI says
  *   so.
  */
-export interface RecentConnection {
-  baseUrl: string;
-  name: string | null;
-  lastUsedAt: number;
-}
-
 interface StoredConnection {
   host: string;
   port: number;

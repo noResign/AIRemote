@@ -214,6 +214,12 @@ input.mono {
   margin-top: 6px;
 }
 
+/* Sits directly under the address field it fills, so it keeps the small-caps
+   heading look but not the section spacing. */
+.recent-label {
+  margin: 12px 0 2px;
+}
+
 .recent-item {
   display: flex;
   align-items: center;
@@ -222,10 +228,32 @@ input.mono {
   border-radius: 8px;
   cursor: pointer;
   font-size: 12.5px;
+  /* These rows are buttons (clicking fills the address field): keep the row
+     look and drop the browser's button chrome. */
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
 }
 
 .recent-item:hover {
   background: var(--primary-subtle);
+}
+
+.recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-url {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .badge {
@@ -907,6 +935,10 @@ kbd {
 /* ---------- rails & links ---------- */
 
 .link-btn {
+  /* Flex, not inline: the refresh button holds an SVG, and a baseline-aligned
+     inline box would add descender space under it. */
+  display: inline-flex;
+  align-items: center;
   background: transparent;
   border: none;
   color: var(--text-secondary);
@@ -945,13 +977,18 @@ kbd {
   overflow: auto;
 }
 .settings-head {
-  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  font-weight: 600;
   position: sticky;
   top: 0;
   z-index: 2;
+}
+.settings-head .title {
+  font-weight: 600;
 }
 .settings-body {
   max-width: 760px;
