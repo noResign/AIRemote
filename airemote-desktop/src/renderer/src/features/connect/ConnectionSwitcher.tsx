@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ConnectionView } from '../../../../shared/ipc';
-
-interface Props {
-  view: ConnectionView | null;
-  onAddComputer(): void;
-  onDisconnect(): void;
-}
+import { useConnection } from '../../store/connection';
 
 /**
- * The rail-top connection pill. Spec calls for a switcher
- * (`▾ 我的笔记本（本机） / 家里的台式机 / ＋ 添加电脑…`), but this client only
- * ever holds *one* connection (technical plan §4) — a list of other machines to
- * switch between is the multi-connection work, not a dropdown. So this shows
- * the current target and offers the two actions that actually work today.
+ * The rail-top connection pill, now a real switcher (`▾ 我的笔记本（本机） /
+ * 家里的台式机 / ＋ 添加电脑…`, technical plan §4). Every host in the list is
+ * **already connected** in main — switching is navigation, not a reconnect, so
+ * hopping between machines costs nothing.
  */
-export function ConnectionSwitcher({ view, onAddComputer, onDisconnect }: Props) {
+export function ConnectionSwitcher() {
+  const views = useConnection((state) => state.views);
+  const activeId = useConnection((state) => state.activeId);
+  const switchTo = useConnection((state) => state.switchTo);
+  const addHost = useConnection((state) => state.addHost);
+  const removeHost = useConnection((state) => state.removeHost);
+
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -34,46 +33,54 @@ export function ConnectionSwitcher({ view, onAddComputer, onDisconnect }: Props)
     };
   }, [open]);
 
-  const label = view?.name ?? view?.baseUrl ?? '未连接';
+  const active = views.find((view) => view.id === activeId) ?? null;
+  const label = active?.name ?? active?.baseUrl ?? '未选择主机';
 
   return (
     <div className="conn-switch" ref={ref}>
-      <button className="conn-pill" onClick={() => setOpen((value) => !value)} title={view?.baseUrl ?? ''}>
-        <span className={`dot ${view?.connected ? 'ok' : 'warn'}`} />
+      <button className="conn-pill" onClick={() => setOpen((value) => !value)} title={active?.baseUrl ?? ''}>
+        <span className={`dot ${active?.connected ? 'ok' : 'warn'}`} />
         <span className="conn-name">{label}</span>
         <span className="chevron">▾</span>
       </button>
 
       {open && (
         <div className="conn-menu">
-          <div className="conn-current">
-            <div className="mono">{view?.baseUrl ?? '未连接'}</div>
-            <div className="hint">
-              {view?.connected ? '已连接' : '未连接'}
-              {view?.tokenSource && ` · token 来自 ${view.tokenSource}`}
-              {view?.tokenEphemeral && ' · 仅本次会话'}
+          {views.map((view) => (
+            <div key={view.id} className={`conn-row${view.id === activeId ? ' active' : ''}`}>
+              <button
+                className="conn-pick"
+                title={view.baseUrl ?? ''}
+                onClick={() => {
+                  setOpen(false);
+                  switchTo(view.id);
+                }}
+              >
+                <span className={`dot ${view.connected ? 'ok' : 'err'}`} />
+                <span className="conn-row-name">{view.name ?? view.baseUrl ?? view.id}</span>
+                {!view.connected && (
+                  <span className="hint" style={{ margin: 0 }}>
+                    {view.error ?? '未连接'}
+                  </span>
+                )}
+              </button>
+              <button className="icon-btn danger" title="移除这台主机" onClick={() => void removeHost(view.id)}>
+                ✕
+              </button>
             </div>
-          </div>
+          ))}
+
           <button
             className="ctx-item"
             onClick={() => {
               setOpen(false);
-              onAddComputer();
+              addHost();
             }}
           >
             ＋ 添加电脑…
           </button>
-          <button
-            className="ctx-item danger"
-            onClick={() => {
-              setOpen(false);
-              onDisconnect();
-            }}
-          >
-            断开连接
-          </button>
           <div className="hint conn-note">
-            一次只连一个 daemon；在多台电脑之间切换属于多连接能力（技术方案 §4）。
+            所有主机保持连接；切换只是换作用域，不会重连。多窗口可并排看两台。
           </div>
         </div>
       )}

@@ -9,6 +9,8 @@ export const IPC = {
   boot: 'app:boot',
   request: 'daemon:request',
   connGet: 'daemon:conn:get',
+  connList: 'daemon:conn:list',
+  connRemove: 'daemon:conn:remove',
   connSet: 'daemon:conn:set',
   connClear: 'daemon:conn:clear',
   connProbe: 'daemon:conn:probe',
@@ -20,6 +22,9 @@ export const IPC = {
   notify: 'app:notify',
   notifyClose: 'app:notify:close',
   selectSession: 'app:select-session',
+  setActiveSession: 'app:set-active-session',
+  openSessionWindow: 'app:open-session-window',
+  focusSession: 'app:focus-session',
   streamStart: 'stream:start',
   streamCancel: 'stream:cancel',
   streamEvent: 'stream:event',
@@ -30,6 +35,12 @@ export type HttpMethod = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 /** A request the renderer asks main to replay against the daemon. */
 export interface DaemonRequest {
   method: HttpMethod;
+  /**
+   * Which daemon to talk to. Main keeps several connections alive (§4), so a
+   * request without one is ambiguous — the renderer always fills it in from the
+   * connection it is currently scoped to.
+   */
+  connectionId: string;
   /** Must be a relative `/api/...` path; main rejects anything else. */
   path: string;
   query?: Record<string, string | number | boolean | undefined>;
@@ -89,6 +100,8 @@ export interface LocalTokenHint {
 }
 
 export interface ConnectionView {
+  /** `http(s)://host:port` — also the key every renderer store is scoped by. */
+  id: string;
   baseUrl: string | null;
   /**
    * A usable client exists. Deliberately separate from `baseUrl`: a restored
@@ -106,6 +119,8 @@ export interface ConnectionView {
   tokenEphemeral: boolean;
   /** Where the token came from when it was auto-read, so the UI can say so. */
   tokenSource: string | null;
+  /** Why this host is not usable, when it isn't — shown in the switcher. */
+  error?: string | null;
 }
 
 export interface ConnectInput {
@@ -126,7 +141,10 @@ export type ConnectResult =
   | { ok: false; code: string; message: string };
 
 export interface BootstrapResult {
-  view: ConnectionView;
+  /** Every connection main restored, each with its own status. */
+  connections: ConnectionView[];
+  /** Which one the previous session was scoped to, if it is still in the list. */
+  activeId: string | null;
   probe: ProbeResult;
   /** True when bootstrap auto-attached to a discovered local daemon. */
   autoAttached: boolean;
@@ -142,6 +160,8 @@ export interface BootstrapResult {
 export interface ChatStreamSpec {
   kind: 'chat';
   streamId: string;
+  /** Which connection this run belongs to — main holds several at once (§4). */
+  connectionId: string;
   /** null = a new session, created by this very request. */
   sessionId: string | null;
   prompt: string;
@@ -155,6 +175,7 @@ export interface ChatStreamSpec {
 export interface AttachStreamSpec {
   kind: 'attach';
   streamId: string;
+  connectionId: string;
   runId: string;
   after: number | null;
 }
@@ -255,9 +276,14 @@ export interface AiremoteBridge {
   platform: string;
   boot(): Promise<BootstrapResult>;
   request(req: DaemonRequest): Promise<DaemonResponse>;
-  connGet(): Promise<ConnectionView>;
+  connGet(): Promise<ConnectionView | null>;
+  /** Every connection main holds, with per-host status — the rail's switcher. */
+  connList(): Promise<ConnectionView[]>;
+  /** Drop one connection (and its streams). Returns what is left. */
+  connRemove(id: string): Promise<ConnectionView[]>;
   connSet(input: ConnectInput): Promise<ConnectResult>;
-  connClear(): Promise<ConnectionView>;
+  /** Drop one connection; `null` drops every one of them. Returns what is left. */
+  connClear(id?: string): Promise<ConnectionView[]>;
   connProbe(): Promise<ProbeResult>;
   recentList(): Promise<RecentConnection[]>;
   appInfo(): Promise<AppInfo>;
@@ -269,6 +295,12 @@ export interface AiremoteBridge {
   notifyClose(id: string): Promise<void>;
   /** Tray / notification click asked for a session: focus the window and open it. */
   onSelectSession(listener: (sessionId: string) => void): () => void;
+  /** Tell main which session this window shows — the notification rule needs it (§7.4). */
+  setActiveSession(sessionId: string | null): Promise<void>;
+  /** Open a second window pinned to this session (§7.3). */
+  openSessionWindow(sessionId: string): Promise<void>;
+  /** The session this window was opened for, consumed once at boot. */
+  focusSession(): Promise<string | null>;
   streamStart(spec: StreamSpec): Promise<StartStreamResult>;
   streamCancel(input: StreamCancelInput): Promise<void>;
   /** Subscribe to stream events; returns an unsubscribe function. */

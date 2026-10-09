@@ -5,7 +5,7 @@ import { AppShell } from './features/shell/AppShell';
 import { startStreamBridge } from './bridge/streamBridge';
 
 export function App() {
-  const view = useConnection((s) => s.view);
+  const active = useConnection((s) => s.views.find((view) => view.id === s.activeId) ?? null);
   const booting = useConnection((s) => s.booting);
   const boot = useConnection((s) => s.boot);
 
@@ -15,8 +15,9 @@ export function App() {
     void boot();
   }, [boot]);
 
-  if (booting && !view) return <div className="boot">正在启动…</div>;
+  if (booting && !active) return <div className="boot">正在启动…</div>;
   // `connected`, not `baseUrl`: a restored target without a token is an
-  // address we cannot talk to yet.
-  return view?.connected ? <AppShell /> : <ConnectPage />;
+  // address we cannot talk to yet. No active host also lands here — that is how
+  // 「＋ 添加电脑」 shows the connect form without dropping the others (§4).
+  return active?.connected ? <AppShell /> : <ConnectPage />;
 }

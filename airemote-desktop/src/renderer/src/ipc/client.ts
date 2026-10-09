@@ -42,15 +42,32 @@ export interface ClaudeSessionSummary {
  * from shared/routes.ts so a typo fails the build here rather than 404ing at
  * runtime.
  */
-async function request<T>(req: DaemonRequest): Promise<DaemonResponse<T>> {
-  return (await window.airemote.request(req)) as DaemonResponse<T>;
+/**
+ * Which daemon API calls go to. Main holds several connections at once (§4), so
+ * every request must name one; the connection store keeps this in step with the
+ * host the rail and main area are scoped to. Kept here rather than threaded
+ * through ~25 call sites that all target "whatever is on screen".
+ */
+let activeConnectionId: string | null = null;
+
+export function setActiveConnectionId(id: string | null): void {
+  activeConnectionId = id;
+}
+
+async function request<T>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {
+  if (!activeConnectionId) {
+    return { status: 0, ok: false, data: { error: 'not_connected', message: '尚未连接 daemon' } } as DaemonResponse<T>;
+  }
+  return (await window.airemote.request({ ...req, connectionId: activeConnectionId })) as DaemonResponse<T>;
 }
 
 export const connectionApi = {
   boot: () => window.airemote.boot(),
   get: () => window.airemote.connGet(),
+  list: () => window.airemote.connList(),
+  remove: (id: string) => window.airemote.connRemove(id),
   set: (input: ConnectInput) => window.airemote.connSet(input),
-  clear: () => window.airemote.connClear(),
+  clear: (id?: string) => window.airemote.connClear(id),
   probe: () => window.airemote.connProbe(),
   recent: () => window.airemote.recentList(),
   streamStart: (spec: StreamSpec) => window.airemote.streamStart(spec),

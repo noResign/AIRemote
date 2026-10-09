@@ -11,9 +11,11 @@ import type { StartStreamResult, StreamCancelInput, StreamEvent, StreamSpec } fr
  */
 export class StreamManager {
   private readonly streams = new Map<string, RunStreamer>();
+  /** streamId → the connection it belongs to, so a host can be dropped cleanly. */
+  private readonly owners = new Map<string, string>();
 
   constructor(
-    private readonly getClient: () => DaemonClient | null,
+    private readonly getClient: (connectionId: string) => DaemonClient | null,
     private readonly send: (event: StreamEvent) => void,
     private readonly sleep: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
@@ -22,7 +24,7 @@ export class StreamManager {
   ) {}
 
   async start(spec: StreamSpec): Promise<StartStreamResult> {
-    const client = this.getClient();
+    const client = this.getClient(spec.connectionId);
     if (!client) {
       return { ok: false, httpCode: null, apiCode: 'not_connected', message: '尚未连接 daemon' };
     }
@@ -38,11 +40,16 @@ export class StreamManager {
       sleep: this.sleep,
       finished: () => {
         this.streams.delete(streamId);
+        this.owners.delete(streamId);
       },
     });
     this.streams.set(streamId, streamer);
+    this.owners.set(streamId, spec.connectionId);
     const result = await streamer.start(spec);
-    if (!result.ok) this.streams.delete(streamId);
+    if (!result.ok) {
+      this.streams.delete(streamId);
+      this.owners.delete(streamId);
+    }
     return result;
   }
 
@@ -52,12 +59,24 @@ export class StreamManager {
     if (!streamer) return;
     streamer.cancel(input.abortRun);
     this.streams.delete(input.streamId);
+    this.owners.delete(input.streamId);
+  }
+
+  /** Detach one host's streams — used when that connection is removed. */
+  cancelFor(connectionId: string): void {
+    for (const [streamId, owner] of [...this.owners]) {
+      if (owner !== connectionId) continue;
+      this.streams.get(streamId)?.cancel(false);
+      this.streams.delete(streamId);
+      this.owners.delete(streamId);
+    }
   }
 
   /** Detach everything without touching any run — used when switching daemons. */
   cancelAll(): void {
     for (const streamer of this.streams.values()) streamer.cancel(false);
     this.streams.clear();
+    this.owners.clear();
   }
 
   private async probeRunActive(client: DaemonClient, runId: string): Promise<boolean | null> {

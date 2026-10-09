@@ -24,8 +24,10 @@ const api: AiremoteBridge = {
   boot: () => ipcRenderer.invoke(IPC.boot),
   request: (req: DaemonRequest) => ipcRenderer.invoke(IPC.request, req),
   connGet: () => ipcRenderer.invoke(IPC.connGet),
+  connList: () => ipcRenderer.invoke(IPC.connList),
+  connRemove: (id: string) => ipcRenderer.invoke(IPC.connRemove, id),
   connSet: (input: ConnectInput) => ipcRenderer.invoke(IPC.connSet, input),
-  connClear: () => ipcRenderer.invoke(IPC.connClear),
+  connClear: (id?: string) => ipcRenderer.invoke(IPC.connClear, id),
   connProbe: () => ipcRenderer.invoke(IPC.connProbe),
   recentList: () => ipcRenderer.invoke(IPC.recentList),
   appInfo: () => ipcRenderer.invoke(IPC.appInfo),
@@ -39,6 +41,9 @@ const api: AiremoteBridge = {
     ipcRenderer.on(IPC.selectSession, handler);
     return () => ipcRenderer.removeListener(IPC.selectSession, handler);
   },
+  setActiveSession: (sessionId: string | null) => ipcRenderer.invoke(IPC.setActiveSession, sessionId),
+  openSessionWindow: (sessionId: string) => ipcRenderer.invoke(IPC.openSessionWindow, sessionId),
+  focusSession: () => ipcRenderer.invoke(IPC.focusSession),
   streamStart: (spec: StreamSpec) => ipcRenderer.invoke(IPC.streamStart, spec),
   streamCancel: (input: StreamCancelInput) => ipcRenderer.invoke(IPC.streamCancel, input),
   onStream: (listener: (event: StreamEvent) => void) => {

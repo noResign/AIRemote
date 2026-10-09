@@ -12,7 +12,7 @@ import type {
 
 /** Connection gate. Discovery of a same-machine daemon is the primary path. */
 export function ConnectPage() {
-  const view = useConnection((s) => s.view);
+  const view = useConnection((s) => s.views.find((item) => item.id === s.activeId) ?? null);
   const probe = useConnection((s) => s.probe);
   const probing = useConnection((s) => s.probing);
   const connecting = useConnection((s) => s.connecting);
@@ -20,7 +20,7 @@ export function ConnectPage() {
   const errorCode = useConnection((s) => s.errorCode);
   const probeNow = useConnection((s) => s.probeNow);
   const connect = useConnection((s) => s.connect);
-  const disconnect = useConnection((s) => s.disconnect);
+  const disconnectAll = useConnection((s) => s.disconnectAll);
 
   const [address, setAddress] = useState('');
   const [token, setToken] = useState('');
@@ -166,7 +166,7 @@ export function ConnectPage() {
         </div>
 
         {view?.connected && (
-          <button className="btn full" style={{ marginTop: 12 }} onClick={() => void disconnect()}>
+          <button className="btn full" style={{ marginTop: 12 }} onClick={() => void disconnectAll()}>
             当前已连接 {view.name ?? view.baseUrl}，断开重连
           </button>
         )}

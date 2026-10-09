@@ -139,7 +139,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     }));
 
     if (session.running && session.runningRunId) {
-      await attachRun(set, key, session.runningRunId);
+      await attachRun(set, key, connectionId, session.runningRunId);
     }
   },
 
@@ -188,6 +188,7 @@ export const useChat = create<ChatStore>((set, get) => ({
     // A new session's first prompt is what creates the session server-side.
     const spec: Omit<ChatStreamSpec, 'streamId'> = {
       kind: 'chat',
+      connectionId: chat.connectionId,
       sessionId: chat.sessionId,
       prompt,
       runtime: chat.pendingNew?.runtime ?? chat.runtime ?? undefined,
@@ -364,10 +365,9 @@ export const useChat = create<ChatStore>((set, get) => ({
       const updated = get().byKey[key];
       if (updated) {
         const session = { id: updated.sessionId, title: updated.title };
-        const activeSessionId = get().activeSessionId();
         for (const permissionId of updated.permissions.seenIds.slice(before)) {
           const pending = findPending(updated, permissionId);
-          if (pending) notifyPermission(pending, session, activeSessionId);
+          if (pending) notifyPermission(pending, session);
         }
         for (const frame of event.frames) {
           const e = frame.event;
@@ -417,13 +417,7 @@ export const useChat = create<ChatStore>((set, get) => ({
         }));
       }
       if (event.outcome !== 'cancelled') {
-        notifyRunFinished(
-          event.outcome,
-          runIdBeforeClose,
-          { id: chat.sessionId, title: chat.title },
-          chat.error,
-          get().activeSessionId(),
-        );
+        notifyRunFinished(event.outcome, runIdBeforeClose, { id: chat.sessionId, title: chat.title }, chat.error);
       }
       void useSessions.getState().load(chat.connectionId, undefined);
     }
@@ -445,7 +439,7 @@ function phaseOf(phase: string): ChatPhaseValue {
 }
 type ChatPhaseValue = ChatSessionState['phase'];
 
-async function attachRun(set: SetState, key: string, runId: string): Promise<void> {
+async function attachRun(set: SetState, key: string, connectionId: string, runId: string): Promise<void> {
   set((state) => ({
     byKey: patch(state, key, (chat) => {
       const last = chat.messages[chat.messages.length - 1];
@@ -453,7 +447,7 @@ async function attachRun(set: SetState, key: string, runId: string): Promise<voi
       return { ...chat, messages: [...chat.messages, newAssistant(nextId('a'))] };
     }),
   }));
-  const attach: Omit<AttachStreamSpec, 'streamId'> = { kind: 'attach', runId, after: null };
+  const attach: Omit<AttachStreamSpec, 'streamId'> = { kind: 'attach', connectionId, runId, after: null };
   await startStream(set, key, attach);
 }
 

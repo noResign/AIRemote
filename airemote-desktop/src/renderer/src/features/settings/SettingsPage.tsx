@@ -48,11 +48,11 @@ export function SettingsPage({
   section: SettingsSection;
   onSectionChange(next: SettingsSection): void;
 }) {
-  const view = useConnection((state) => state.view);
+  const view = useConnection((state) => state.views.find((item) => item.id === state.activeId) ?? null);
   const probe = useConnection((state) => state.probe);
   const probing = useConnection((state) => state.probing);
   const probeNow = useConnection((state) => state.probeNow);
-  const disconnect = useConnection((state) => state.disconnect);
+  const disconnectAll = useConnection((state) => state.disconnectAll);
 
   const theme = useAppearance((state) => state.theme);
   const zoom = useAppearance((state) => state.zoom);
@@ -118,8 +118,8 @@ export function SettingsPage({
                   <button className="btn" disabled={probing} onClick={() => void probeNow()}>
                     {probing ? '探测中…' : '重新探测本机 daemon'}
                   </button>
-                  <button className="btn danger" onClick={() => void disconnect()}>
-                    断开连接
+                  <button className="btn danger" onClick={() => void disconnectAll()}>
+                    断开全部连接
                   </button>
                 </div>
               </section>

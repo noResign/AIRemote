@@ -4,7 +4,6 @@ import {
   permissionNotification,
   permissionNotificationId,
   runNotificationId,
-  shouldNotify,
   summarizeTool,
 } from './notifications';
 import type { PendingPermission } from '../store/chat/types';
@@ -19,21 +18,6 @@ function permission(over: Partial<PendingPermission> = {}): PendingPermission {
     ...over,
   };
 }
-
-describe('shouldNotify', () => {
-  it('stays quiet while the user is looking at that very session', () => {
-    expect(shouldNotify({ windowFocused: true, activeSessionId: 's1', sessionId: 's1' })).toBe(false);
-  });
-
-  it('speaks up for a different session even with the window focused', () => {
-    expect(shouldNotify({ windowFocused: true, activeSessionId: 's2', sessionId: 's1' })).toBe(true);
-    expect(shouldNotify({ windowFocused: true, activeSessionId: null, sessionId: 's1' })).toBe(true);
-  });
-
-  it('speaks up whenever the window is in the background', () => {
-    expect(shouldNotify({ windowFocused: false, activeSessionId: 's1', sessionId: 's1' })).toBe(true);
-  });
-});
 
 describe('notification identity', () => {
   it('keys by permission, not by session', () => {

@@ -2,7 +2,6 @@ import {
   finishNotification,
   permissionNotification,
   permissionNotificationId,
-  shouldNotify,
   type FinishedOutcome,
 } from './notifications';
 import type { PendingPermission } from '../store/chat/types';
@@ -16,20 +15,12 @@ interface SessionRef {
   title: string | null;
 }
 
-function context(): { windowFocused: boolean } {
-  return { windowFocused: document.hasFocus() };
-}
-
-export function notifyPermission(permission: PendingPermission, session: SessionRef, activeSessionId: string | null): void {
-  if (
-    !shouldNotify({
-      windowFocused: context().windowFocused,
-      activeSessionId,
-      sessionId: session.id,
-    })
-  ) {
-    return;
-  }
+/**
+ * Whether to bother the user is decided in the main process, which is the only
+ * place that can see every window (`shared/notifyDecision.ts`). The renderer
+ * just reports; main drops what would be redundant.
+ */
+export function notifyPermission(permission: PendingPermission, session: SessionRef): void {
   void window.airemote.notify(permissionNotification(permission, session));
 }
 
@@ -47,17 +38,7 @@ export function notifyRunFinished(
   runId: string | null,
   session: SessionRef,
   error: string | null,
-  activeSessionId: string | null,
 ): void {
-  if (
-    !shouldNotify({
-      windowFocused: context().windowFocused,
-      activeSessionId,
-      sessionId: session.id,
-    })
-  ) {
-    return;
-  }
   const payload = finishNotification(outcome, runId, session, error);
   if (payload) void window.airemote.notify(payload);
 }

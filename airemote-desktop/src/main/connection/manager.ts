@@ -30,66 +30,109 @@ interface Target {
   name: string | null;
 }
 
+interface Entry {
+  target: Target;
+  token: string | null;
+  client: DaemonClient | null;
+  /** Why a connect attempt failed, so the switcher can say more than "未连接". */
+  error: string | null;
+  /** The token was read from a local file rather than typed by the user. */
+  localTokenSource: string | null;
+}
+
 /**
- * Owns the single active daemon connection. Only one at a time in M1; the state
- * key that matters (`connectionId`) exists from day one so "watch two machines
- * at once" is later an added subscriber, not a rewrite.
+ * Holds every daemon the user is connected to — the plan's §4: 每 host 一条连接，
+ * 全部保持连接，「切换」只是导航. The renderer scopes its rail and main area by
+ * `connectionId`; switching hosts therefore costs nothing to re-establish.
+ *
+ * Main is the only place a token lives, so this is also the only place that can
+ * reach a daemon at all.
  */
 export class ConnectionManager {
-  private target: Target | null = null;
-  private token: string | null = null;
-  private client: DaemonClient | null = null;
+  private readonly entries = new Map<string, Entry>();
   private lastProbe: ProbeResult | null = null;
   private lastProbedAt = 0;
-  /** The token was read from a local file rather than typed by the user. */
-  private localTokenSource: string | null = null;
 
-  clientOrNull(): DaemonClient | null {
-    return this.client;
+  ids(): string[] {
+    return [...this.entries.keys()];
   }
 
-  view(): ConnectionView {
-    const t = this.target;
+  clientFor(id: string): DaemonClient | null {
+    return this.entries.get(id)?.client ?? null;
+  }
+
+  views(): ConnectionView[] {
+    return [...this.entries.entries()].map(([id, entry]) => this.viewOf(id, entry));
+  }
+
+  view(id: string): ConnectionView | null {
+    const entry = this.entries.get(id);
+    return entry ? this.viewOf(id, entry) : null;
+  }
+
+  private viewOf(id: string, entry: Entry): ConnectionView {
+    const t = entry.target;
     return {
-      baseUrl: t ? baseUrlOf(`${dialHost(t.host)}:${t.port}`, t.tls) : null,
-      connected: this.client !== null,
-      name: t?.name ?? null,
-      host: t?.host ?? null,
-      port: t?.port ?? null,
-      tls: t?.tls ?? false,
-      hasToken: this.token !== null,
-      tokenEphemeral: t !== null && !settings.isLoopback(t.host) && !safeStorage.isEncryptionAvailable(),
-      tokenSource: this.localTokenSource,
+      id,
+      baseUrl: baseUrlOf(`${dialHost(t.host)}:${t.port}`, t.tls),
+      connected: entry.client !== null,
+      name: t.name,
+      host: t.host,
+      port: t.port,
+      tls: t.tls,
+      hasToken: entry.token !== null,
+      tokenEphemeral: !settings.isLoopback(t.host) && !safeStorage.isEncryptionAvailable(),
+      tokenSource: entry.localTokenSource,
+      error: entry.error,
     };
   }
 
   /**
-   * Restore the previous target, run discovery, and auto-attach to a local
+   * Restore every remembered target, run discovery, and auto-attach to a local
    * daemon when one is found and its token is readable. Nothing is spawned:
    * "not discovered" is a question for the user, never a reason to start a
    * second daemon.
+   *
+   * Restored hosts connect in parallel and best-effort: an unreachable one stays
+   * in the list with an error so the switcher can show it as down, rather than
+   * disappearing or blocking the local one.
    */
   async bootstrap(): Promise<BootstrapResult> {
-    const stored = settings.loadConnection();
-    if (stored) {
-      this.applyTarget(
-        { host: stored.target.host, port: stored.target.port, tls: stored.target.tls, name: stored.target.name },
-        stored.token,
-      );
+    const stored = settings.loadConnections();
+    for (const { target, token } of stored) {
+      this.applyTarget({ host: target.host, port: target.port, tls: target.tls, name: target.name }, token);
     }
     const probe = await this.probe();
+
     let autoAttached = false;
     const foundAt = probe.found ? splitListen(probe.found.listen) : null;
-    if (!this.client && probe.found && foundAt) {
-      const result = await this.connect({
-        host: foundAt.host,
-        port: foundAt.port,
-        tls: probe.found.tls,
-        name: discoveredName(probe.found),
-      });
-      autoAttached = result.ok;
+    if (probe.found && foundAt) {
+      const id = settings.connectionId({ ...foundAt, tls: probe.found.tls, name: null });
+      if (!this.entries.get(id)?.client) {
+        const result = await this.connect({
+          host: foundAt.host,
+          port: foundAt.port,
+          tls: probe.found.tls,
+          name: discoveredName(probe.found),
+        });
+        autoAttached = result.ok;
+      }
     }
-    return { view: this.view(), probe, autoAttached };
+
+    // Hosts that were only restored (no client yet) get a background attempt.
+    void Promise.all(
+      this.ids()
+        .filter((id) => !this.entries.get(id)?.client)
+        .map((id) => this.reconnect(id)),
+    );
+
+    const saved = settings.loadActiveConnectionId();
+    return {
+      connections: this.views(),
+      activeId: saved && this.entries.has(saved) ? saved : (this.ids()[0] ?? null),
+      probe,
+      autoAttached,
+    };
   }
 
   async probe(): Promise<ProbeResult> {
@@ -108,12 +151,12 @@ export class ConnectionManager {
     const tls = input.tls ?? false;
 
     let token = input.token?.trim() || null;
-    this.localTokenSource = null;
+    let source: string | null = null;
     if (!token) {
       const local = this.readLocalToken(host, port, tls);
       if (local) {
         token = local.token;
-        this.localTokenSource = local.source;
+        source = local.source;
       }
     }
     if (!token) {
@@ -136,23 +179,61 @@ export class ConnectionManager {
     }
 
     const target: Target = { host, port, tls, name: input.name ?? null };
-    this.applyTarget(target, token);
+    this.applyTarget(target, token, source);
     settings.saveConnection(target, token);
-    return { ok: true, view: this.view() };
+    settings.saveActiveConnectionId(settings.connectionId(target));
+    const id = settings.connectionId(target);
+    return { ok: true, view: this.view(id) as ConnectionView };
   }
 
-  clear(): void {
-    this.target = null;
-    this.token = null;
-    this.client = null;
-    this.localTokenSource = null;
-    settings.clearConnection();
+  /** Re-dial a restored connection using the token we already hold for it. */
+  private async reconnect(id: string): Promise<void> {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    try {
+      const health = await probeHealth(baseUrlOf(`${entry.target.host}:${entry.target.port}`, entry.target.tls), 2000);
+      if (!health) {
+        entry.error = '连不上';
+        return;
+      }
+      entry.client = entry.token
+        ? new DaemonClient({ baseUrl: baseUrlOf(`${entry.target.host}:${entry.target.port}`, entry.target.tls), token: entry.token })
+        : null;
+      entry.error = entry.client ? null : '缺少 token';
+    } catch {
+      entry.error = '连不上';
+    }
   }
 
-  private applyTarget(target: Target, token: string | null): void {
-    this.target = target;
-    this.token = token;
-    this.client = token ? new DaemonClient({ baseUrl: baseUrlOf(`${target.host}:${target.port}`, target.tls), token }) : null;
+  async disconnect(id: string): Promise<void> {
+    this.entries.delete(id);
+    settings.removeConnection(id);
+    if (settings.loadActiveConnectionId() === id) {
+      settings.saveActiveConnectionId(this.ids()[0] ?? null);
+    }
+  }
+
+  clear(id?: string): void {
+    if (id) {
+      this.entries.delete(id);
+      settings.removeConnection(id);
+      return;
+    }
+    this.entries.clear();
+    settings.clearConnections();
+  }
+
+  private applyTarget(target: Target, token: string | null, localTokenSource: string | null = null): void {
+    const id = settings.connectionId(target);
+    this.entries.set(id, {
+      target,
+      token,
+      localTokenSource,
+      error: null,
+      client: token
+        ? new DaemonClient({ baseUrl: baseUrlOf(`${target.host}:${target.port}`, target.tls), token })
+        : null,
+    });
     settings.rememberConnection(baseUrlOf(`${target.host}:${target.port}`, target.tls), target.name);
   }
 

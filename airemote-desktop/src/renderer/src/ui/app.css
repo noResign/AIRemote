@@ -2557,3 +2557,40 @@ a.btn {
   display: flex;
   min-height: 0;
 }
+
+/* ---------- connection switcher rows (multi-host, plan §4) ---------- */
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.conn-row.active {
+  background: var(--primary-subtle);
+  border-radius: 7px;
+}
+.conn-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.conn-pick:hover {
+  background: var(--surface-2);
+}
+.conn-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

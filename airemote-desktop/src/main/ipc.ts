@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../shared/ipc';
 import type {
   AppPrefs,
@@ -11,6 +11,8 @@ import type {
 } from '../shared/ipc';
 import type { ConnectionManager } from './connection/manager';
 import type { StreamManager } from './streams/manager';
+import type { WindowRegistry } from './windows';
+import { shouldNotify } from '../shared/notifyDecision';
 import type { AppTray } from './tray';
 import { closeNotification, showNotification } from './notify';
 import { listRecent, loadPrefs, savePrefs } from './settings';
@@ -20,34 +22,45 @@ export interface ShellDeps {
   tray: AppTray;
   showWindow(sessionId?: string): void;
   quitApp(): void;
+  openSessionWindow(sessionId: string): void;
 }
 
 /** Wire the renderer-facing IPC surface. Validation lives here, not in preload. */
-export function registerIpc(manager: ConnectionManager, streams: StreamManager, shell: ShellDeps): void {
+export function registerIpc(
+  manager: ConnectionManager,
+  streams: StreamManager,
+  shell: ShellDeps,
+  registry: WindowRegistry,
+): void {
   ipcMain.handle(IPC.boot, () => manager.bootstrap());
 
   ipcMain.handle(IPC.request, (_event, req: DaemonRequest) => {
     if (!req || typeof req.path !== 'string' || !isAllowedPath(req.path) || !isAllowedMethod(req.method)) {
       return { status: 0, ok: false, data: { error: 'bad_request', message: '非法请求' } };
     }
-    const client = manager.clientOrNull();
+    const client = typeof req.connectionId === 'string' ? manager.clientFor(req.connectionId) : null;
     if (!client) {
       return { status: 0, ok: false, data: { error: 'not_connected', message: '尚未连接 daemon' } };
     }
     return client.request(req);
   });
 
-  ipcMain.handle(IPC.connGet, () => manager.view());
-  ipcMain.handle(IPC.connSet, (_event, input: ConnectInput) => {
-    // Switching daemons must drop the old connection's streams first, or frames
-    // from a daemon we no longer talk to would leak into the new session list.
-    streams.cancelAll();
-    return manager.connect(input);
+  ipcMain.handle(IPC.connGet, () => manager.views()[0] ?? null);
+  ipcMain.handle(IPC.connList, () => manager.views());
+  ipcMain.handle(IPC.connRemove, async (_event, id: unknown) => {
+    if (typeof id === 'string' && id) {
+      streams.cancelFor(id);
+      await manager.disconnect(id);
+    }
+    return manager.views();
   });
-  ipcMain.handle(IPC.connClear, () => {
-    streams.cancelAll();
-    manager.clear();
-    return manager.view();
+  // Adding a host must not disturb the others (§4: 全部保持连接).
+  ipcMain.handle(IPC.connSet, (_event, input: ConnectInput) => manager.connect(input));
+  ipcMain.handle(IPC.connClear, (_event, id: unknown) => {
+    if (typeof id === 'string' && id) streams.cancelFor(id);
+    else streams.cancelAll();
+    manager.clear(typeof id === 'string' && id ? id : undefined);
+    return manager.views();
   });
   ipcMain.handle(IPC.connProbe, () => manager.probe());
   // Addresses only (see `RecentConnection`) — the connect form fills one in so
@@ -72,12 +85,27 @@ export function registerIpc(manager: ConnectionManager, streams: StreamManager, 
     if (!loadPrefs().desktopNotifications) return;
     const clean = sanitizeNotify(input);
     if (!clean) return;
+    // Suppression needs every window (§7.4): a renderer can only see itself, and
+    // with two windows open would announce a session the other one is showing.
+    if (!shouldNotify(registry.views(), clean.sessionId)) return;
     showNotification(clean, (sessionId) => shell.showWindow(sessionId ?? undefined));
   });
 
   ipcMain.handle(IPC.notifyClose, (_event, id: string) => {
     if (typeof id === 'string') closeNotification(id);
   });
+
+  ipcMain.handle(IPC.setActiveSession, (event, sessionId: unknown) => {
+    registry.setSession(BrowserWindow.fromWebContents(event.sender), typeof sessionId === 'string' ? sessionId : null);
+  });
+
+  ipcMain.handle(IPC.openSessionWindow, (_event, sessionId: unknown) => {
+    if (typeof sessionId === 'string' && sessionId) shell.openSessionWindow(sessionId);
+  });
+
+  ipcMain.handle(IPC.focusSession, (event) =>
+    registry.takePending(BrowserWindow.fromWebContents(event.sender)),
+  );
 
   ipcMain.handle(IPC.streamStart, (_event, spec: StreamSpec) => {
     if (!spec || (spec.kind !== 'chat' && spec.kind !== 'attach')) {

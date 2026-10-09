@@ -58,7 +58,7 @@ export class DaemonClient {
    * Open a raw response without reading it — used by the streamer, which needs
    * the body as a stream rather than a parsed value.
    */
-  open(req: DaemonRequest, signal: AbortSignal): Promise<Response> {
+  open(req: Omit<DaemonRequest, 'connectionId'>, signal: AbortSignal): Promise<Response> {
     const hasBody = req.body !== undefined;
     return fetch(buildUrl(this.target.baseUrl, req.path, req.query), {
       method: req.method,
@@ -71,7 +71,12 @@ export class DaemonClient {
     });
   }
 
-  async request<T = unknown>(req: DaemonRequest): Promise<DaemonResponse<T>> {
+  /**
+   * A client already belongs to one connection, so it does not need to be told
+   * which daemon a request is for — main's IPC layer strips that field before
+   * handing the request over.
+   */
+  async request<T = unknown>(req: Omit<DaemonRequest, 'connectionId'>): Promise<DaemonResponse<T>> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), req.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     try {

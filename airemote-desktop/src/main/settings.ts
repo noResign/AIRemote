@@ -27,16 +27,24 @@ interface StoredConnection {
 }
 
 interface SettingsFile {
-  connection: StoredConnection | null;
+  /** Every daemon the user has connected to; main keeps them all alive (§4). */
+  connections: StoredConnection[];
+  /** Which one the UI was scoped to last. */
+  activeConnectionId: string | null;
   recent: RecentConnection[];
   prefs: AppPrefs;
 }
 
-const EMPTY: SettingsFile = { connection: null, recent: [], prefs: { closeBehavior: 'ask', desktopNotifications: true } };
+const EMPTY: SettingsFile = {
+  connections: [],
+  activeConnectionId: null,
+  recent: [],
+  prefs: { closeBehavior: 'ask', desktopNotifications: true },
+};
 const MAX_RECENT = 5;
 
-/** Token kept only for this process lifetime (no keyring, or loopback). */
-let memoryToken: string | null = null;
+/** Tokens kept only for this process lifetime (no keyring, or loopback), by connection id. */
+const memoryTokens = new Map<string, string>();
 
 function settingsPath(): string {
   return path.join(app.getPath('userData'), 'settings.json');
@@ -45,9 +53,17 @@ function settingsPath(): string {
 function read(): SettingsFile {
   try {
     const raw = fs.readFileSync(settingsPath(), 'utf8');
-    const parsed = JSON.parse(raw) as Partial<SettingsFile>;
+    const parsed = JSON.parse(raw) as Partial<SettingsFile> & { connection?: StoredConnection | null };
+    // `connection` (singular) is the pre-multi-host shape; fold it in rather than
+    // dropping a remembered remote token on upgrade.
+    const connections = Array.isArray(parsed.connections)
+      ? parsed.connections
+      : parsed.connection
+        ? [parsed.connection]
+        : [];
     return {
-      connection: parsed.connection ?? null,
+      connections,
+      activeConnectionId: parsed.activeConnectionId ?? null,
       recent: Array.isArray(parsed.recent) ? parsed.recent : [],
       prefs: { ...EMPTY.prefs, ...(parsed.prefs ?? {}) },
     };
@@ -69,29 +85,36 @@ export interface StoredTarget {
   name: string | null;
 }
 
-/** Restore the last target and its token, if it can be recovered. */
-export function loadConnection(): { target: StoredTarget; token: string | null } | null {
-  const { connection } = read();
-  if (!connection) return null;
-  const target: StoredTarget = {
-    host: connection.host,
-    port: connection.port,
-    tls: connection.tls,
-    name: connection.name,
-  };
-  if (connection.tokenEnc && isLoopback(connection.host) === false) {
-    try {
-      const token = safeStorage.decryptString(Buffer.from(connection.tokenEnc, 'base64'));
-      return { target, token };
-    } catch {
-      return { target, token: null };
-    }
-  }
-  return { target, token: memoryToken };
+/** `http(s)://host:port` — the id every layer keys a connection by. */
+export function connectionId(target: StoredTarget): string {
+  return `http${target.tls ? 's' : ''}://${target.host}:${target.port}`;
 }
 
-export function saveConnection(target: StoredTarget, token: string | null): void {
+/** Restore every remembered target with whatever token can be recovered for it. */
+export function loadConnections(): Array<{ target: StoredTarget; token: string | null }> {
+  return read().connections.map((connection) => {
+    const target: StoredTarget = {
+      host: connection.host,
+      port: connection.port,
+      tls: connection.tls,
+      name: connection.name,
+    };
+    const id = connectionId(target);
+    if (connection.tokenEnc && isLoopback(connection.host) === false) {
+      try {
+        return { target, token: safeStorage.decryptString(Buffer.from(connection.tokenEnc, 'base64')) };
+      } catch {
+        return { target, token: null };
+      }
+    }
+    return { target, token: memoryTokens.get(id) ?? null };
+  });
+}
+
+/** Upsert by id, and make it the active one. Returns the connection's id. */
+export function saveConnection(target: StoredTarget, token: string | null): string {
   const next = read();
+  const id = connectionId(target);
   const stored: StoredConnection = {
     host: target.host,
     port: target.port,
@@ -101,22 +124,43 @@ export function saveConnection(target: StoredTarget, token: string | null): void
   if (token && !isLoopback(target.host)) {
     if (safeStorage.isEncryptionAvailable()) {
       stored.tokenEnc = safeStorage.encryptString(token).toString('base64');
-      memoryToken = null;
+      memoryTokens.delete(id);
     } else {
-      memoryToken = token;
+      memoryTokens.set(id, token);
     }
-  } else {
-    memoryToken = token;
+  } else if (token) {
+    memoryTokens.set(id, token);
   }
-  next.connection = stored;
+  next.connections = [...next.connections.filter((c) => connectionId(c) !== id), stored];
+  next.activeConnectionId = id;
   write(next);
-  addRecentInternal(next, `http${target.tls ? 's' : ''}://${target.host}:${target.port}`, target.name);
+  addRecentInternal(next, id, target.name);
+  return id;
 }
 
-export function clearConnection(): void {
+export function removeConnection(id: string): void {
   const next = read();
-  next.connection = null;
-  memoryToken = null;
+  next.connections = next.connections.filter((c) => connectionId(c) !== id);
+  memoryTokens.delete(id);
+  if (next.activeConnectionId === id) next.activeConnectionId = null;
+  write(next);
+}
+
+export function clearConnections(): void {
+  const next = read();
+  next.connections = [];
+  next.activeConnectionId = null;
+  memoryTokens.clear();
+  write(next);
+}
+
+export function loadActiveConnectionId(): string | null {
+  return read().activeConnectionId;
+}
+
+export function saveActiveConnectionId(id: string | null): void {
+  const next = read();
+  next.activeConnectionId = id;
   write(next);
 }
 

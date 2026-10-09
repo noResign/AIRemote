@@ -14,8 +14,7 @@ type PickerState = { mode: 'create' | 'add-dir'; workspaceId?: string };
  * swipes (`desktop_ui_design.md` §7.2).
  */
 export function WorkspaceSection() {
-  const view = useConnection((state) => state.view);
-  const connectionId = view?.baseUrl ?? null;
+  const connectionId = useConnection((state) => state.activeId);
   const scope = useScope(connectionId);
 
   const createWorkspace = useSessions((state) => state.createWorkspace);

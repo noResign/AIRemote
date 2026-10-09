@@ -1,10 +1,13 @@
 import { create } from 'zustand';
-import { connectionApi } from '../ipc/client';
+import { connectionApi, setActiveConnectionId } from '../ipc/client';
 import { useChat } from './chat';
 import type { ConnectInput, ConnectionView, ProbeResult } from '../../../shared/ipc';
 
 interface ConnectionState {
-  view: ConnectionView | null;
+  /** Every host main holds, each with its own status (§4). */
+  views: ConnectionView[];
+  /** Which host the rail and main area are scoped to. Per window, not persisted. */
+  activeId: string | null;
   probe: ProbeResult | null;
   booting: boolean;
   probing: boolean;
@@ -12,14 +15,21 @@ interface ConnectionState {
   error: string | null;
   /** Machine-readable reason for the last failed connect, e.g. `token_required`. */
   errorCode: string | null;
+  activeView(): ConnectionView | null;
   boot(): Promise<void>;
   probeNow(): Promise<ProbeResult>;
   connect(input: ConnectInput): Promise<boolean>;
-  disconnect(): Promise<void>;
+  /** Navigate to another host. Nothing is re-established — it is already live. */
+  switchTo(id: string): void;
+  /** Show the connect page to add a host, *without* dropping the others. */
+  addHost(): void;
+  removeHost(id: string): Promise<void>;
+  disconnectAll(): Promise<void>;
 }
 
-export const useConnection = create<ConnectionState>((set) => ({
-  view: null,
+export const useConnection = create<ConnectionState>((set, get) => ({
+  views: [],
+  activeId: null,
   probe: null,
   booting: true,
   probing: false,
@@ -27,11 +37,24 @@ export const useConnection = create<ConnectionState>((set) => ({
   error: null,
   errorCode: null,
 
+  activeView() {
+    const { views, activeId } = get();
+    return views.find((view) => view.id === activeId) ?? null;
+  },
+
   async boot() {
     set({ booting: true });
     try {
       const result = await connectionApi.boot();
-      set({ view: result.view, probe: result.probe, booting: false, error: null, errorCode: null });
+      // Prefer the remembered host, but never land on one we cannot talk to when
+      // another one is usable.
+      const remembered = result.connections.find((view) => view.id === result.activeId);
+      const activeId =
+        remembered?.connected === true
+          ? remembered.id
+          : (result.connections.find((view) => view.connected)?.id ?? result.activeId);
+      set({ views: result.connections, activeId, probe: result.probe, booting: false, error: null, errorCode: null });
+      setActiveConnectionId(activeId);
     } catch (err) {
       set({ booting: false, error: messageOf(err) });
     }
@@ -52,20 +75,49 @@ export const useConnection = create<ConnectionState>((set) => ({
   async connect(input) {
     set({ connecting: true, error: null, errorCode: null });
     const result = await connectionApi.set(input);
-    if (result.ok) {
-      set({ view: result.view, connecting: false });
-      return true;
+    if (!result.ok) {
+      set({ connecting: false, error: result.message, errorCode: result.code });
+      return false;
     }
-    set({ connecting: false, error: result.message, errorCode: result.code });
-    return false;
+    // Adding a host leaves the others connected; this one just becomes current.
+    const views = await connectionApi.list();
+    set({ views, activeId: result.view.id, connecting: false });
+    setActiveConnectionId(result.view.id);
+    return true;
   },
 
-  async disconnect() {
-    // Everything the chat store holds is keyed by the connection id, so it all
-    // describes the host we are leaving. Clear it before the shell can remount
-    // and re-select the previous host's session from the stale open chat.
+  switchTo(id) {
+    // The chat store is keyed by connection id, so its caches survive; only the
+    // *open* one has to go, or the shell would keep showing the other host's.
+    useChat.getState().leave();
+    set({ activeId: id });
+    setActiveConnectionId(id);
+  },
+
+  addHost() {
+    // Drop nothing in main — just stop pointing at a host so the connect page shows.
+    useChat.getState().leave();
+    set({ activeId: null });
+    setActiveConnectionId(null);
+  },
+
+  async removeHost(id) {
+    const views = await connectionApi.remove(id);
+    const stillThere = views.some((view) => view.id === get().activeId);
+    const activeId = stillThere ? get().activeId : (views.find((view) => view.connected)?.id ?? views[0]?.id ?? null);
+    if (activeId !== get().activeId) useChat.getState().leave();
+    set({ views, activeId });
+    setActiveConnectionId(activeId);
+  },
+
+  async disconnectAll() {
+    // Everything the chat store holds is keyed by connection id, so it all
+    // describes hosts we are leaving. Clear it before the shell can remount and
+    // re-select a previous host's session from the stale open chat.
     useChat.getState().reset();
-    set({ view: await connectionApi.clear() });
+    const views = await connectionApi.clear();
+    set({ views, activeId: null });
+    setActiveConnectionId(null);
   },
 }));
 

@@ -18,6 +18,8 @@ interface Props {
   onDelete(id: string): void;
   onCopy(text: string): void;
   onRefresh(): void;
+  /** Open this session in a second window (§7.3). */
+  onOpenWindow(id: string): void;
 }
 
 /**
@@ -36,6 +38,7 @@ export function SessionList({
   onDelete,
   onCopy,
   onRefresh,
+  onOpenWindow,
 }: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -70,6 +73,7 @@ export function SessionList({
 
   function menuFor(session: SessionDto): MenuItem[] {
     return [
+      { id: 'new-window', label: '在新窗口打开', run: () => onOpenWindow(session.id) },
       { id: 'rename', label: '重命名', run: () => setRenamingId(session.id) },
       { id: 'copy-cwd', label: '复制工作目录', run: () => onCopy(session.cwd) },
       { id: 'refresh', label: '刷新列表', run: onRefresh },

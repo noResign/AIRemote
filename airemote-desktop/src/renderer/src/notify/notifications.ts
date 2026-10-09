@@ -2,20 +2,6 @@ import type { NotifyInput } from '../../../shared/ipc';
 import type { PendingPermission } from '../store/chat/types';
 
 /**
- * Whether a desktop notification is warranted. The mobile rule is "only when
- * the user isn't looking at this session"; on the desktop that means the window
- * is unfocused, **or** it is focused but showing a different session.
- */
-export function shouldNotify(input: {
-  windowFocused: boolean;
-  activeSessionId: string | null;
-  sessionId: string | null;
-}): boolean {
-  if (!input.windowFocused) return true;
-  return input.activeSessionId !== input.sessionId;
-}
-
-/**
  * Ids are derived from the thing being notified about, never from the session:
  * with a session-scoped id a finishing run would replace an approval notice
  * that is still waiting (the same bug the mobile client has).

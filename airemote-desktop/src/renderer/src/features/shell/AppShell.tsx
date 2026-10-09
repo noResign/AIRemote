@@ -18,7 +18,11 @@ import { ShortcutHelp } from '../palette/ShortcutHelp';
 import { ConnectionSwitcher } from '../connect/ConnectionSwitcher';
 import { useToolGroups } from '../chat/toolGroups';
 import { isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
+import { createWindowFocus } from './windowFocus';
 import type { PaletteItem } from '../../commands/palette';
+
+/** One per renderer process — see `windowFocus.ts` for why it is memoized. */
+const windowFocus = createWindowFocus(() => window.airemote.focusSession());
 
 type Page = 'chat' | 'settings' | 'files';
 
@@ -38,9 +42,10 @@ const SESSION_POLL_MS = 5000;
  * be visible without navigating.
  */
 export function AppShell() {
-  const view = useConnection((state) => state.view);
-  const disconnect = useConnection((state) => state.disconnect);
-  const connectionId = view?.baseUrl ?? null;
+  // Several hosts can be live at once (§4); the rail and main area are scoped to
+  // whichever one is current.
+  const connectionId = useConnection((state) => state.activeId);
+  const disconnectAll = useConnection((state) => state.disconnectAll);
   const scope = useScope(connectionId);
   const load = useSessions((state) => state.load);
   const patchTitle = useSessions((state) => state.patchTitle);
@@ -79,6 +84,13 @@ export function AppShell() {
 
   const needsInput = useMemo(() => parseNeedsInput(waitingKey), [waitingKey]);
   const failed = useMemo(() => new Set(failedIds ? failedIds.split(',') : []), [failedIds]);
+
+  // A different host means a different session list: drop the rail's selection
+  // and let the default-workspace effect pick again.
+  useEffect(() => {
+    setSelectedId(null);
+    setWorkspaceId('');
+  }, [connectionId]);
 
   useEffect(() => {
     if (!connectionId) return;
@@ -143,6 +155,27 @@ export function AppShell() {
       sessions: running.map((session) => ({ id: session.id, title: session.title ?? '未命名会话' })),
     });
   }, [scope.sessions]);
+
+  /*
+   * Report which session this window shows: the notification rule needs it, and
+   * only main can see every window (§7.4). One window announcing a session that
+   * another window is already displaying is the bug this prevents.
+   */
+  useEffect(() => {
+    void window.airemote.setActiveSession(activeChat?.sessionId ?? null);
+  }, [activeChat?.sessionId]);
+
+  // A second window is created with a session to focus; pull it once at boot.
+  useEffect(() => {
+    if (!connectionId) return;
+    void windowFocus.session().then((sessionId) => {
+      // No `live` guard on purpose — the pull is one-shot for the process.
+      if (!sessionId || !windowFocus.claim()) return;
+      setPage('chat');
+      setSelectedId(sessionId);
+      void openSession(connectionId, sessionId);
+    });
+  }, [connectionId, openSession]);
 
   // A tray entry or a notification click asked for a specific session.
   useEffect(
@@ -306,7 +339,13 @@ export function AppShell() {
       theme('dark', '主题：深色'),
       theme('system', '主题：跟随系统'),
       { id: 'action:help', section: '动作', label: '快捷键帮助', keywords: 'help keys', run: () => setHelpOpen(true) },
-      { id: 'action:disconnect', section: '动作', label: '断开连接', keywords: 'disconnect logout', run: () => void disconnect() },
+      {
+        id: 'action:disconnect',
+        section: '动作',
+        label: '断开全部连接',
+        keywords: 'disconnect logout',
+        run: () => void disconnectAll(),
+      },
     );
     return items;
   }
@@ -337,11 +376,7 @@ export function AppShell() {
       {railVisible && (
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
-            <ConnectionSwitcher
-              view={view}
-              onAddComputer={() => void disconnect()}
-              onDisconnect={() => void disconnect()}
-            />
+            <ConnectionSwitcher />
             <select className="ws-select" value={workspaceId} onChange={(event) => switchWorkspace(event.target.value)}>
               {scope.workspaces.map((workspace) => (
                 <option key={workspace.id} value={workspace.id}>
@@ -371,6 +406,7 @@ export function AppShell() {
                 onDelete={(id) => void deleteSession(id)}
                 onCopy={copyText}
                 onRefresh={refresh}
+                onOpenWindow={(id) => void window.airemote.openSessionWindow(id)}
               />
             )}
           </div>

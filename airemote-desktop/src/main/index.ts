@@ -9,6 +9,7 @@ import { AppTray } from './tray';
 import { closeAllNotifications } from './notify';
 import { resolveCloseAction } from './lifecycle';
 import { installMenu } from './menu';
+import { WindowRegistry } from './windows';
 
 // Must happen before app.ready.
 registerAppScheme();
@@ -19,7 +20,7 @@ const manager = new ConnectionManager();
 // probe need the token, and a renderer reload must re-attach rather than lose a
 // run. Broadcast to every window (M3 multi-window costs nothing extra).
 const streams = new StreamManager(
-  () => manager.clientOrNull(),
+  (connectionId) => manager.clientFor(connectionId),
   (event) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send(IPC.streamEvent, event);
@@ -28,13 +29,26 @@ const streams = new StreamManager(
 );
 
 let mainWindow: BrowserWindow | null = null;
+/** Per-window session + focus, for the notification rule and tray targeting. */
+const registry = new WindowRegistry();
 /** Set on the way out, so the window's `close` handler stops intercepting. */
 let quitting = false;
 let closePromptOpen = false;
 
 const tray = new AppTray({
   onOpen: () => showWindow(),
-  onSelectSession: (sessionId) => showWindow(sessionId),
+  // Raise the window that already has this session rather than always the main
+  // one — with several windows open, that is where the user expects to land.
+  onSelectSession: (sessionId) => {
+    const existing = registry.showing(sessionId);
+    if (existing) {
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
+      return;
+    }
+    showWindow(sessionId);
+  },
   onQuit: () => quitApp(),
 });
 
@@ -62,10 +76,24 @@ function createMainWindow(): BrowserWindow {
     },
   });
   mainWindow = win;
+  registry.add(win);
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
+    registry.remove(win);
   });
   return win;
+}
+
+/**
+ * A second window pinned to one session — `§7.3`: 每个窗口一个会话，可并排看两个
+ * agent. Closing it really closes it: the tray's「打开主窗口」only knows the main
+ * window, so hiding a secondary one would strand it with no way back.
+ */
+function openSessionWindow(sessionId: string): void {
+  const win = createWindow({ onCloseRequested: () => {} });
+  registry.add(win);
+  registry.setPending(win, sessionId);
+  win.on('closed', () => registry.remove(win));
 }
 
 function hideOrQuit(win: BrowserWindow, behavior: 'tray' | 'quit'): void {
@@ -120,7 +148,7 @@ if (!app.requestSingleInstanceLock()) {
     installMenu();
     installAppProtocol();
     installCsp(session.defaultSession);
-    registerIpc(manager, streams, { tray, showWindow, quitApp });
+    registerIpc(manager, streams, { tray, showWindow, quitApp, openSessionWindow }, registry);
 
     if (!tray.create()) {
       // Everything except the tray still works; `hideOrQuit` degrades to quitting.
