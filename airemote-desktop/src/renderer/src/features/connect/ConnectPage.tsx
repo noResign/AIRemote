@@ -18,17 +18,12 @@ export function ConnectPage() {
   const connecting = useConnection((s) => s.connecting);
   const error = useConnection((s) => s.error);
   const errorCode = useConnection((s) => s.errorCode);
-  const probeNow = useConnection((s) => s.probeNow);
   const connect = useConnection((s) => s.connect);
   const disconnectAll = useConnection((s) => s.disconnectAll);
 
   const [address, setAddress] = useState('');
   const [token, setToken] = useState('');
   const [recent, setRecent] = useState<RecentConnection[]>([]);
-
-  useEffect(() => {
-    if (!probe) void probeNow();
-  }, [probe, probeNow]);
 
   // Addresses only, and this page is remounted on every disconnect, so the list
   // is always current without a subscription.
@@ -55,13 +50,6 @@ export function ConnectPage() {
   const found = probe?.found ?? null;
   const conflict = probe?.portConflict ?? null;
 
-  async function connectLocal(): Promise<void> {
-    if (!found) return;
-    const parsed = parseAddress(found.listen);
-    if (!parsed) return;
-    await connect({ ...parsed, name: found.hostname || '本机 daemon' });
-  }
-
   async function connectRemote(): Promise<void> {
     const parsed = parseAddress(address);
     if (!parsed) return;
@@ -80,20 +68,8 @@ export function ConnectPage() {
         </div>
         <div className="gate-slogan">远程驱动本机的编码 agent</div>
 
-        <div className="section-label">本机 daemon</div>
-        <LocalDaemonBlock
-          probing={probing}
-          found={found}
-          conflict={conflict}
-          tried={probe?.tried ?? []}
-          tokenHint={probe?.localToken ?? null}
-          connecting={connecting}
-          onConnect={connectLocal}
-          onChooseLocal={() => setAddress(`127.0.0.1:${4780}`)}
-        />
-
         <div className="section-label" style={{ textAlign: 'center' }}>
-          ── 或连接远程 ──
+          ── 连接 daemon ──
         </div>
 
         {/* A real form so Enter submits: filling the address and reaching for the
@@ -152,6 +128,24 @@ export function ConnectPage() {
         </button>
         </form>
 
+        <div className="section-label">本机 daemon</div>
+        <LocalDaemonBlock
+          probing={probing}
+          found={found}
+          conflict={conflict}
+          tried={probe?.tried ?? []}
+          tokenHint={probe?.localToken ?? null}
+          onPick={(daemon) => setAddress(daemon.listen)}
+          onChooseLocal={() => setAddress(`127.0.0.1:${4780}`)}
+        />
+
+        {!probing && !found && (
+          <div className="hint" style={{ marginTop: 8 }}>
+            本机没有 daemon 只影响「在这台电脑上跑 agent」。连别的电脑上的 daemon 用上面的地址直接连，
+            <b>不需要本机也起一个</b>。
+          </div>
+        )}
+
         {insecureWarning && (
           <div className="error-text">
             ⚠️ 该地址不是本机且使用明文 HTTP——token 会在网络中明文传输，而这个 token
@@ -186,13 +180,13 @@ interface LocalBlockProps {
   conflict: PortConflict | null;
   tried: string[];
   tokenHint: LocalTokenHint | null;
-  connecting: boolean;
-  onConnect(): void;
+  /** Click the found daemon: fill its address into the form above. */
+  onPick(found: DiscoveredDaemon): void;
   onChooseLocal(): void;
 }
 
 function LocalDaemonBlock(props: LocalBlockProps) {
-  const { probing, found, conflict, tried, tokenHint, connecting, onConnect, onChooseLocal } = props;
+  const { probing, found, conflict, tried, tokenHint, onPick, onChooseLocal } = props;
 
   if (probing && !found) {
     return (
@@ -206,7 +200,11 @@ function LocalDaemonBlock(props: LocalBlockProps) {
 
   if (found) {
     return (
-      <div className="local-block found">
+      <button
+        className="local-block found local-pick"
+        onClick={() => onPick(found)}
+        title="把地址填到上面的地址框"
+      >
         <div className="local-title">
           <span className="dot ok" /> 本机 daemon · v{found.version}
         </div>
@@ -218,11 +216,9 @@ function LocalDaemonBlock(props: LocalBlockProps) {
           来源：{SOURCE_LABEL[found.source]}
           {found.source !== 'managed' && '（本应用未托管，只能连接，不能在此启停）'}
         </div>
-        {tokenHint && <div className="hint">已从 {tokenHint.source} 读到 token</div>}
-        <button className="btn primary full" style={{ marginTop: 10 }} disabled={connecting} onClick={onConnect}>
-          {connecting ? '连接中…' : '连接'}
-        </button>
-      </div>
+        {tokenHint && <div className="hint">已从 {tokenHint.source} 读到 token（点「连接」时自动使用）</div>}
+        <div className="hint">点这里把地址填到上面的地址框，再按「连接」</div>
+      </button>
     );
   }
 

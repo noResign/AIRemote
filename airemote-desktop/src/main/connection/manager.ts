@@ -88,35 +88,20 @@ export class ConnectionManager {
   }
 
   /**
-   * Restore every remembered target, run discovery, and auto-attach to a local
-   * daemon when one is found and its token is readable. Nothing is spawned:
-   * "not discovered" is a question for the user, never a reason to start a
-   * second daemon.
+   * Restore the connections the user saved, and run discovery **for information
+   * only**: the result tells the UI whether a local daemon is there. Nothing is
+   * attached and nothing is spawned — those stay user actions (§2 启动策略).
    *
-   * Restored hosts connect in parallel and best-effort: an unreachable one stays
-   * in the list with an error so the switcher can show it as down, rather than
-   * disappearing or blocking the local one.
+   * Restored hosts dial in parallel and best-effort: an unreachable one stays in
+   * the list with an error so the switcher can show it as down, rather than
+   * disappearing or blocking a reachable one.
    */
   async bootstrap(): Promise<BootstrapResult> {
-    const stored = settings.loadConnections();
-    for (const { target, token } of stored) {
+    // Restore only what the user explicitly saved, then probe so the connect
+    // page can say「本机有没有 daemon」. Probing has no side effect; attaching and
+    // starting do, and both stay user actions.
+    for (const { target, token } of settings.loadConnections()) {
       this.applyTarget({ host: target.host, port: target.port, tls: target.tls, name: target.name }, token);
-    }
-    const probe = await this.probe();
-
-    let autoAttached = false;
-    const foundAt = probe.found ? splitListen(probe.found.listen) : null;
-    if (probe.found && foundAt) {
-      const id = settings.connectionId({ ...foundAt, tls: probe.found.tls, name: null });
-      if (!this.entries.get(id)?.client) {
-        const result = await this.connect({
-          host: foundAt.host,
-          port: foundAt.port,
-          tls: probe.found.tls,
-          name: discoveredName(probe.found),
-        });
-        autoAttached = result.ok;
-      }
     }
 
     // Hosts that were only restored (no client yet) get a background attempt.
@@ -126,12 +111,12 @@ export class ConnectionManager {
         .map((id) => this.reconnect(id)),
     );
 
+    const probe = await this.probe();
     const saved = settings.loadActiveConnectionId();
     return {
       connections: this.views(),
       activeId: saved && this.entries.has(saved) ? saved : (this.ids()[0] ?? null),
       probe,
-      autoAttached,
     };
   }
 

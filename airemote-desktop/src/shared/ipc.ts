@@ -145,9 +145,8 @@ export interface BootstrapResult {
   connections: ConnectionView[];
   /** Which one the previous session was scoped to, if it is still in the list. */
   activeId: string | null;
+  /** Informational: is there a local daemon? Never used to connect on its own. */
   probe: ProbeResult;
-  /** True when bootstrap auto-attached to a discovered local daemon. */
-  autoAttached: boolean;
 }
 
 /**

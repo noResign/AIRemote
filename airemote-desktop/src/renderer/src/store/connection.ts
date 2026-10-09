@@ -53,6 +53,7 @@ export const useConnection = create<ConnectionState>((set, get) => ({
         remembered?.connected === true
           ? remembered.id
           : (result.connections.find((view) => view.connected)?.id ?? result.activeId);
+      // The probe is informational only — it never connects or starts anything.
       set({ views: result.connections, activeId, probe: result.probe, booting: false, error: null, errorCode: null });
       setActiveConnectionId(activeId);
     } catch (err) {
