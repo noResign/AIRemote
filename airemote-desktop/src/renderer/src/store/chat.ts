@@ -68,6 +68,8 @@ interface ChatStore {
   openSession(connectionId: string, sessionId: string): Promise<void>;
   startNew(connectionId: string, options: NewSessionOptions): void;
   send(text: string): Promise<void>;
+  /** Send a picked answer for an `AskUserQuestion` card as a continuation turn. */
+  answerQuestion(toolUseId: string, answerText: string): void;
   stop(): void;
   detach(): void;
   leave(): void;
@@ -194,6 +196,35 @@ export const useChat = create<ChatStore>((set, get) => ({
       claudeSessionId: chat.pendingNew?.claudeSessionId ?? undefined,
     };
     await startStream(set, key, spec);
+  },
+
+  answerQuestion(toolUseId, answerText) {
+    const key = get().activeKey;
+    const chat = key ? get().byKey[key] : undefined;
+    const text = answerText.trim();
+    // The same gate as `send`, checked *before* marking the card answered: if the
+    // run were still busy, `send` would drop the text and the card would read
+    // "已发送答案" with nothing sent.
+    if (!key || !chat || !text || isBusy(chat.phase)) return;
+
+    set((state) => ({
+      byKey: patch(state, key, (current) => ({
+        ...current,
+        messages: current.messages.map((message) =>
+          message.kind === 'assistant'
+            ? {
+                ...message,
+                blocks: message.blocks.map((block) =>
+                  block.kind === 'question' && block.toolUseId === toolUseId
+                    ? { ...block, answered: true }
+                    : block,
+                ),
+              }
+            : message,
+        ),
+      })),
+    }));
+    void get().send(text);
   },
 
   stop() {

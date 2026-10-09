@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { describeToolGroup, segmentBlocks, toolGroupStatus, toolSummary } from './segments';
 import { Markdown } from './Markdown';
+import { QuestionBlock } from './QuestionBlock';
 import { useToolGroups } from './toolGroups';
 import { ToolIcon } from '../../ui/ToolIcon';
 import { formatTokens } from '../../../../shared/format';
@@ -145,22 +146,12 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
             return <ThinkingBlock key={index} text={segment.text} />;
           case 'question':
             return (
-              <div key={index} className="block-question">
-                <div className="block-title">需要你的回答</div>
-                {segment.questions.map((question, qIndex) => (
-                  <div key={qIndex} className="question">
-                    <div className="question-text">{question.question}</div>
-                    <div className="question-options">
-                      {question.options.map((option) => (
-                        <span key={option.label} className="badge">
-                          {option.label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                <div className="hint">这个会话的提问可以在左侧审批弹窗里回答。</div>
-              </div>
+              <QuestionBlock
+                key={index}
+                toolUseId={segment.toolUseId}
+                questions={segment.questions}
+                answered={segment.answered}
+              />
             );
           case 'tools':
             return <ToolGroup key={segment.key} tools={segment.tools} />;
