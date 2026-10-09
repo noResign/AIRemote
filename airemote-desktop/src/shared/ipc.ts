@@ -23,6 +23,10 @@ export const IPC = {
   notifyClose: 'app:notify:close',
   selectSession: 'app:select-session',
   setActiveSession: 'app:set-active-session',
+  daemonStatus: 'daemon:status',
+  daemonStart: 'daemon:start',
+  daemonStop: 'daemon:stop',
+  daemonLogs: 'daemon:logs',
   openSessionWindow: 'app:open-session-window',
   focusSession: 'app:focus-session',
   streamStart: 'stream:start',
@@ -138,6 +142,25 @@ export interface ConnectInput {
 
 export type ConnectResult =
   | { ok: true; view: ConnectionView }
+  | { ok: false; code: string; message: string };
+
+/** A daemon this app started and therefore owns (as opposed to one we attached to). */
+export interface ManagedDaemonStatus {
+  running: boolean;
+  /** Where its stdout/stderr (and our own narration) land — the thing to read when it fails. */
+  logPath: string;
+}
+
+export interface ManagedDaemonStartInput {
+  /** The agent's writable root. Must come from a directory picker, never guessed (§2). */
+  workspace: string;
+  port: number;
+  /** Loopback unless the user explicitly opens it to the phone. */
+  host?: string;
+}
+
+export type ManagedDaemonStartResult =
+  | { ok: true; pid: number; listen: string | null; token: string }
   | { ok: false; code: string; message: string };
 
 export interface BootstrapResult {
@@ -281,6 +304,12 @@ export interface AiremoteBridge {
   /** Drop one connection (and its streams). Returns what is left. */
   connRemove(id: string): Promise<ConnectionView[]>;
   connSet(input: ConnectInput): Promise<ConnectResult>;
+  daemonStatus(): Promise<ManagedDaemonStatus>;
+  /** Start one we own. Every failure is a `{ ok: false, code }`, never a rejection. */
+  daemonStart(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
+  daemonStop(): Promise<void>;
+  /** Recent lines of the managed daemon's log. */
+  daemonLogs(lines?: number): Promise<string[]>;
   /** Drop one connection; `null` drops every one of them. Returns what is left. */
   connClear(id?: string): Promise<ConnectionView[]>;
   connProbe(): Promise<ProbeResult>;

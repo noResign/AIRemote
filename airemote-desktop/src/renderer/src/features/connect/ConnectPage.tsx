@@ -22,6 +22,14 @@ export function ConnectPage() {
   const disconnectAll = useConnection((s) => s.disconnectAll);
 
   const [address, setAddress] = useState('');
+  // Starting a daemon is a deliberate, multi-step act: a directory that becomes
+  // the agent's writable root, and whether to open it to the phone.
+  const [spawnOpen, setSpawnOpen] = useState(false);
+  const [spawnDir, setSpawnDir] = useState('');
+  const [spawnPhone, setSpawnPhone] = useState(false);
+  const [spawnBusy, setSpawnBusy] = useState(false);
+  const [spawnError, setSpawnError] = useState<string | null>(null);
+  const [spawnLogPath, setSpawnLogPath] = useState<string | null>(null);
   const [token, setToken] = useState('');
   const [recent, setRecent] = useState<RecentConnection[]>([]);
 
@@ -49,6 +57,44 @@ export function ConnectPage() {
 
   const found = probe?.found ?? null;
   const conflict = probe?.portConflict ?? null;
+
+  /**
+   * Start a daemon this app owns and connect to it. The token comes back from
+   * main, so nothing has to be typed or re-read from disk.
+   */
+  async function spawnLocal(): Promise<void> {
+    const workspace = spawnDir.trim();
+    if (!workspace) {
+      setSpawnError('请填写工作目录');
+      return;
+    }
+    setSpawnBusy(true);
+    setSpawnError(null);
+    // `port: 0` = pick the first free one in the daemon's usual range: the user
+    // very often already has something on 4780.
+    const res = await window.airemote.daemonStart({
+      workspace,
+      port: 0,
+      host: spawnPhone ? '0.0.0.0' : '127.0.0.1',
+    });
+    setSpawnBusy(false);
+    if (!res.ok) {
+      setSpawnError(res.message);
+      // "It didn't start" is always diagnosable — point at the log rather than
+      // making the user guess.
+      const status = await window.airemote.daemonStatus();
+      setSpawnLogPath(status.logPath);
+      return;
+    }
+    setSpawnOpen(false);
+    // Connect to the port it actually bound, not the one we asked for.
+    const bound = res.listen ? parseAddress(res.listen) : null;
+    if (!bound) {
+      setSpawnError(`daemon 起来了但没报告地址（${res.listen ?? '未知'}）`);
+      return;
+    }
+    await connect({ ...bound, token: res.token, name: '本机 daemon（本应用启动）' });
+  }
 
   async function connectRemote(): Promise<void> {
     const parsed = parseAddress(address);
@@ -137,7 +183,57 @@ export function ConnectPage() {
           tokenHint={probe?.localToken ?? null}
           onPick={(daemon) => setAddress(daemon.listen)}
           onChooseLocal={() => setAddress(`127.0.0.1:${4780}`)}
+          onStart={() => setSpawnOpen(true)}
         />
+
+        {spawnOpen && (
+          <div className="local-block" style={{ marginTop: 10 }}>
+            <div className="local-title">启动一个本机 daemon</div>
+            <div className="field">
+              <label htmlFor="spawn-dir">工作目录</label>
+              <input
+                id="spawn-dir"
+                className="mono"
+                placeholder="~/Projects"
+                value={spawnDir}
+                onChange={(event) => setSpawnDir(event.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="hint" style={{ marginTop: 0 }}>
+              这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
+              数据与 token 存在单独的目录里，不和 <span className="mono">~/.airemote</span> 混。
+              端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
+            </div>
+            <label className="switch" style={{ marginTop: 8 }}>
+              <input
+                type="checkbox"
+                checked={spawnPhone}
+                onChange={(event) => setSpawnPhone(event.target.checked)}
+              />
+              <span>开放给手机（绑 0.0.0.0，同一局域网可连）—— 不勾就只绑本机回环</span>
+            </label>
+            {spawnError && (
+              <div className="error-text">
+                {spawnError}
+                {spawnLogPath && (
+                  <>
+                    <br />
+                    日志：<span className="mono">{spawnLogPath}</span>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="settings-actions">
+              <button className="btn primary" disabled={spawnBusy} onClick={() => void spawnLocal()}>
+                {spawnBusy ? '启动中…' : '启动并连接'}
+              </button>
+              <button className="btn" onClick={() => setSpawnOpen(false)}>
+                取消
+              </button>
+            </div>
+          </div>
+        )}
 
         {!probing && !found && (
           <div className="hint" style={{ marginTop: 8 }}>
@@ -183,10 +279,11 @@ interface LocalBlockProps {
   /** Click the found daemon: fill its address into the form above. */
   onPick(found: DiscoveredDaemon): void;
   onChooseLocal(): void;
+  onStart(): void;
 }
 
 function LocalDaemonBlock(props: LocalBlockProps) {
-  const { probing, found, conflict, tried, tokenHint, onPick, onChooseLocal } = props;
+  const { probing, found, conflict, tried, tokenHint, onPick, onChooseLocal, onStart } = props;
 
   if (probing && !found) {
     return (
@@ -244,9 +341,9 @@ function LocalDaemonBlock(props: LocalBlockProps) {
         <button className="choice" onClick={onChooseLocal}>
           它跑在别的地址 → 填地址连接
         </button>
-        <button className="choice" disabled title="M1 只做附着，不负责启动（M4）">
-          确实没在跑 → 启动一个本机 daemon（M4）
-        </button>
+        <button className="choice" onClick={onStart}>
+            确实没在跑 → 启动一个本机 daemon
+          </button>
       </div>
     </div>
   );

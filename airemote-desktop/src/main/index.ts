@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, session } from 'electron';
 import { IPC } from '../shared/ipc';
 import { createWindow, installAppProtocol, installCsp, registerAppScheme } from './window';
-import { ConnectionManager } from './connection/manager';
+import { ConnectionManager, daemonDataDir } from './connection/manager';
 import { StreamManager } from './streams/manager';
 import { registerIpc } from './ipc';
 import { loadPrefs, savePrefs } from './settings';
@@ -10,6 +10,8 @@ import { closeAllNotifications } from './notify';
 import { resolveCloseAction } from './lifecycle';
 import { installMenu } from './menu';
 import { WindowRegistry } from './windows';
+import { DaemonSupervisor } from './daemon/supervisor';
+import { startManagedDaemon } from './daemon/managed-daemon';
 
 // Must happen before app.ready.
 registerAppScheme();
@@ -31,6 +33,28 @@ const streams = new StreamManager(
 let mainWindow: BrowserWindow | null = null;
 /** Per-window session + focus, for the notification rule and tray targeting. */
 const registry = new WindowRegistry();
+
+/**
+ * The daemon we start and own. Left running across app exits on purpose
+ * (`detached` + §5): tasks live on the daemon, and the phone may still be
+ * connected. Stopping it is an explicit action, not a side effect of quitting.
+ */
+const managedDaemon = new DaemonSupervisor(daemonDataDir());
+const daemonApi = {
+  status: () => ({ running: managedDaemon.running(), logPath: managedDaemon.logPath }),
+  start: (input: { workspace: string; port: number; host?: string }) =>
+    startManagedDaemon(managedDaemon, {
+      ...input,
+      dataDir: daemonDataDir(),
+      userCommand: null,
+      appPath: app.getAppPath(),
+      resourcesPath: process.resourcesPath,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+    }),
+  stop: () => managedDaemon.stop().then(() => undefined),
+  logs: (lines?: number) => managedDaemon.tail(lines ?? 200),
+};
 /** Set on the way out, so the window's `close` handler stops intercepting. */
 let quitting = false;
 let closePromptOpen = false;
@@ -148,7 +172,7 @@ if (!app.requestSingleInstanceLock()) {
     installMenu();
     installAppProtocol();
     installCsp(session.defaultSession);
-    registerIpc(manager, streams, { tray, showWindow, quitApp, openSessionWindow }, registry);
+    registerIpc(manager, streams, { tray, showWindow, quitApp, openSessionWindow, daemon: daemonApi }, registry);
 
     if (!tray.create()) {
       // Everything except the tray still works; `hideOrQuit` degrades to quitting.

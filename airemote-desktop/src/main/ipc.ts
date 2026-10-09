@@ -2,6 +2,9 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import { IPC } from '../shared/ipc';
 import type {
   AppPrefs,
+  ManagedDaemonStartInput,
+  ManagedDaemonStartResult,
+  ManagedDaemonStatus,
   ConnectInput,
   DaemonRequest,
   NotifyInput,
@@ -13,6 +16,7 @@ import type { ConnectionManager } from './connection/manager';
 import type { StreamManager } from './streams/manager';
 import type { WindowRegistry } from './windows';
 import { shouldNotify } from '../shared/notifyDecision';
+import { firstFreePort } from './daemon/ports';
 import type { AppTray } from './tray';
 import { closeNotification, showNotification } from './notify';
 import { listRecent, loadPrefs, savePrefs } from './settings';
@@ -23,6 +27,13 @@ export interface ShellDeps {
   showWindow(sessionId?: string): void;
   quitApp(): void;
   openSessionWindow(sessionId: string): void;
+  /** The daemon we can start and own; wired in `index.ts`. */
+  daemon: {
+    status(): ManagedDaemonStatus;
+    start(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
+    stop(): Promise<void>;
+    logs(lines?: number): string[];
+  };
 }
 
 /** Wire the renderer-facing IPC surface. Validation lives here, not in preload. */
@@ -102,6 +113,32 @@ export function registerIpc(
   ipcMain.handle(IPC.openSessionWindow, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string' && sessionId) shell.openSessionWindow(sessionId);
   });
+
+  ipcMain.handle(IPC.daemonStatus, () => shell.daemon.status());
+  ipcMain.handle(IPC.daemonStart, async (_event, input: ManagedDaemonStartInput) => {
+    // Validation lives here, not in preload: the renderer is not trusted, and a
+    // workspace path is exactly the value we must not take on faith.
+    if (!input || typeof input.workspace !== 'string' || !input.workspace.trim()) {
+      return { ok: false, code: 'bad_workspace', message: '需要选择工作目录' };
+    }
+    // `port <= 0` means「挑一个」: the default range is where the user's own
+    // daemon usually lives, so a fixed 4780 would fail on exactly this machine.
+    let port = input.port;
+    if (!Number.isInteger(port) || port <= 0) {
+      const free = await firstFreePort();
+      if (free === null) {
+        return { ok: false, code: 'no_free_port', message: '4780–4789 都被占用了' };
+      }
+      port = free;
+    } else if (port > 65535) {
+      return { ok: false, code: 'bad_port', message: '端口不合法' };
+    }
+    return shell.daemon.start({ ...input, port, workspace: input.workspace.trim() });
+  });
+  ipcMain.handle(IPC.daemonStop, () => shell.daemon.stop());
+  ipcMain.handle(IPC.daemonLogs, (_event, lines: unknown) =>
+    shell.daemon.logs(typeof lines === 'number' ? lines : undefined),
+  );
 
   ipcMain.handle(IPC.focusSession, (event) =>
     registry.takePending(BrowserWindow.fromWebContents(event.sender)),

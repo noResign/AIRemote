@@ -18,6 +18,13 @@ files:
   - out/**
   - package.json
 
+# The daemon ships inside the app (~900 KB of JS, no native deps) so the app and
+# its daemon can never drift apart in version — see daemon/bundled-entry.ts.
+# Without this, "start a local daemon" has nothing to run on a packaged install.
+extraResources:
+  - from: ../airemote-daemon/dist
+    to: daemon
+
 asar: true
 # No native modules to rebuild.
 npmRebuild: false
