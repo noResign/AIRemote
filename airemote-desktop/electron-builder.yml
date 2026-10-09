@@ -24,6 +24,13 @@ npmRebuild: false
 
 artifactName: airemote-${version}-${arch}.${ext}
 
+# electron-builder does NOT read .npmrc's electron_mirror — it has its own cache
+# and goes straight to GitHub for the Electron zip and its SHASUMS256.txt, even
+# when the zip is already cached. Without this, packaging stalls on that fetch.
+# Same mirror as .npmrc; drop it if your network reaches GitHub.
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
 linux:
   target:
     - AppImage

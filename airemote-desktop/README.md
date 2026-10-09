@@ -51,13 +51,39 @@ DISPLAY=:1 ./release/linux-unpacked/airemote-desktop --no-sandbox --user-data-di
 没有 setuid 位。AppImage/deb 的安装形态不受影响。另注意 `--user-data-dir`：同一 data dir 上
 已有实例在跑（比如 `pnpm dev`）时，单实例锁会让新进程直接退出。
 
-## 两个已知的坑
+## 三个已知的坑
 
 **1. Electron 二进制下载失败（国内常见）**
 
 `pnpm install` 会在 postinstall 里从 GitHub release 拉 Electron 二进制，连不上时报
 `TypeError: fetch failed`，装完也用不了。仓库里的 `.npmrc` 已经把这一项指到 npmmirror
 （只影响这个文件，其余依赖仍走默认源）。若网络本身能到 GitHub，删掉那行即可。
+
+**2. `pnpm dist` 卡在 `packaging platform=...` 不动**
+
+不是死锁，是 `@electron/get` 在重新下载 Electron，而它**即使命中缓存也一定要再拉一次
+`SHASUMS256.txt` 校验**：这个请求失败就判定缓存无效，回退重下整个 ~118MB 的 zip，
+在慢链路上看起来就是卡死。用 `DEBUG='@electron/get:index'` 能直接看到：
+
+```
+Cache hit
+Downloading https://npmmirror.com/mirrors/electron/v44.4.2/SHASUMS256.txt ...
+Artifact in cache didn't match checksums  RequestError: socket hang up
+falling back to re-download
+```
+
+典型诱因是把 npmmirror（国内源）塞进了翻墙代理，反而更容易被掐断。**`NO_PROXY` 没用**
+——electron-builder 用 hpagent，直接读 env 里的代理地址，不认 `NO_PROXY`。所以打包时干脆
+把代理摘掉：
+
+```bash
+HTTP_PROXY= HTTPS_PROXY= http_proxy= https_proxy= pnpm dist
+```
+
+`electron-builder.yml` 里的 `electronDownload.mirror` 是必须的：electron-builder **不读**
+`.npmrc` 的 `electron_mirror`，不显式配就会直奔 GitHub。另注：首次打包还要拉 nsis /
+appimage / fpm 等辅助二进制（来自 GitHub），那部分可用 `ELECTRON_BUILDER_BINARIES_MIRROR`
+指向 npmmirror。
 
 **2. 连不上本机 daemon：`tokenSource` 不是 `file`**
 
