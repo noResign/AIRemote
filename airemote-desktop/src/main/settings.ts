@@ -39,7 +39,7 @@ const EMPTY: SettingsFile = {
   connections: [],
   activeConnectionId: null,
   recent: [],
-  prefs: { closeBehavior: 'ask', desktopNotifications: true },
+  prefs: { closeBehavior: 'ask', desktopNotifications: true, daemonOnQuit: 'ask' },
 };
 const MAX_RECENT = 5;
 

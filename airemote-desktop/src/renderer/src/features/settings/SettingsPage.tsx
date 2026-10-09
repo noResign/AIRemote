@@ -3,7 +3,7 @@ import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
 import { PreferencesSection } from './PreferencesSection';
-import type { AppInfo, AppPrefs } from '../../../../shared/ipc';
+import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
 
@@ -63,6 +63,9 @@ export function SettingsPage({
 
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [prefs, setPrefs] = useState<AppPrefs | null>(null);
+  const [daemon, setDaemon] = useState<ManagedDaemonStatus | null>(null);
+  const [daemonLogs, setDaemonLogs] = useState<string[]>([]);
+  const [daemonBusy, setDaemonBusy] = useState(false);
 
   useEffect(() => {
     void window.airemote.appInfo().then(setInfo);
@@ -71,6 +74,24 @@ export function SettingsPage({
 
   async function updatePrefs(patch: Partial<AppPrefs>): Promise<void> {
     setPrefs(await window.airemote.prefsSet(patch));
+  }
+
+  async function refreshManaged(): Promise<void> {
+    setDaemon(await window.airemote.daemonStatus());
+    setDaemonLogs(await window.airemote.daemonLogs(200));
+  }
+
+  // Only while this section is on screen — the log tail is not worth polling
+  // from a page the user is not looking at.
+  useEffect(() => {
+    if (section === 'daemon') void refreshManaged();
+  }, [section]);
+
+  async function stopManaged(): Promise<void> {
+    setDaemonBusy(true);
+    await window.airemote.daemonStop();
+    setDaemonBusy(false);
+    await refreshManaged();
   }
 
   const found = probe?.found ?? null;
@@ -161,7 +182,68 @@ export function SettingsPage({
                     </ul>
                   </div>
                 )}
-                <div className="hint">启动/停止/日志面板、手机访问开关属于 M4（本应用托管的 daemon 才可用）。</div>
+                <div className="hint">
+                  启动/停止/日志只对<b>本应用托管的 daemon</b> 生效；附着来的（systemd、别人手动起的）
+                  一律只读，不去 shell out <span className="mono">systemctl</span>。
+                </div>
+              </section>
+            )}
+
+            {section === 'daemon' && (
+              <section className="settings-section">
+                <div className="section-head">
+                  <h3>本应用托管的 daemon</h3>
+                  <button className="btn tiny" onClick={() => void refreshManaged()}>
+                    刷新
+                  </button>
+                  {daemon?.running && (
+                    <button className="btn tiny danger" disabled={daemonBusy} onClick={() => void stopManaged()}>
+                      {daemonBusy ? '停止中…' : '停止'}
+                    </button>
+                  )}
+                </div>
+                <dl className="kv">
+                  <dt>状态</dt>
+                  <dd>{daemon?.running ? '● 本应用启动，运行中' : '○ 未运行（本应用没有启动 daemon）'}</dd>
+                  <dt>日志</dt>
+                  <dd className="mono">{daemon?.logPath ?? '—'}</dd>
+                </dl>
+                {!daemon?.running && (
+                  <div className="hint" style={{ marginTop: 0 }}>
+                    启动需要先选一个工作目录（它会成为默认工作区），所以在<b>连接页</b>做：本机没探测到 daemon 时，
+                    会出现「启动一个本机 daemon」。端口在 4780–4789 里自动挑空闲的。
+                  </div>
+                )}
+                <div className="field">
+                  <label>退出应用时，本应用启动的 daemon</label>
+                  <div className="mode-picker">
+                    {(
+                      [
+                        { value: 'ask', title: '每次询问', desc: '退出时弹一次确认' },
+                        { value: 'stop', title: '一并停止', desc: '默认：不留后台进程' },
+                        { value: 'keep', title: '保留', desc: '手机与其它电脑仍可连接' },
+                      ] as const
+                    ).map((option) => (
+                      <button
+                        key={option.value}
+                        className={`mode-option${option.value === prefs?.daemonOnQuit ? ' active' : ''}`}
+                        disabled={!prefs}
+                        onClick={() => void updatePrefs({ daemonOnQuit: option.value })}
+                      >
+                        <b>{option.title}</b>
+                        <span>{option.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint">
+                    只管<b>本应用启动的</b> daemon；附着来的（systemd、手动起的）一律不碰。
+                  </div>
+                </div>
+                {daemonLogs.length > 0 && (
+                  <pre className="fcode daemon-log" title="最近 200 行">
+                    {daemonLogs.slice(-40).join('\n')}
+                  </pre>
+                )}
               </section>
             )}
 

@@ -84,9 +84,58 @@ function showWindow(sessionId?: string): void {
   if (sessionId) win.webContents.send(IPC.selectSession, sessionId);
 }
 
+/**
+ * Quitting is the one place a managed daemon's fate is decided (§7.5). Attached
+ * daemons (systemd, started by hand) are never touched — they are not ours.
+ *
+ * Default is 「一并停止」, so a user who never looks at the dialog does not leave
+ * a process behind; 「保留」 is the deliberate opt-out for "keep serving the phone".
+ * Quitting again mid-dialog is a no-op (`quitResolved`).
+ */
+let quitResolved = false;
+let quitPromptOpen = false;
+
+async function resolveDaemonOnQuit(): Promise<void> {
+  if (!managedDaemon.running()) return;
+  const { daemonOnQuit } = loadPrefs();
+  if (daemonOnQuit === 'stop') {
+    await managedDaemon.stop();
+    return;
+  }
+  if (daemonOnQuit === 'keep') return;
+  if (quitPromptOpen) return;
+
+  quitPromptOpen = true;
+  try {
+    const options: Electron.MessageBoxOptions = {
+      type: 'question',
+      message: '本应用启动的本机 daemon 还在运行',
+      detail: '保留的话，手机和其它电脑仍能连上它，正在跑的任务也不会中断；停止则这台机器上的 agent 全部结束。',
+      buttons: ['一并停止', '保留（手机仍可连接）', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      checkboxLabel: '记住我的选择',
+      noLink: true,
+    };
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const { response, checkboxChecked } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options);
+    if (response === 2) return; // cancelled → the app stays up
+    if (response === 1) {
+      if (checkboxChecked) savePrefs({ daemonOnQuit: 'keep' });
+      return;
+    }
+    await managedDaemon.stop();
+    if (checkboxChecked) savePrefs({ daemonOnQuit: 'stop' });
+  } finally {
+    quitPromptOpen = false;
+  }
+}
+
 function quitApp(): void {
-  quitting = true;
-  closeAllNotifications();
+  // Everything real happens in `before-quit`, so the tray menu, ⌘Q and the
+  // window-close prompt all take the same path.
   app.quit();
 }
 
@@ -163,9 +212,23 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showWindow());
 
   // An explicit quit (tray menu, ⌘Q, File ▸ Quit) must not be intercepted by
-  // the window's "closing is not quitting" handler.
-  app.on('before-quit', () => {
+  // the window's "closing is not quitting" handler — but it *is* the moment the
+  // managed daemon's fate is decided, which needs to be async.
+  app.on('before-quit', (event) => {
     quitting = true;
+    if (quitResolved) return;
+    event.preventDefault();
+    void (async () => {
+      try {
+        await resolveDaemonOnQuit();
+      } catch (err) {
+        // A failed stop must not trap the user in a windowless app.
+        console.warn('[airemote] resolving the managed daemon on quit failed:', err);
+      }
+      quitResolved = true;
+      closeAllNotifications();
+      app.quit();
+    })();
   });
 
   app.whenReady().then(() => {

@@ -256,6 +256,12 @@ export interface AppInfo {
 export interface AppPrefs {
   /** `ask` prompts on the first close and remembers the answer if asked to. */
   closeBehavior: 'tray' | 'quit' | 'ask';
+  /**
+   * What happens to a daemon **we** started when the app quits (§7.5). `ask` shows
+   * the dialog once; 「记住」 turns it into one of the other two. Daemons we merely
+   * attached to are never touched.
+   */
+  daemonOnQuit: 'ask' | 'stop' | 'keep';
   desktopNotifications: boolean;
 }
 

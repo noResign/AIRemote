@@ -2607,3 +2607,11 @@ a.btn {
 .local-pick:hover {
   border-color: var(--primary);
 }
+/* The managed daemon's log tail: monospace, bounded, scrollable. */
+.daemon-log {
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.55;
+}

@@ -160,12 +160,14 @@ export function registerIpc(
   });
 }
 
+const DAEMON_ON_QUIT = new Set(['ask', 'stop', 'keep']);
 const CLOSE_BEHAVIORS = new Set<AppPrefs['closeBehavior']>(['tray', 'quit', 'ask']);
 
 function sanitizePrefs(patch: Partial<AppPrefs>): Partial<AppPrefs> {
   const out: Partial<AppPrefs> = {};
   if (patch && typeof patch === 'object') {
     if (patch.closeBehavior && CLOSE_BEHAVIORS.has(patch.closeBehavior)) out.closeBehavior = patch.closeBehavior;
+    if (patch.daemonOnQuit && DAEMON_ON_QUIT.has(patch.daemonOnQuit)) out.daemonOnQuit = patch.daemonOnQuit;
     if (typeof patch.desktopNotifications === 'boolean') out.desktopNotifications = patch.desktopNotifications;
   }
   return out;
