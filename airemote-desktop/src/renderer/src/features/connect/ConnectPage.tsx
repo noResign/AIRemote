@@ -96,6 +96,14 @@ export function ConnectPage() {
           ── 或连接远程 ──
         </div>
 
+        {/* A real form so Enter submits: filling the address and reaching for the
+            mouse every time is a pointless interruption. */}
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!connecting && parsedAddress) void connectRemote();
+          }}
+        >
         <div className="field">
           <label htmlFor="addr">服务器地址</label>
           <input
@@ -139,13 +147,10 @@ export function ConnectPage() {
           />
         </div>
 
-        <button
-          className="btn primary full"
-          disabled={connecting || !parsedAddress}
-          onClick={() => void connectRemote()}
-        >
+        <button type="submit" className="btn primary full" disabled={connecting || !parsedAddress}>
           {connecting ? '连接中…' : '连接'}
         </button>
+        </form>
 
         {insecureWarning && (
           <div className="error-text">
