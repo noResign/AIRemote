@@ -24,7 +24,11 @@ export const EMPTY_SCOPE: ConnectionScope = {
 
 interface SessionsState {
   byConnection: Record<string, ConnectionScope>;
-  load(connectionId: string, workspaceId?: string): Promise<void>;
+  /**
+   * `silent` skips the loading flag: the rail polls this on a timer, and
+   * flipping `loading` would flash skeletons over a list the user is reading.
+   */
+  load(connectionId: string, workspaceId?: string, options?: { silent?: boolean }): Promise<void>;
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   remove(connectionId: string, sessionId: string): void;
 }
@@ -32,13 +36,15 @@ interface SessionsState {
 export const useSessions = create<SessionsState>((set) => ({
   byConnection: {},
 
-  async load(connectionId, workspaceId) {
-    set((state) => ({
-      byConnection: {
-        ...state.byConnection,
-        [connectionId]: { ...(state.byConnection[connectionId] ?? EMPTY_SCOPE), loading: true, error: null },
-      },
-    }));
+  async load(connectionId, workspaceId, options) {
+    if (!options?.silent) {
+      set((state) => ({
+        byConnection: {
+          ...state.byConnection,
+          [connectionId]: { ...(state.byConnection[connectionId] ?? EMPTY_SCOPE), loading: true, error: null },
+        },
+      }));
+    }
 
     const [workspaces, sessions] = await Promise.all([api.workspaces(), api.sessions(workspaceId)]);
     const failed = [workspaces, sessions].find((r) => !r.ok);

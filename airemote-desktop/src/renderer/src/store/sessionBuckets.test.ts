@@ -29,9 +29,11 @@ describe('bucketSessions', () => {
       needsInput: new Set(),
       failed: new Set(),
     });
-    expect(buckets.map((b) => b.id)).toEqual(['needsInput', 'failed', 'running', 'done']);
-    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['new-run', 'old-run']);
-    expect(buckets[3]?.sessions.map((s) => s.id)).toEqual(['done']);
+    expect(buckets.map((b) => b.id)).toEqual(['needsInput', 'failed', 'rest']);
+    // Running and finished share one list — a running row is marked on the row
+    // itself, so it does not need a list of its own. Order is purely recency:
+    // 30, 10, then the fixture's default 0.
+    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['new-run', 'old-run', 'done']);
   });
 
   it('lets "waiting on me" beat "running" for the same session', () => {
@@ -51,5 +53,6 @@ describe('bucketSessions', () => {
       failed: new Set(['bad']),
     });
     expect(buckets[1]?.sessions.map((s) => s.id)).toEqual(['bad']);
+    expect(buckets[2]?.sessions.map((s) => s.id)).toEqual(['run']);
   });
 });

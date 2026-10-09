@@ -26,6 +26,9 @@ type Page = 'chat' | 'settings';
  */
 const IS_MAC = window.airemote.platform === 'darwin';
 
+/** How often the rail re-asks the daemon what is running (sessions.md §6.2). */
+const SESSION_POLL_MS = 5000;
+
 /**
  * Left rail + main area. Desktop shows the list and the content side by side
  * rather than pushing pages — "which session is running / waiting on me" has to
@@ -70,6 +73,26 @@ export function AppShell() {
   useEffect(() => {
     if (!connectionId) return;
     void load(connectionId, workspaceId || undefined);
+  }, [connectionId, workspaceId, load]);
+
+  /*
+   * The rail's running marker comes from polling, not push (sessions.md §6.2):
+   * a run another device started, or one that ended while this client was
+   * looking at a different session, is only visible if we ask again. The tray
+   * count and the rail-foot count are fed from the same list, so they go stale
+   * with it. Silent, so a poll never flashes skeletons over what is on screen.
+   */
+  useEffect(() => {
+    if (!connectionId) return;
+    let inFlight = false;
+    const timer = setInterval(() => {
+      if (inFlight) return;
+      inFlight = true;
+      void load(connectionId, workspaceId || undefined, { silent: true }).finally(() => {
+        inFlight = false;
+      });
+    }, SESSION_POLL_MS);
+    return () => clearInterval(timer);
   }, [connectionId, workspaceId, load]);
 
   // Pick the default workspace once, then keep whatever the user chose.

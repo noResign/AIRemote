@@ -5,8 +5,13 @@ import type { SessionDto } from '../../../shared/contract';
  * switching sessions", which a pure `lastActiveAt` sort destroys — a long run
  * finished minutes ago would cover the session that is blocked on an approval.
  * Order is fixed; only the order *within* a bucket is by recency.
+ *
+ * Only the two **actionable** states get a bucket of their own. Running used to
+ * have one as well and it earned nothing: a running row already carries its own
+ * marker (pulse dot + left bar), so promoting it added no information — it just
+ * split "sessions that want nothing from me" into two lists.
  */
-export type BucketId = 'needsInput' | 'failed' | 'running' | 'done';
+export type BucketId = 'needsInput' | 'failed' | 'rest';
 
 export interface Bucket {
   id: BucketId;
@@ -17,11 +22,10 @@ export interface Bucket {
 export const BUCKET_LABELS: Record<BucketId, string> = {
   needsInput: '⚠ 等待我处理',
   failed: '✗ 失败',
-  running: '● 运行中',
-  done: '已完成',
+  rest: '其余会话',
 };
 
-const ORDER: BucketId[] = ['needsInput', 'failed', 'running', 'done'];
+const ORDER: BucketId[] = ['needsInput', 'failed', 'rest'];
 
 export interface BucketInput {
   sessions: SessionDto[];
@@ -40,9 +44,7 @@ export function bucketSessions({ sessions, needsInput, failed }: BucketInput): B
       ? 'needsInput'
       : failed.has(session.id)
         ? 'failed'
-        : session.running
-          ? 'running'
-          : 'done';
+        : 'rest';
     byBucket.get(target)?.push(session);
   }
   return ORDER.map((id) => ({

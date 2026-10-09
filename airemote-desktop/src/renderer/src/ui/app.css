@@ -1381,14 +1381,13 @@ a.btn {
 .bucket-head .chevron {
   width: 10px;
 }
-.bucket-label.warning {
+/* These selectors are the bucket ids (SessionList applies `bucket-label ${id}`);
+   they used to be named warning/error/running and so never matched. */
+.bucket-label.needsInput {
   color: var(--warning);
 }
-.bucket-label.error {
+.bucket-label.failed {
   color: var(--error);
-}
-.bucket-label.running {
-  color: var(--primary);
 }
 .bucket-count {
   margin-left: auto;
