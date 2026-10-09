@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { connectionApi } from '../ipc/client';
+import { useChat } from './chat';
 import type { ConnectInput, ConnectionView, ProbeResult } from '../../../shared/ipc';
 
 interface ConnectionState {
@@ -60,6 +61,10 @@ export const useConnection = create<ConnectionState>((set) => ({
   },
 
   async disconnect() {
+    // Everything the chat store holds is keyed by the connection id, so it all
+    // describes the host we are leaving. Clear it before the shell can remount
+    // and re-select the previous host's session from the stale open chat.
+    useChat.getState().reset();
     set({ view: await connectionApi.clear() });
   },
 }));

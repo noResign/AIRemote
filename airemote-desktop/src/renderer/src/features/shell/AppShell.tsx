@@ -19,6 +19,13 @@ import type { PaletteItem } from '../../commands/palette';
 type Page = 'chat' | 'settings';
 
 /**
+ * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
+ * traffic lights float over the web content rather than sitting in a title bar.
+ * The class reserves the strip they occupy — see `.shell.darwin` in app.css.
+ */
+const IS_MAC = window.airemote.platform === 'darwin';
+
+/**
  * Left rail + main area. Desktop shows the list and the content side by side
  * rather than pushing pages — "which session is running / waiting on me" has to
  * be visible without navigating.
@@ -253,7 +260,7 @@ export function AppShell() {
   }
 
   return (
-    <div className={`shell${railVisible ? '' : ' rail-hidden'}`}>
+    <div className={`shell${railVisible ? '' : ' rail-hidden'}${IS_MAC ? ' darwin' : ''}`}>
       {railVisible && (
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">

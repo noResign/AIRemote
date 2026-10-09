@@ -56,6 +56,8 @@ interface ChatStore {
   stop(): void;
   detach(): void;
   leave(): void;
+  /** Drop every chat, not just the open one — see the implementation's note. */
+  reset(): void;
   decide(decision: 'allow' | 'deny' | 'allow_all', reason?: string, response?: unknown): Promise<void>;
   applyStreamEvent(event: StreamEvent): void;
   setPermissionMode(mode: string): void;
@@ -212,6 +214,19 @@ export const useChat = create<ChatStore>((set, get) => ({
   leave() {
     get().detach();
     set({ activeKey: null });
+  },
+
+  /**
+   * Drop every cached chat, not just the open one.
+   *
+   * Chat keys embed the connection id, so once the target is gone the whole
+   * map describes a daemon we can no longer reach. Clearing only `activeKey`
+   * is not enough: the shell syncs its rail selection *from* the open chat, so
+   * a stale entry would drag the previous host's session back on screen.
+   */
+  reset() {
+    get().detach();
+    set({ byKey: {}, streamKeys: {}, failedIds: [], activeKey: null });
   },
 
   async decide(decision, reason, response) {

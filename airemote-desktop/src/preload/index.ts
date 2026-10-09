@@ -19,6 +19,8 @@ import type {
  * (transitively, so relative helper modules are checked too).
  */
 const api: AiremoteBridge = {
+  // Plain value, not an IPC round trip: the shell needs it before first paint.
+  platform: process.platform,
   boot: () => ipcRenderer.invoke(IPC.boot),
   request: (req: DaemonRequest) => ipcRenderer.invoke(IPC.request, req),
   connGet: () => ipcRenderer.invoke(IPC.connGet),

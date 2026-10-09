@@ -233,6 +233,13 @@ export interface StreamCancelInput {
  * from preload) so the renderer's tsconfig never has to resolve `electron`.
  */
 export interface AiremoteBridge {
+  /**
+   * `process.platform`, read synchronously in the preload. The shell has to know
+   * it *before* first paint: macOS hides the title bar and floats the traffic
+   * lights over the content, so an async round trip would let the rail lay out
+   * underneath them for a frame.
+   */
+  platform: string;
   boot(): Promise<BootstrapResult>;
   request(req: DaemonRequest): Promise<DaemonResponse>;
   connGet(): Promise<ConnectionView>;

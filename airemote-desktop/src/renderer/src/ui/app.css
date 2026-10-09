@@ -244,8 +244,28 @@ input.mono {
 /* ---------- shell ---------- */
 
 .shell {
+  position: relative;
   height: 100%;
   display: flex;
+}
+/*
+ * macOS builds use `titleBarStyle: 'hiddenInset'` (src/main/window.ts): the
+ * native title bar is gone and the traffic lights float over the web content,
+ * which otherwise lands on the rail's connection row. Reserving the strip also
+ * restores the one thing the hidden title bar took away — somewhere to drag the
+ * window from. Windows/Linux keep their real title bar, so none of this applies.
+ */
+.shell.darwin {
+  padding-top: 38px;
+}
+.shell.darwin::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  -webkit-app-region: drag;
 }
 
 .rail {
