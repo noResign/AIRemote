@@ -15,7 +15,19 @@ pnpm dist             # build + 打包当前平台安装包到 release/
 pnpm dist:dir         # 只产出 release/<平台>-unpacked/，不打安装包（验证用）
 pnpm typecheck        # 三份 tsconfig 都要过
 pnpm test             # vitest：纯逻辑与守护测试
+pnpm clean            # 删 out/ + release/
+pnpm clean:all        # 再删 node_modules/（之后必须 pnpm install）
+pnpm clean:cache      # 删全局 Electron 下载缓存（见下，影响别的项目）
 ```
+
+三个命令分开是有意的，影响范围依次变大：
+
+- `clean` 只删构建产物，**随时可跑**，不需要重新装依赖——日常最常用的就是这个。
+- `clean:all` 连 `node_modules` 一起删，退回到刚 clone 的状态。跑完**必须先 `pnpm install`**，
+  否则 `pnpm dev` 会再报一次 `Electron uninstall`（二进制没了）。重装很快：实测 **1.3 秒**
+  （依赖都在 pnpm store 里，`postinstall` 会自己把 Electron 二进制装回来）。
+- `clean:cache` 删的是 `~/.cache/electron` 和 `~/.cache/electron-builder`——**这是全机的**，
+  同机器上别的 Electron 项目也会被清，下次打包要重新下 ~120MB，所以单独一条、不并进前两个。
 
 `dev` / `build` 前会自动用 daemon **自己的** tsc 编译一次 daemon：协议类型走
 `@noresign/airemote/protocol` 子路径导出，指向 **daemon 的 `dist/types/api.d.ts`**，
@@ -28,6 +40,12 @@ pnpm test             # vitest：纯逻辑与守护测试
 配置在 `electron-builder.yml`：linux `AppImage`+`deb`、mac `dmg`+`zip`、win `nsis`。
 `pnpm dist` 默认只打**当前平台**，要出别的平台用 `pnpm exec electron-builder --mac` 之类的
 （mac 产物需在 macOS 上打）。产物落到 `release/`，命名 `airemote-<version>-<arch>.<ext>`。
+
+macOS 上还可以直接：
+
+```bash
+pnpm dist:mac     # 主机架构，出 dmg + zip（dmg 只能在 macOS 上打）
+```
 
 几个刻意的设定：
 
