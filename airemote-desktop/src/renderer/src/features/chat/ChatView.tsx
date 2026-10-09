@@ -18,9 +18,13 @@ import type { ChatSessionState } from '../../store/chat/types';
 
 interface Props {
   workspaceName: string | null;
+  asideVisible: boolean;
+  onToggleAside(): void;
+  /** Collapse the conversation column so the right panel gets the width. */
+  onCollapseChat(): void;
 }
 
-export function ChatView({ workspaceName }: Props) {
+export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollapseChat }: Props) {
   const chat = useChat((state) => (state.activeKey ? state.byKey[state.activeKey] : undefined));
   const send = useChat((state) => state.send);
   const stop = useChat((state) => state.stop);
@@ -92,6 +96,18 @@ export function ChatView({ workspaceName }: Props) {
         </div>
 
         <div className="chat-head-actions">
+          <button className="btn ghost" title="收起会话，把宽度让给右侧文件栏" onClick={onCollapseChat}>
+            ⇤
+          </button>
+          {chat.sessionId && (
+            <button
+              className={`btn ghost${asideVisible ? ' active' : ''}`}
+              title={asideVisible ? '收起文件右栏' : '在右侧显示文件改动 / 全部文件'}
+              onClick={onToggleAside}
+            >
+              ◧ 文件
+            </button>
+          )}
           {chat.contextUsage && <ContextRing usage={chat.contextUsage} />}
           <RunStatus chat={chat} />
           {busy && (

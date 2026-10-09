@@ -8,9 +8,13 @@ import type {
 } from '../../../shared/ipc';
 import type {
   AgentsResponse,
+  ChangesResponse,
   ConfigResponse,
   DeleteWorkspaceResponse,
+  DiffResponse,
   DirectoriesResponse,
+  FileContentDto,
+  FilesResponse,
   HealthDto,
   PermissionDecision,
   PermissionDto,
@@ -84,6 +88,21 @@ export const api = {
       path: ROUTES.directories,
       query: { path, showHidden },
     }),
+  files: (params: {
+    workspaceId?: string;
+    root?: string;
+    path?: string;
+    cursor?: string;
+    limit?: number;
+    showHidden?: boolean;
+    showIgnored?: boolean;
+  }) => request<FilesResponse>({ method: 'GET', path: ROUTES.files, query: { ...params } }),
+  fileContent: (params: { workspaceId?: string; root?: string; path: string }) =>
+    request<FileContentDto>({ method: 'GET', path: ROUTES.fileContent, query: { ...params } }),
+  changes: (params: { workspaceId?: string; root?: string }) =>
+    request<ChangesResponse>({ method: 'GET', path: ROUTES.changes, query: { ...params } }),
+  changesDiff: (params: { workspaceId?: string; root?: string; path: string }) =>
+    request<DiffResponse>({ method: 'GET', path: ROUTES.changesDiff, query: { ...params } }),
   sessions: (workspaceId?: string) =>
     request<SessionsResponse>({
       method: 'GET',

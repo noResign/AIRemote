@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatContextUsage, formatTokens } from './format';
+import { formatBytes, formatContextUsage, formatTokens } from './format';
 
 describe('formatTokens', () => {
   it('matches the mobile formatting', () => {
@@ -25,5 +25,15 @@ describe('formatContextUsage', () => {
 
   it('clamps above-capacity reports instead of printing 118%', () => {
     expect(formatContextUsage({ tokens: 200_000, window: 168_000 })).toContain('100%');
+  });
+});
+
+describe('formatBytes', () => {
+  it('scales B / KB / MB and keeps small values readable', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(900)).toBe('900 B');
+    expect(formatBytes(2048)).toBe('2.0 KB');
+    expect(formatBytes(340_000)).toBe('332 KB');
+    expect(formatBytes(5 * 1024 * 1024)).toBe('5.0 MB');
   });
 });

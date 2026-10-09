@@ -11,6 +11,8 @@ import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
 import { SettingsPage, type SettingsSection } from '../settings/SettingsPage';
+import { FilesPage } from '../files/FilesPage';
+import { ChatAside } from '../files/ChatAside';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
 import { ConnectionSwitcher } from '../connect/ConnectionSwitcher';
@@ -18,7 +20,7 @@ import { useToolGroups } from '../chat/toolGroups';
 import { isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
 import type { PaletteItem } from '../../commands/palette';
 
-type Page = 'chat' | 'settings';
+type Page = 'chat' | 'settings' | 'files';
 
 /**
  * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
@@ -58,6 +60,12 @@ export function AppShell() {
   const setZoom = useAppearance((state) => state.setZoom);
   const setTheme = useAppearance((state) => state.setTheme);
   const toggleToolGroups = useToolGroups((state) => state.toggleAll);
+  const asideVisible = useAppearance((state) => state.asideVisible);
+  const toggleAside = useAppearance((state) => state.toggleAside);
+  const railVisible = useAppearance((state) => state.railVisible);
+  const toggleRail = useAppearance((state) => state.toggleRail);
+  const chatVisible = useAppearance((state) => state.chatVisible);
+  const toggleChat = useAppearance((state) => state.toggleChat);
 
   const [workspaceId, setWorkspaceId] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -65,7 +73,6 @@ export function AppShell() {
   const [page, setPage] = useState<Page>('chat');
   // Which settings section is showing; kept here so the palette can open one directly.
   const [settingsSection, setSettingsSection] = useState<SettingsSection>('connection');
-  const [railVisible, setRailVisible] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -223,7 +230,7 @@ export function AppShell() {
   const actions: Record<string, () => void> = {
     'command-palette': () => setPaletteOpen((open) => !open),
     'new-session': () => setNewSessionOpen(true),
-    'toggle-rail': () => setRailVisible((visible) => !visible),
+    'toggle-rail': toggleRail,
     'go-sessions': () => setPage('chat'),
     'go-settings': () => openSettings(),
     back: goBack,
@@ -292,6 +299,7 @@ export function AppShell() {
         keywords: 'workspace 工作区',
         run: () => openSettings('workspaces'),
       },
+      { id: 'action:files', section: '动作', label: '浏览文件与改动', keywords: 'files diff 文件', run: () => setPage('files') },
       { id: 'action:refresh', section: '动作', label: '刷新会话列表', keywords: 'reload refresh', run: refresh },
       { id: 'action:stop', section: '动作', label: '停止当前运行', keywords: 'cancel abort', run: stopRun },
       theme('light', '主题：浅色'),
@@ -315,7 +323,17 @@ export function AppShell() {
   }
 
   return (
-    <div className={`shell${railVisible ? '' : ' rail-hidden'}${IS_MAC ? ' darwin' : ''}`}>
+    <div className={`shell${IS_MAC ? ' darwin' : ''}`}>
+      {!railVisible && (
+        // Collapsed leaves a strip rather than nothing: without it the only way
+        // back is ⌘B or the palette, both invisible (matches the right panel's
+        // collapse-to-44px in the design preview).
+        <div className="rail-strip">
+          <button className="link-btn" title="展开会话栏 ⌘B" onClick={toggleRail}>
+            ⇥
+          </button>
+        </div>
+      )}
       {railVisible && (
         <aside className="rail" style={{ width: railWidth }}>
           <div className="rail-head">
@@ -358,7 +376,11 @@ export function AppShell() {
           </div>
 
           <div className="rail-foot">
-            <button className="link-btn" disabled title="文件与 Diff 属于 M3">
+            <button
+              className={`link-btn${page === 'files' ? ' active' : ''}`}
+              title="文件与 Diff"
+              onClick={() => setPage('files')}
+            >
               📁 文件
             </button>
             <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => openSettings()}>
@@ -370,6 +392,9 @@ export function AppShell() {
             <button className="link-btn" title="命令面板 ⌘K" onClick={() => setPaletteOpen(true)}>
               ⌘K
             </button>
+            <button className="link-btn" title="收起会话栏 ⌘B" onClick={toggleRail}>
+              ⇤
+            </button>
             <span className="rail-running">{runningCount > 0 ? `● ${runningCount}` : ''}</span>
           </div>
           <div className="rail-resize" onMouseDown={startResize} title="拖拽调整宽度" />
@@ -379,8 +404,27 @@ export function AppShell() {
       <main className="main">
         {page === 'settings' ? (
           <SettingsPage onBack={goBack} section={settingsSection} onSectionChange={setSettingsSection} />
+        ) : page === 'files' ? (
+          <FilesPage workspaceId={workspaceId || null} workspaceName={selectedWorkspace?.name ?? null} />
         ) : (
-          <ChatView workspaceName={selectedWorkspace?.name ?? null} />
+          <div className="chat-row">
+            {chatVisible ? (
+              <ChatView
+                workspaceName={selectedWorkspace?.name ?? null}
+                asideVisible={asideVisible}
+                onToggleAside={toggleAside}
+                onCollapseChat={toggleChat}
+              />
+            ) : (
+              // Same treatment as the rail: a strip, so there is always a way back.
+              <div className="chat-strip">
+                <button className="link-btn" title="展开会话" onClick={toggleChat}>
+                  ⇥
+                </button>
+              </div>
+            )}
+            {asideVisible && <ChatAside workspaceId={workspaceId || null} onCollapse={toggleAside} />}
+          </div>
         )}
       </main>
 

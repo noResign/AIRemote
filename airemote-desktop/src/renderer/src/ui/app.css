@@ -296,6 +296,18 @@ input.mono {
   -webkit-app-region: drag;
 }
 
+.rail-strip,
+.chat-strip {
+  width: 44px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 12px;
+  gap: 12px;
+}
 .rail {
   position: relative;
   flex: none;
@@ -2148,4 +2160,400 @@ a.btn {
   display: block;
   height: 100%;
   background: var(--primary);
+}
+
+/* ---------- files & diff (pages/files.md §6.8) ---------- */
+
+.files {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.files-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.files-head .title {
+  font-weight: 600;
+}
+.files-head-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.seg3 {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.seg3 button {
+  height: 24px;
+  padding: 0 12px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.seg3 button + button {
+  border-left: 1px solid var(--border);
+}
+.seg3 button.active {
+  background: var(--primary-subtle);
+  color: var(--primary-deep);
+}
+.seg3 button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 同屏两级分栏: tree left, viewer right. */
+.files-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.ftree {
+  width: 260px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.fseg {
+  display: flex;
+  gap: 4px;
+  padding: 9px;
+  border-bottom: 1px solid var(--border);
+}
+.fseg button {
+  flex: 1;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.fseg button.active {
+  background: var(--primary-subtle);
+  border-color: var(--primary);
+  color: var(--primary-deep);
+}
+.ftree-toolbar {
+  padding: 8px 9px 0;
+}
+.fbreadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 9px 0;
+  font-size: 11px;
+}
+.fbreadcrumb button {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+  padding: 1px 3px;
+  border-radius: 4px;
+}
+.fbreadcrumb button:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.fbreadcrumb-seg::after {
+  content: '/';
+  margin-left: 4px;
+  color: var(--text-muted);
+}
+.ftree-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px;
+}
+.fnode {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.fnode:hover {
+  background: var(--surface-2);
+}
+.fnode.active {
+  background: var(--primary-subtle);
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+.fname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fsize {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+.fnode .st {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.st.mod { color: var(--warning); }
+.st.add { color: var(--success); }
+.st.del { color: var(--error); }
+
+.fpane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.fpane-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  min-height: 44px;
+}
+.fpane-path {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fpane-body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 14px;
+}
+.fnotice {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 10px 0;
+}
+.fcode {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre;
+}
+
+.fdiff {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.fdiff-ln {
+  display: flex;
+  gap: 10px;
+  padding: 0 10px;
+  white-space: pre;
+}
+.fdiff-gutter {
+  width: 34px;
+  flex: none;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+}
+.fdiff-text {
+  flex: 1;
+  min-width: 0;
+}
+.fdiff-ln.add { background: color-mix(in srgb, var(--success) 15%, transparent); }
+.fdiff-ln.del { background: color-mix(in srgb, var(--error) 13%, transparent); }
+.fdiff-ln.add .fdiff-gutter { color: var(--success); }
+.fdiff-ln.del .fdiff-gutter { color: var(--error); }
+.fdiff-ln.hunk {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 10px;
+}
+.fdiff-ln.meta {
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+/* 并排: two columns, the pair on one row. */
+.fdiff.split .fdiff-pair { display: flex; }
+.fdiff.split .fdiff-pair .fdiff-ln { flex: 1; min-width: 0; }
+.fdiff.split .fdiff-pair .fdiff-ln + .fdiff-ln { border-left: 1px solid var(--border); }
+.fdiff.split .fdiff-ln.full { display: flex; }
+.fdiff-ln.empty { background: var(--surface-2); }
+.fchev {
+  width: 10px;
+  flex: none;
+  color: var(--text-muted);
+}
+/* Two-line changed row: name on top, shortened directory under it. */
+.fnode-rich {
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  gap: 1px;
+}
+.frow-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.frow-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.frow-sub-indent {
+  padding-left: 17px;
+}
+/* Collapsed left column: the pane takes the full width (and gains enough room
+   for the side-by-side diff on narrow windows). Display, not unmount, so the
+   pane's scroll position and ResizeObserver survive the toggle. */
+.files-split.tree-hidden .ftree {
+  display: none;
+}
+
+/* ---------- chat right panel (desktop_ui_design §2 / §6.8) ---------- */
+
+.chat-row {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.chat-row > .chat {
+  flex: 1;
+  min-width: 0;
+}
+.chat-aside {
+  position: relative;
+  flex: none;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.chat-aside.fill {
+  flex: 1;
+  min-width: 0;
+}
+.aside-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 5px;
+  cursor: col-resize;
+}
+.aside-resize:hover {
+  background: var(--primary-subtle);
+}
+.aside-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+}
+.aside-head .title {
+  font-weight: 600;
+}
+.aside-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aside-close {
+  margin-left: auto;
+}
+.aside-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* The browser and the pane are sized for the two-level split; in the panel the
+   tree takes the full width and the pane fills the body instead. */
+.chat-aside .ftree {
+  width: auto;
+  flex: 1;
+  min-height: 0;
+  border-right: 0;
+}
+.chat-aside .fpane {
+  flex: 1;
+  min-height: 0;
+  background: var(--bg);
+}
+.ftree-buttons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ftree-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fpane-host {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  min-height: 0;
 }

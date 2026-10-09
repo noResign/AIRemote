@@ -38,6 +38,18 @@ export function friendlyMessage(
     case 'primary_dir':
       return '该目录已经是工作区主目录了';
 
+    // files & diff (codes are the daemon's `FileBrowserError` set)
+    case 'directory_not_readable':
+      return '目录读不了（权限不足）';
+    case 'not_a_file':
+      return '所选路径不是文件';
+    case 'file_not_found':
+      return '文件不存在或已被删除';
+    case 'read_failed':
+      return '读取失败，请重试';
+    case 'path_outside_workspace':
+      return '路径不在工作区内';
+
     // sessions & runtimes
     case 'runtime_unavailable':
       return '该 Agent 未安装或不在 PATH 上，请在电脑端确认';
