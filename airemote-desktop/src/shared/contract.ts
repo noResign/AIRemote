@@ -38,6 +38,40 @@ export interface WorkspacesResponse {
   workspaces: WorkspaceDto[];
 }
 
+/** `POST` / `PATCH /api/workspaces[/:id]` — the daemon echoes the stored row. */
+export interface WorkspaceResponse {
+  ok: boolean;
+  workspace: WorkspaceDto;
+}
+
+/** `POST` / `DELETE /api/workspaces/:id/dirs` — the full list after the change. */
+export interface WorkspaceDirsResponse {
+  ok: boolean;
+  dirs: string[];
+}
+
+/** `DELETE /api/workspaces/:id` — how many sessions the cascade took with it. */
+export interface DeleteWorkspaceResponse {
+  ok: boolean;
+  id: string;
+  deletedSessions: number;
+}
+
+export interface DirectoryEntryDto {
+  name: string;
+  path: string;
+  /** Already a workspace: the picker tags it, and blocks "choose this folder" when creating. */
+  isWorkspace: boolean;
+}
+
+/** `GET /api/fs/directories` — one level of a tree, folders only. */
+export interface DirectoriesResponse {
+  path: string;
+  /** null at the filesystem root (`/`). */
+  parent: string | null;
+  entries: DirectoryEntryDto[];
+}
+
 /**
  * `GET /api/sessions/:id`. `messages` are raw DB rows in snake_case — the one
  * place in the contract that lies. Adapters keep that shape out of the store;

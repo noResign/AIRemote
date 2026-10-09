@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useScope, useSessions } from '../../store/sessions';
+import { fallbackWorkspaceId } from '../../store/workspaceList';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useAppearance, type ThemePreference } from '../../store/appearance';
 import { failedKey, needsInputKey, parseNeedsInput } from '../../store/chat/selectors';
@@ -9,7 +10,7 @@ import { RefreshIcon } from '../../ui/RefreshIcon';
 import { SessionList } from '../sessions/SessionList';
 import { ChatView } from '../chat/ChatView';
 import { NewSessionDialog } from '../new-session/NewSessionDialog';
-import { SettingsPage } from '../settings/SettingsPage';
+import { SettingsPage, type SettingsSection } from '../settings/SettingsPage';
 import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
 import { ConnectionSwitcher } from '../connect/ConnectionSwitcher';
@@ -62,6 +63,8 @@ export function AppShell() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [page, setPage] = useState<Page>('chat');
+  // Which settings section is showing; kept here so the palette can open one directly.
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>('connection');
   const [railVisible, setRailVisible] = useState(true);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -102,6 +105,16 @@ export function AppShell() {
     if (fallback) setWorkspaceId(fallback.id);
   }, [scope.workspaces, workspaceId]);
 
+  // The chosen workspace can disappear under us (deleted from the 工作区 page, or
+  // by another device) — fall back rather than showing an empty rail forever.
+  useEffect(() => {
+    if (!workspaceId || scope.workspaces.length === 0) return;
+    if (scope.workspaces.some((workspace) => workspace.id === workspaceId)) return;
+    setWorkspaceId(fallbackWorkspaceId(scope.workspaces) ?? '');
+    setSelectedId(null);
+    useChat.getState().leave();
+  }, [scope.workspaces, workspaceId]);
+
   // A brand-new session only learns its id when the daemon answers the first
   // prompt; highlight it in the rail without re-opening it (that would reload
   // history mid-stream).
@@ -138,6 +151,11 @@ export function AppShell() {
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
   const runningCount = scope.sessions.filter((session) => session.running).length;
   const overlayOpen = paletteOpen || helpOpen || newSessionOpen;
+
+  function openSettings(section: SettingsSection = 'connection'): void {
+    setSettingsSection(section);
+    setPage('settings');
+  }
 
   function select(id: string): void {
     setPage('chat');
@@ -197,12 +215,7 @@ export function AppShell() {
     startNew(connectionId, { ...options, workspaceId: workspaceId || null });
   }
 
-  /**
-   * Leaving a full-area page. There are exactly two pages today, so "back" and
-   * "the conversation view" are the same move — but the settings page is not
-   * only reachable from a conversation, so this is named for the action. When a
-   * third page lands (files, M3) it has to become "the page you came from".
-   */
+  /** Leave the settings page. */
   function goBack(): void {
     setPage('chat');
   }
@@ -212,7 +225,7 @@ export function AppShell() {
     'new-session': () => setNewSessionOpen(true),
     'toggle-rail': () => setRailVisible((visible) => !visible),
     'go-sessions': () => setPage('chat'),
-    'go-settings': () => setPage('settings'),
+    'go-settings': () => openSettings(),
     back: goBack,
     refresh,
     'stop-run': stopRun,
@@ -271,7 +284,14 @@ export function AppShell() {
     });
     items.push(
       { id: 'action:new-session', section: '动作', label: '新建会话', keywords: 'new create', run: () => setNewSessionOpen(true) },
-      { id: 'action:settings', section: '动作', label: '打开设置', keywords: 'preferences', run: () => setPage('settings') },
+      { id: 'action:settings', section: '动作', label: '打开设置', keywords: 'preferences', run: () => openSettings() },
+      {
+        id: 'action:workspaces',
+        section: '动作',
+        label: '管理工作区',
+        keywords: 'workspace 工作区',
+        run: () => openSettings('workspaces'),
+      },
       { id: 'action:refresh', section: '动作', label: '刷新会话列表', keywords: 'reload refresh', run: refresh },
       { id: 'action:stop', section: '动作', label: '停止当前运行', keywords: 'cancel abort', run: stopRun },
       theme('light', '主题：浅色'),
@@ -341,7 +361,7 @@ export function AppShell() {
             <button className="link-btn" disabled title="文件与 Diff 属于 M3">
               📁 文件
             </button>
-            <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => setPage('settings')}>
+            <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => openSettings()}>
               ⚙ 设置
             </button>
             <button className="link-btn" title="刷新 ⌘R" onClick={refresh}>
@@ -358,7 +378,7 @@ export function AppShell() {
 
       <main className="main">
         {page === 'settings' ? (
-          <SettingsPage onBack={goBack} />
+          <SettingsPage onBack={goBack} section={settingsSection} onSectionChange={setSettingsSection} />
         ) : (
           <ChatView workspaceName={selectedWorkspace?.name ?? null} />
         )}

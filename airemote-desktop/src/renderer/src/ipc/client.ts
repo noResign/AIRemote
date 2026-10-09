@@ -8,6 +8,8 @@ import type {
 } from '../../../shared/ipc';
 import type {
   AgentsResponse,
+  DeleteWorkspaceResponse,
+  DirectoriesResponse,
   HealthDto,
   PermissionDecision,
   PermissionDto,
@@ -16,6 +18,8 @@ import type {
   SessionDetailResponse,
   SessionsResponse,
   SseFrame,
+  WorkspaceDirsResponse,
+  WorkspaceResponse,
   WorkspacesResponse,
 } from '../../../shared/contract';
 
@@ -52,6 +56,30 @@ export const api = {
   health: () => request<HealthDto>({ method: 'GET', path: ROUTES.health }),
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
   workspaces: () => request<WorkspacesResponse>({ method: 'GET', path: ROUTES.workspaces }),
+  createWorkspace: (path: string, name?: string) =>
+    request<WorkspaceResponse>({
+      method: 'POST',
+      path: ROUTES.workspaces,
+      body: name?.trim() ? { path, name } : { path },
+    }),
+  updateWorkspace: (id: string, patch: { name?: string; isDefault?: boolean; enabled?: boolean }) =>
+    request<WorkspaceResponse>({ method: 'PATCH', path: ROUTES.workspace(id), body: patch }),
+  deleteWorkspace: (id: string, cascade: boolean) =>
+    request<DeleteWorkspaceResponse>({
+      method: 'DELETE',
+      path: ROUTES.workspace(id),
+      query: cascade ? { cascade: 1 } : undefined,
+    }),
+  addWorkspaceDir: (id: string, path: string) =>
+    request<WorkspaceDirsResponse>({ method: 'POST', path: ROUTES.workspaceDirs(id), body: { path } }),
+  removeWorkspaceDir: (id: string, path: string) =>
+    request<WorkspaceDirsResponse>({ method: 'DELETE', path: ROUTES.workspaceDirs(id), body: { path } }),
+  directories: (path?: string, showHidden?: boolean) =>
+    request<DirectoriesResponse>({
+      method: 'GET',
+      path: ROUTES.directories,
+      query: { path, showHidden },
+    }),
   sessions: (workspaceId?: string) =>
     request<SessionsResponse>({
       method: 'GET',

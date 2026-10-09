@@ -1031,7 +1031,9 @@ kbd {
 
 .settings {
   height: 100%;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .settings-head {
   display: flex;
@@ -1040,24 +1042,86 @@ kbd {
   padding: 10px 18px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  flex: none;
 }
 .settings-head .title {
   font-weight: 600;
 }
-.settings-body {
-  max-width: 760px;
-  padding: 18px;
+/* 左栏小节导航 + 右栏内容 (pages/settings.md §6.7) */
+.settings-split {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.snav {
+  width: 200px;
+  flex: none;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  padding: 10px 8px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 2px;
+  overflow: auto;
+}
+.snav-item {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.snav-item:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+.snav-item.active {
+  background: var(--primary-subtle);
+  color: var(--primary-deep);
+  font-weight: 600;
+}
+.pane {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.scard {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: 14px 16px;
 }
 .settings-section h3 {
-  font-size: 13px;
-  margin: 0 0 10px;
-  color: var(--text-secondary);
+  font-size: 13.5px;
+  margin: 0 0 8px;
+  color: var(--text-primary);
+}
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-head h3 {
+  margin: 0;
+}
+.section-head .btn {
+  margin-left: auto;
 }
 .kv {
   display: grid;
@@ -1077,6 +1141,141 @@ kbd {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* ---------- workspaces section (settings.md §6.9 ⑧⑨) ---------- */
+
+/* Painted by `.settings-section`; this only adds the hover-reveal hook. */
+.ws-card {
+  position: relative;
+}
+.ws-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ws-card-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ws-card-title b {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Delete is hover-revealed here, where the phone swipes (desktop_ui_design §7.2). */
+.ws-delete {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ws-card:hover .ws-delete,
+.ws-card:focus-within .ws-delete {
+  opacity: 1;
+}
+.ws-card-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.ws-dir-path {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-card-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.ws-notice {
+  position: sticky;
+  bottom: 0;
+  align-self: flex-start;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--elevation-2);
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.ws-rename,
+.ws-delete-modal {
+  width: min(460px, 92vw);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- directory picker ---------- */
+
+.dir-picker {
+  width: min(560px, 94vw);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dir-path-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.dir-path-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.dir-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 120px;
+  max-height: 46vh;
+  overflow: auto;
+  padding: 4px;
+}
+.dir-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dir-entry:hover {
+  background: var(--primary-subtle);
+}
+.dir-entry-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- tabs (new session) ---------- */
