@@ -8,6 +8,7 @@ import type {
 } from '../../../shared/ipc';
 import type {
   AgentsResponse,
+  ConfigResponse,
   DeleteWorkspaceResponse,
   DirectoriesResponse,
   HealthDto,
@@ -56,6 +57,9 @@ export const api = {
   health: () => request<HealthDto>({ method: 'GET', path: ROUTES.health }),
   agents: () => request<AgentsResponse>({ method: 'GET', path: ROUTES.agents }),
   workspaces: () => request<WorkspacesResponse>({ method: 'GET', path: ROUTES.workspaces }),
+  config: () => request<ConfigResponse>({ method: 'GET', path: ROUTES.config }),
+  updateConfig: (patch: { defaultPermissionMode?: ProductPermissionMode; defaultWorkspaceId?: string }) =>
+    request<{ ok: boolean; config: ConfigResponse }>({ method: 'PATCH', path: ROUTES.config, body: patch }),
   createWorkspace: (path: string, name?: string) =>
     request<WorkspaceResponse>({
       method: 'POST',

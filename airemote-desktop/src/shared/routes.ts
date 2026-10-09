@@ -11,6 +11,7 @@ export const ROUTES = {
   workspace: (id: string) => `/api/workspaces/${encodeURIComponent(id)}`,
   workspaceDirs: (id: string) => `/api/workspaces/${encodeURIComponent(id)}/dirs`,
   directories: '/api/fs/directories',
+  config: '/api/config',
   sessions: '/api/sessions',
   session: (id: string) => `/api/sessions/${encodeURIComponent(id)}`,
   runs: '/api/runs',

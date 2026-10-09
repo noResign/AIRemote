@@ -9,7 +9,7 @@
  */
 export type * from '@noresign/airemote/protocol';
 
-import type { RunDto, SessionDto, WorkspaceDto } from '@noresign/airemote/protocol';
+import type { ProductPermissionMode, RunDto, SessionDto, WorkspaceDto } from '@noresign/airemote/protocol';
 
 /** `GET /api/health` — unauthenticated discovery/readiness signal. */
 export interface HealthDto {
@@ -70,6 +70,15 @@ export interface DirectoriesResponse {
   /** null at the filesystem root (`/`). */
   parent: string | null;
   entries: DirectoryEntryDto[];
+}
+
+/** `GET/PATCH /api/config` — daemon-side defaults. */
+export interface ConfigResponse {
+  /** Applied to a new session whose request omits `permissionMode`. */
+  defaultPermissionMode: ProductPermissionMode;
+  defaultWorkspaceId: string | null;
+  workspaces: Array<{ id: string; name: string; path: string; isDefault: boolean; enabled: boolean }>;
+  server: { host: string; port: number; dataDir: string; tls: boolean; restartRequired: string[] };
 }
 
 /**

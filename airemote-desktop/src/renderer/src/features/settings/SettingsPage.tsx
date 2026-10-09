@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
+import { PreferencesSection } from './PreferencesSection';
 import type { AppInfo, AppPrefs } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
@@ -15,12 +16,20 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 /** 小节导航的顺序与命名沿用 `docs/local/pages/settings.md` §6.7。 */
-export type SettingsSection = 'connection' | 'daemon' | 'workspaces' | 'notifications' | 'appearance' | 'about';
+export type SettingsSection =
+  | 'connection'
+  | 'daemon'
+  | 'workspaces'
+  | 'preferences'
+  | 'notifications'
+  | 'appearance'
+  | 'about';
 
 const SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: 'connection', label: '连接' },
   { id: 'daemon', label: '本机 daemon' },
   { id: 'workspaces', label: '工作区' },
+  { id: 'preferences', label: '默认偏好' },
   { id: 'notifications', label: '通知' },
   { id: 'appearance', label: '外观' },
   { id: 'about', label: '关于' },
@@ -157,6 +166,8 @@ export function SettingsPage({
             )}
 
             {section === 'workspaces' && <WorkspaceSection />}
+
+            {section === 'preferences' && <PreferencesSection />}
 
             {section === 'notifications' && (
               <section className="settings-section">

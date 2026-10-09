@@ -34,15 +34,19 @@ export function NewSessionDialog({ workspaceName, workspaceId, onCancel, onCreat
 
   useEffect(() => {
     let live = true;
-    void api.agents().then((res) => {
+    // Both are needed before the form is usable, and loading them together is
+    // what keeps the preset mode from racing a user who starts clicking early.
+    void Promise.all([api.agents(), api.config()]).then(([agentsRes, configRes]) => {
       if (!live) return;
-      if (!res.ok) {
-        setError(`无法读取 Agent 列表（HTTP ${res.status}）`);
+      if (!agentsRes.ok) {
+        setError(`无法读取 Agent 列表（HTTP ${agentsRes.status}）`);
         setAgents([]);
-        return;
+      } else {
+        setAgents(agentsRes.data.agents);
+        setRuntime(defaultAgentId(agentsRes.data.agents));
       }
-      setAgents(res.data.agents);
-      setRuntime(defaultAgentId(res.data.agents));
+      // A config failure is not fatal: fall back to the hard-coded 'ask'.
+      if (configRes.ok) setMode(configRes.data.defaultPermissionMode);
     });
     return () => {
       live = false;
@@ -76,6 +80,8 @@ export function NewSessionDialog({ workspaceName, workspaceId, onCancel, onCreat
 
   const available = agents?.filter((agent) => agent.available) ?? [];
   const noneAvailable = agents !== null && available.length === 0;
+  // 续接固定走 Claude，所以它只看 Claude 在不在——codex 可用救不了它。
+  const claudeMissing = agents !== null && !available.some((agent) => agent.id === 'claude');
 
   function submit(): void {
     if (tab === 'resume') {
@@ -94,7 +100,8 @@ export function NewSessionDialog({ workspaceName, workspaceId, onCancel, onCreat
   }
 
   const modes = permissionModeOptions(tab === 'resume' ? 'claude' : runtime);
-  const canSubmit = tab === 'resume' ? resuming !== null : Boolean(runtime) && !noneAvailable;
+  const canSubmit =
+    tab === 'resume' ? resuming !== null && !claudeMissing : Boolean(runtime) && !noneAvailable;
 
   return (
     <div className="modal-scrim" onClick={onCancel}>
@@ -199,6 +206,9 @@ export function NewSessionDialog({ workspaceName, workspaceId, onCancel, onCreat
           <div className="error-text">
             本机没有可用的 agent，请先在电脑上安装并登录 Claude Code 或 Codex。
           </div>
+        )}
+        {claudeMissing && tab === 'resume' && (
+          <div className="error-text">本机没有可用的 Claude Code，无法续接会话。</div>
         )}
         {error && <div className="error-text">{error}</div>}
 
