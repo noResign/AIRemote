@@ -1,8 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { describeToolGroup, segmentBlocks, toolGroupStatus } from './segments';
+import { describeToolGroup, segmentBlocks, toolGroupStatus, toolSummary } from './segments';
 import { Markdown } from './Markdown';
 import { useToolGroups } from './toolGroups';
-import type { ChatMessage, ContentBlock } from '../../store/chat/types';
+import { ToolIcon } from '../../ui/ToolIcon';
+import { formatTokens } from '../../../../shared/format';
+import type { ChatMessage, ContentBlock, UsageInfo } from '../../store/chat/types';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
 
@@ -165,6 +167,7 @@ function AssistantRow({ message }: { message: Extract<ChatMessage, { kind: 'assi
         }
       })}
 
+      {message.usage && <UsageRow usage={message.usage} />}
       {message.error && <div className="msg-error">{message.error}</div>}
       {!message.done && <div className="msg-pending">● 正在执行…</div>}
     </div>
@@ -189,8 +192,8 @@ function FoldRow({
 }) {
   return (
     <>
-      <button className="fold-head" onClick={onToggle}>
-        <span className="chevron">{open ? '▾' : '▸'}</span>
+      <button className="fold-head" aria-expanded={open} onClick={onToggle}>
+        <span className="chevron">▶</span>
         {label}
       </button>
       {children}
@@ -233,7 +236,7 @@ function ToolGroup({ tools }: { tools: ToolBlock[] }) {
         onToggle={() => setLocal(!open)}
         label={
           <span className="tool-group-label" title={summary || undefined}>
-            {describeToolGroup(tools)}
+            <span className="tool-group-desc">{describeToolGroup(tools)}</span>
             {summary && <span className="tool-group-status">{summary}</span>}
           </span>
         }
@@ -259,16 +262,40 @@ function toolGroupStatusSummary(status: { running: number; failed: number; inter
 
 function ToolCard({ tool }: { tool: ToolBlock }) {
   const state = tool.running ? 'running' : tool.isError ? 'error' : tool.interrupted ? 'interrupted' : 'done';
+  const summary = toolSummary(tool.input);
   return (
     <details className={`tool-card ${state}`}>
       <summary>
+        <ToolIcon name={tool.name} />
         <span className="mono tool-name">{tool.name}</span>
+        {summary && <span className="tool-summary">{summary}</span>}
         <span className="tool-state">{STATE_LABEL[state]}</span>
         <CopyButton text={JSON.stringify(tool.input, null, 2)} className="tool-copy" />
       </summary>
       <pre className="mono tool-io">{JSON.stringify(tool.input, null, 2)}</pre>
       {tool.result !== null && <pre className="mono tool-io result">{tool.result}</pre>}
     </details>
+  );
+}
+
+/**
+ * Tokens and cost for the turn. No occupancy bar: the per-message frame carries
+ * no context-window size, and the session's current occupancy is a different
+ * number — a bar here would be a guess dressed as a measurement. The header
+ * ring already covers "how full am I".
+ */
+function UsageRow({ usage }: { usage: UsageInfo }) {
+  const parts: string[] = [];
+  if (usage.inputTokens !== null) parts.push(`▲ ${formatTokens(usage.inputTokens)}`);
+  if (usage.outputTokens !== null) parts.push(`▼ ${formatTokens(usage.outputTokens)}`);
+  if (usage.costUsd !== null) parts.push(`$${usage.costUsd.toFixed(3)}`);
+  if (parts.length === 0) return null;
+  return (
+    <div className="usage">
+      {parts.map((part) => (
+        <span key={part}>{part}</span>
+      ))}
+    </div>
   );
 }
 

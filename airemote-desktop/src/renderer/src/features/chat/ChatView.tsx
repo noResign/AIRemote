@@ -142,15 +142,14 @@ export function ChatView({ workspaceName }: Props) {
         </button>
       )}
 
-      {busy && (
-        <div className="composer-note">
-          该会话正在运行，输入暂时禁用 —— 运行中的任务在 daemon 上执行，切换会话不受影响。
-        </div>
-      )}
-
       <Composer
         disabled={busy || chat.historyLoading}
         busy={busy}
+        notice={
+          busy
+            ? '该会话正在运行，输入暂时禁用 —— 运行中的任务在 daemon 上执行，切换会话不受影响。'
+            : null
+        }
         placeholder={busy ? '任务正在运行…' : '给 Agent 发消息'}
         onSend={(text) => void send(text)}
       />

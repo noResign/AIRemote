@@ -491,37 +491,57 @@ kbd {
 
 .composer {
   flex: none;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-  padding: 14px 18px 14px;
+  background: var(--bg);
+  padding: 10px 22px 14px;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-.composer textarea {
+/*
+ * The card is the affordance, not the textarea (preview.html `.composer .box`):
+ * one surface box holds the input and its action row, and focus lights the box
+ * rather than the field inside it.
+ */
+.composer .box {
   width: 100%;
   max-width: 760px;
-  resize: none;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r-card);
-  background: var(--bg);
+  padding: 9px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.composer .box:focus-within {
+  border-color: var(--primary);
+}
+.composer .notice {
+  width: 100%;
+  max-width: 760px;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.composer textarea {
+  width: 100%;
+  min-height: 42px;
+  /* 8 rows × the 22px line-height Composer.tsx grows to. */
+  max-height: 176px;
+  resize: none;
+  border: 0;
+  background: transparent;
   color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: 13.5px;
-  line-height: 20px;
-  padding: 8px 10px;
+  line-height: 1.6;
+  padding: 0;
   outline: none;
 }
-.composer textarea:focus {
-  border-color: var(--primary);
-}
 .composer-foot {
-  width: 100%;
-  max-width: 760px;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
 }
 .composer-foot .hint {
   margin: 0;
@@ -570,11 +590,22 @@ kbd {
 
 /* ---------- permissions ---------- */
 
+/*
+ * Non-blocking approval surface. It stays outside `.chat-scroll` so the
+ * bottom-anchored auto-scroll never has to account for it, but takes the
+ * preview's card shape: a warning-accented panel on the read column instead of
+ * a full-bleed band.
+ */
 .perm-inline {
   flex: none;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-2);
-  padding: 10px 18px;
+  width: 100%;
+  max-width: 760px;
+  margin: 10px auto 0;
+  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-left: 3px solid var(--warning);
+  border-radius: var(--r-card);
+  padding: 11px 13px;
   max-height: 45%;
   overflow: auto;
 }
@@ -737,7 +768,8 @@ kbd {
 /* ---------- markdown ---------- */
 
 .md {
-  line-height: 1.65;
+  font-size: 14px;
+  line-height: 1.75;
   word-break: break-word;
 }
 .md > *:first-child {
@@ -746,8 +778,10 @@ kbd {
 .md > *:last-child {
   margin-bottom: 0;
 }
+/* Adjacent margins collapse, so this is also the paragraph-to-paragraph gap
+   (preview.html uses 9px there). */
 .md p {
-  margin: 0 0 10px;
+  margin: 0 0 9px;
 }
 .md h1,
 .md h2,
@@ -777,6 +811,7 @@ kbd {
   font-family: var(--font-mono);
   font-size: 12.5px;
   background: var(--code-bg);
+  border: 1px solid var(--border);
   padding: 1px 5px;
   border-radius: 5px;
 }
@@ -1478,7 +1513,7 @@ a.btn {
 
 .msg {
   position: relative;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
 }
 .msg:last-child {
   margin-bottom: 4px;
@@ -1500,6 +1535,9 @@ a.btn {
   word-break: break-word;
 }
 .msg.assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   color: var(--text-primary);
 }
 
@@ -1535,77 +1573,106 @@ a.btn {
 }
 
 /*
- * These rows sit a tier *up* from `--thinking`, which reads as barely-there on
- * a dark ground. `--thinking` stays unused for text here; the chevron carries
- * the "quiet" cue instead (spec §4: tokens keep their values, usage may differ).
+ * Thinking and tool groups are the same card with the same 34px header, so a
+ * turn that alternates between them keeps one column rhythm instead of a ragged
+ * one (docs/local/pages/chat.md §6.3). These rows sit a tier *up* from
+ * `--thinking`, which reads as barely-there on a dark ground — the chevron
+ * carries the "quiet" cue instead.
  */
+.block-thinking,
+.tool-group {
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
 .fold-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
-  height: 26px;
-  padding: 0 4px;
+  height: 34px;
+  padding: 0 11px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
   font-size: 12.5px;
   cursor: pointer;
   text-align: left;
-  border-radius: 6px;
-}
-.fold-head:hover {
-  background: var(--surface-2);
-  color: var(--text-primary);
 }
 .fold-head .chevron {
   flex: none;
   width: 10px;
+  font-size: 9px;
   color: var(--text-muted);
+  transition: transform 0.15s;
+}
+.fold-head[aria-expanded='true'] .chevron {
+  transform: rotate(90deg);
 }
 .thinking-body {
   white-space: pre-wrap;
   color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.65;
-  padding: 4px 4px 10px 20px;
-  border-left: 2px solid var(--border);
-  margin: 2px 0 2px 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 4px 12px 12px 30px;
+  border-top: 1px solid var(--border);
 }
 
 .tool-group-label {
+  flex: 1;
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
+.tool-group-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .tool-group-status {
+  margin-left: auto;
+  flex: none;
   font-size: 11px;
   color: var(--text-muted);
 }
 .tool-list {
-  padding: 2px 0 6px 20px;
+  border-top: 1px solid var(--border);
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 .tool-card {
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin: 4px 0;
-  background: var(--bg);
+  background: var(--surface-2);
+  overflow: hidden;
 }
 .tool-card summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 9px;
+  padding: 7px 10px;
   cursor: pointer;
   font-size: 12.5px;
-  border-radius: 8px;
-}
-.tool-card summary:hover {
-  background: var(--surface-2);
 }
 .tool-card.error {
   border-color: var(--error);
+}
+.tool-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+.tool-summary {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tool-name {
   font-weight: 600;
@@ -1750,10 +1817,23 @@ a.btn {
   cursor: not-allowed;
 }
 
-.composer-note {
-  flex: none;
-  padding: 6px 18px 0;
-  text-align: center;
-  font-size: 11.5px;
+/* Per-turn token/cost line under an assistant message (preview.html `.usage`). */
+.usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
   color: var(--text-muted);
+}
+.usage .track {
+  width: 150px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.usage .track i {
+  display: block;
+  height: 100%;
+  background: var(--primary);
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeToolGroup, segmentBlocks, toolGroupStatus } from './segments';
+import { describeToolGroup, segmentBlocks, toolGroupStatus, toolSummary } from './segments';
 import type { ContentBlock } from '../../store/chat/types';
 
 type ToolBlock = Extract<ContentBlock, { kind: 'tool' }>;
@@ -48,5 +48,31 @@ describe('tool group summary', () => {
       { ...tool('3'), interrupted: true },
     ]);
     expect(status).toEqual({ running: 1, failed: 1, interrupted: 1 });
+  });
+});
+
+describe('toolSummary', () => {
+  it('prefers the field the built-ins actually carry', () => {
+    expect(toolSummary({ command: 'pnpm test --filter auth' })).toBe('pnpm test --filter auth');
+    expect(toolSummary({ file_path: 'src/auth/session.ts' })).toBe('src/auth/session.ts');
+    expect(toolSummary({ pattern: 'needsRefresh|expiresAt', path: 'src/auth' })).toBe('needsRefresh|expiresAt');
+  });
+
+  it('flattens whitespace so a multi-line command stays one line', () => {
+    expect(toolSummary({ command: 'cat a\n  && echo b' })).toBe('cat a && echo b');
+  });
+
+  it('truncates rather than letting a long command push the row out', () => {
+    const long = 'x'.repeat(200);
+    const result = toolSummary({ command: long });
+    expect(result).toHaveLength(81);
+    expect(result?.endsWith('…')).toBe(true);
+  });
+
+  it('returns null when there is nothing worth showing', () => {
+    expect(toolSummary({})).toBeNull();
+    expect(toolSummary({ command: '   ' })).toBeNull();
+    expect(toolSummary(null)).toBeNull();
+    expect(toolSummary('not an object')).toBeNull();
   });
 });

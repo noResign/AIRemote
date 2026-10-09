@@ -63,6 +63,27 @@ export function describeToolGroup(tools: Array<Extract<ContentBlock, { kind: 'to
   return `${tools.length} 个工具调用 · ${shown}${suffix}`;
 }
 
+/**
+ * One-line gist for a tool card's header — the most specific field the input
+ * carries, checked in the order the built-ins use them (`command` for Bash,
+ * `file_path` for Read/Edit, `pattern` for Grep…). `pattern` deliberately
+ * outranks `path`: for Grep/Glob the pattern *is* the gist and the path is only
+ * its scope. Returns null when there is nothing worth showing, so the header
+ * degrades to just the tool name rather than printing an empty run.
+ */
+export function toolSummary(input: unknown, limit = 80): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const record = input as Record<string, unknown>;
+  for (const key of ['command', 'file_path', 'pattern', 'path', 'url', 'query', 'description']) {
+    const value = record[key];
+    if (typeof value !== 'string') continue;
+    const flat = value.replace(/\s+/g, ' ').trim();
+    if (!flat) continue;
+    return flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+  }
+  return null;
+}
+
 export function toolGroupStatus(tools: Array<Extract<ContentBlock, { kind: 'tool' }>>): {
   running: number;
   failed: number;
