@@ -11,6 +11,8 @@ AIRemote 的桌面客户端：Electron（主进程 + preload）+ React/Vite 渲�
 pnpm install          # 首次；会下载 Electron 二进制（约 100MB）
 pnpm dev              # 起主进程 + 渲染层（HMR）
 pnpm build            # 产出 out/{main,preload,renderer}
+pnpm dist             # build + 打包当前平台安装包到 release/
+pnpm dist:dir         # 只产出 release/<平台>-unpacked/，不打安装包（验证用）
 pnpm typecheck        # 三份 tsconfig 都要过
 pnpm test             # vitest：纯逻辑与守护测试
 ```
@@ -20,6 +22,34 @@ pnpm test             # vitest：纯逻辑与守护测试
 源码树里没有这个文件——不先编译 daemon，三份构建都会解析失败。
 （直接调 `tsc` 而不是 `pnpm -C ../airemote-daemon build`：daemon 的 `packageManager`
 锁在 pnpm 10，本机 corepack 跑的是 11，会直接报版本不匹配。）
+
+## 打包
+
+配置在 `electron-builder.yml`：linux `AppImage`+`deb`、mac `dmg`+`zip`、win `nsis`。
+`pnpm dist` 默认只打**当前平台**，要出别的平台用 `pnpm exec electron-builder --mac` 之类的
+（mac 产物需在 macOS 上打）。产物落到 `release/`，命名 `airemote-<version>-<arch>.<ext>`。
+
+几个刻意的设定：
+
+- **不做应用内自更新**，所以没有 `publish` provider、也没有 `latest-*.yml` 清单；
+  自更新在 macOS 上需要签名（Squirrel.Mac 的硬约束），而 macOS 决定不签名。
+- **`dependencies` 是空的**。renderer 由 Vite 打包、main/preload 由 electron-vite 打包，
+  运行时不需要任何 `node_modules`，所以 asar 里只有 `out/` + `package.json`（约 1.3MB）。
+  `@noresign/airemote` 是 `link:` 的本地包且只提供类型，必须是 `devDependencies`——
+  留在 `dependencies` 里 electron-builder 会把 daemon 整个目录连同它的 `node_modules` 打进包里。
+- **图标**是 `build/icon.png`（1024×1024，程序生成，与托盘图标同一渐变）。换图标只改这个文件。
+- 版本源是 `package.json` 的 `version`，electron-builder 自动读走，无需另建 `src/version.ts`
+  （`about` 页的 `appVersion` 走 Electron 的 `app.getVersion()`）。
+
+验证打包产物（打包后 app 用 `airemote://` 从 asar 里读 SPA，这条链路只有真跑才算数）：
+
+```bash
+DISPLAY=:1 ./release/linux-unpacked/airemote-desktop --no-sandbox --user-data-dir=/tmp/AIRemote-test
+```
+
+`--no-sandbox` 是 `release/linux-unpacked/` 这个**未打包目录**才需要的：里面 `chrome-sandbox`
+没有 setuid 位。AppImage/deb 的安装形态不受影响。另注意 `--user-data-dir`：同一 data dir 上
+已有实例在跑（比如 `pnpm dev`）时，单实例锁会让新进程直接退出。
 
 ## 两个已知的坑
 

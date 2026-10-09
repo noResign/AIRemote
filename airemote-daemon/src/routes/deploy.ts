@@ -17,7 +17,7 @@ function normalizeChannel(raw: unknown): DeployChannel | null {
 }
 
 function normalizeTarget(raw: unknown): DeployTarget {
-  if (raw === 'daemon' || raw === 'android' || raw === 'all') return raw;
+  if (raw === 'daemon' || raw === 'android' || raw === 'desktop' || raw === 'all') return raw;
   return 'auto';
 }
 
@@ -37,10 +37,12 @@ function toDto(row: DeployJobRow): DeployJobDto {
   };
 }
 
+/** 非 auto 的每个目标都要显式排除其余目标——变更检测是独立的，不排除就会搭车发布。 */
 function targetFlags(target: DeployTarget): string[] {
-  if (target === 'daemon') return ['--daemon', '--no-android'];
-  if (target === 'android') return ['--android', '--no-daemon'];
-  if (target === 'all') return ['--daemon', '--android'];
+  if (target === 'daemon') return ['--daemon', '--no-android', '--no-desktop'];
+  if (target === 'android') return ['--android', '--no-daemon', '--no-desktop'];
+  if (target === 'desktop') return ['--desktop', '--no-daemon', '--no-android'];
+  if (target === 'all') return ['--daemon', '--android', '--desktop'];
   return [];
 }
 

@@ -152,7 +152,7 @@ export interface RunDto {
 
 export type DeployChannel = 'alpha' | 'prod';
 
-export type DeployTarget = 'auto' | 'daemon' | 'android' | 'all';
+export type DeployTarget = 'auto' | 'daemon' | 'android' | 'desktop' | 'all';
 
 export type DeployJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 

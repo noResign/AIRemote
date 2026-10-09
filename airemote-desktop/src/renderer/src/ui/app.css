@@ -249,6 +249,7 @@ input.mono {
 }
 
 .rail {
+  position: relative;
   flex: none;
   border-right: 1px solid var(--border);
   background: var(--surface);
@@ -368,6 +369,7 @@ kbd {
 }
 
 .chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -873,14 +875,9 @@ kbd {
   position: absolute;
   top: 0;
   bottom: 0;
+  right: -2px;
   width: 5px;
   cursor: col-resize;
-}
-.rail {
-  position: relative;
-}
-.rail-resize {
-  right: -2px;
 }
 .rail-resize:hover {
   background: var(--primary-subtle);
@@ -1669,10 +1666,6 @@ a.btn {
   border-color: var(--primary);
   color: var(--primary);
 }
-.chat {
-  position: relative;
-}
-
 /* ---------- skeletons, toast, context menu ---------- */
 
 .skeleton-list {

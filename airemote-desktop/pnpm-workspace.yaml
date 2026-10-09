@@ -4,3 +4,5 @@
 allowBuilds:
   esbuild: true
   electron: true
+  # Squirrel.Windows only; we ship NSIS, so its postinstall is not needed.
+  electron-winstaller: false

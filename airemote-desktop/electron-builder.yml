@@ -1,0 +1,61 @@
+# Packaging config for the desktop client. See docs/local/electron_desktop_plan.md
+# §"安全与打包" for the reasoning behind the targets and the no-auto-update decision.
+#
+# There is deliberately no `publish` provider and no `latest-*.yml` manifest: the
+# app does not self-update, so OSS only ever receives the installers themselves.
+appId: com.airemote.desktop
+productName: AIRemote
+copyright: Copyright © 2026 noResign
+
+directories:
+  buildResources: build
+  output: release
+
+# Everything the app runs is already in out/: electron-vite bundles main and
+# preload, and Vite bundles the renderer. `dependencies` is therefore empty on
+# purpose and no node_modules ends up in the app.
+files:
+  - out/**
+  - package.json
+
+asar: true
+# No native modules to rebuild.
+npmRebuild: false
+
+artifactName: airemote-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: build/icon.png
+  maintainer: noResign
+  synopsis: Remote client for a local coding agent
+  # Makes the .desktop entry's StartupWMClass match the app_id Electron derives
+  # from package.json `desktopName`, so the window links to the launcher icon.
+  syncDesktopName: true
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  # Unsigned on purpose (no $99/year Apple Developer account). First launch is
+  # gated by Gatekeeper; distribution is via `curl` to avoid the quarantine bit.
+  identity: null
+
+dmg:
+  sign: false
+
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: AIRemote
