@@ -53,11 +53,34 @@ DISPLAY=:1 ./release/linux-unpacked/airemote-desktop --no-sandbox --user-data-di
 
 ## 三个已知的坑
 
-**1. Electron 二进制下载失败（国内常见）**
+**1. `pnpm dev` 报 `Error: Electron uninstall`**
 
-`pnpm install` 会在 postinstall 里从 GitHub release 拉 Electron 二进制，连不上时报
-`TypeError: fetch failed`，装完也用不了。仓库里的 `.npmrc` 已经把这一项指到 npmmirror
-（只影响这个文件，其余依赖仍走默认源）。若网络本身能到 GitHub，删掉那行即可。
+`pnpm build` 正常、只有 `pnpm dev` 挂，是这个错的典型症状：build 只打包 JS，dev 要真的
+spawn Electron。
+
+原因不在 pnpm 版本，也不在 `allowBuilds`——**Electron 从 v44 起不再带 `postinstall`**
+（对比 npm 元数据：`electron@41.3.0` 有 `"postinstall": "node install.js"`，`44.4.2` 是空的），
+只留了一个 bin `install-electron → install.js`。所以 `pnpm install` 不会去装二进制，
+`pnpm rebuild electron` 也无事可做（只打印 done）。
+
+本包自己的 `package.json` 里挂了 `"postinstall": "install-electron"` 来补这一步（脚本会先
+`isInstalled()` 短路，幂等）。electron-vite 的判据是 `node_modules/electron/path.txt`
+存不存在，缺了就直接抛这句。
+
+手动补：
+
+```bash
+pnpm exec install-electron     # 或 node node_modules/electron/install.js
+cat node_modules/electron/path.txt   # 期望 Electron.app/Contents/MacOS/Electron（mac）/ electron（linux）
+```
+
+二进制下载失败（国内常见）时，`.npmrc` 的 `electron_mirror` 已经指向 npmmirror——但只有**经
+pnpm 执行**才会生效（pnpm 会把 `.npmrc` 变成 `npm_config_*` 环境变量）。直接 `node install.js`
+的话要自己给：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`。
+
+另：pnpm 加/改依赖时可能**重建 electron 的实例目录**（比如引入带 peer 依赖的包，目录名会多一个
+`_supports-color@x` 后缀），新目录里没有二进制，symlink 一换 `pnpm dev` 就挂了——重跑一次
+`pnpm exec install-electron` 即可。
 
 **2. `pnpm dist` 卡在 `packaging platform=...` 不动**
 

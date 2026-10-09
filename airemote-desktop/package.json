@@ -9,6 +9,7 @@
   "main": "out/main/index.js",
   "desktopName": "airemote.desktop",
   "scripts": {
+    "postinstall": "install-electron",
     "predev": "node ../airemote-daemon/node_modules/typescript/bin/tsc -p ../airemote-daemon/tsconfig.json",
     "dev": "electron-vite dev",
     "prebuild": "node ../airemote-daemon/node_modules/typescript/bin/tsc -p ../airemote-daemon/tsconfig.json",

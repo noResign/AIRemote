@@ -3,6 +3,10 @@
 # `packages:` key so this stays a standalone app root.
 allowBuilds:
   esbuild: true
+  # electron ships no postinstall of its own since v44 (the binary is installed
+  # by the `install-electron` bin, which our own package.json postinstall runs).
+  # Kept decided anyway: an absent entry makes pnpm re-scaffold it as an
+  # undecided "set this to true or false" placeholder on the next install.
   electron: true
   # Squirrel.Windows only; we ship NSIS, so its postinstall is not needed.
   electron-winstaller: false
