@@ -202,7 +202,8 @@ export function ConnectPage() {
             </div>
             <div className="hint" style={{ marginTop: 0 }}>
               这个目录会成为<b>默认工作区</b>，且<b>之后不可删除</b>；agent 的写入被限制在它里面。
-              数据与 token 存在单独的目录里，不和 <span className="mono">~/.airemote</span> 混。
+              数据与 token 存在 <span className="mono">~/.airemote</span>，和你手动启动的 daemon 是同一份
+              ——手机连任意一个，看到的会话与工作区都一样。
               端口会自动在 <span className="mono">4780–4789</span> 里挑第一个空闲的。
             </div>
             <label className="switch" style={{ marginTop: 8 }}>

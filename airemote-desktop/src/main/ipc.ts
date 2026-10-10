@@ -5,6 +5,7 @@ import type {
   ManagedDaemonStartInput,
   ManagedDaemonStartResult,
   ManagedDaemonStatus,
+  ManagedDaemonTokenResult,
   ConnectInput,
   DaemonRequest,
   NotifyInput,
@@ -33,6 +34,7 @@ export interface ShellDeps {
     start(input: ManagedDaemonStartInput): Promise<ManagedDaemonStartResult>;
     stop(): Promise<void>;
     logs(lines?: number): string[];
+    setToken(token?: string): Promise<ManagedDaemonTokenResult>;
   };
 }
 
@@ -139,6 +141,22 @@ export function registerIpc(
   ipcMain.handle(IPC.daemonLogs, (_event, lines: unknown) =>
     shell.daemon.logs(typeof lines === 'number' ? lines : undefined),
   );
+  ipcMain.handle(IPC.daemonSetToken, (_event, token: unknown) => {
+    // The renderer is untrusted, and this value ends up in an Authorization
+    // header — accept only a printable, space-free string, or nothing at all
+    // (null/undefined/empty = let main generate one).
+    if (token === undefined || token === null || token === '') {
+      return shell.daemon.setToken(undefined);
+    }
+    if (typeof token !== 'string') {
+      return { ok: false, code: 'bad_token', message: 'token 必须是字符串' };
+    }
+    const trimmed = token.trim();
+    if (!/^[\x21-\x7e]{8,512}$/.test(trimmed)) {
+      return { ok: false, code: 'bad_token', message: 'token 需为 8–512 个可见字符，且不含空格' };
+    }
+    return shell.daemon.setToken(trimmed);
+  });
 
   ipcMain.handle(IPC.focusSession, (event) =>
     registry.takePending(BrowserWindow.fromWebContents(event.sender)),

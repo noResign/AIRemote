@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, session } from 'electron';
-import { IPC } from '../shared/ipc';
+import { IPC, type ManagedDaemonTokenResult } from '../shared/ipc';
 import { createWindow, installAppProtocol, installCsp, registerAppScheme } from './window';
 import { ConnectionManager, daemonDataDir } from './connection/manager';
 import { StreamManager } from './streams/manager';
@@ -12,6 +12,7 @@ import { installMenu } from './menu';
 import { WindowRegistry } from './windows';
 import { DaemonSupervisor } from './daemon/supervisor';
 import { startManagedDaemon } from './daemon/managed-daemon';
+import { generateToken, writeManagedToken } from './daemon/managed-token';
 
 // Must happen before app.ready.
 registerAppScheme();
@@ -40,6 +41,9 @@ const registry = new WindowRegistry();
  * connected. Stopping it is an explicit action, not a side effect of quitting.
  */
 const managedDaemon = new DaemonSupervisor(daemonDataDir());
+// Both this daemon and any hand-started one live in `~/.airemote`, so discovery
+// can only tell "ours" from "someone else's" by pid (§已定 6).
+manager.setManagedPidProvider(() => managedDaemon.pid());
 const daemonApi = {
   status: () => ({ running: managedDaemon.running(), logPath: managedDaemon.logPath }),
   start: (input: { workspace: string; port: number; host?: string }) =>
@@ -54,6 +58,27 @@ const daemonApi = {
     }),
   stop: () => managedDaemon.stop().then(() => undefined),
   logs: (lines?: number) => managedDaemon.tail(lines ?? 200),
+  // 「改 token」: the running daemon only reads <data-dir>/token at startup, so we
+  // stop it, swap the file, and start it again — leaving it down would make the
+  // change look like it "didn't take".
+  setToken: async (token?: string): Promise<ManagedDaemonTokenResult> => {
+    const next = token ?? generateToken();
+    const wasRunning = managedDaemon.running();
+    if (wasRunning && !(await managedDaemon.stop())) {
+      return { ok: false, code: 'stop_failed', message: '无法停止 daemon，token 未改（详见日志）' };
+    }
+    if (!writeManagedToken(daemonDataDir(), next)) {
+      // We may have just stopped it — bring it back rather than leave it down.
+      if (wasRunning) await managedDaemon.startLast();
+      return { ok: false, code: 'token_write_failed', message: `无法写入 ${daemonDataDir()}/token` };
+    }
+    if (!wasRunning) return { ok: true, token: next, restarted: false, listen: null };
+    const res = await managedDaemon.startLast();
+    if (!res.ok) {
+      return { ok: false, code: res.code, message: `token 已改，但 daemon 重启失败：${res.message}` };
+    }
+    return { ok: true, token: next, restarted: true, listen: res.listen };
+  },
 };
 /** Set on the way out, so the window's `close` handler stops intercepting. */
 let quitting = false;

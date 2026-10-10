@@ -149,6 +149,48 @@ describe('DaemonSupervisor.start', () => {
     await expect(sup.start(command, args)).resolves.toMatchObject({ ok: false, code: 'spawn_failed' });
   });
 
+  it('strips AIREMOTE_TOKEN so the daemon reads <dataDir>/token, not an inherited var', async () => {
+    const spawnImpl = vi.fn(() => fakeChild());
+    let clock = 0;
+    const sup = new DaemonSupervisor('/tmp/airemote-test', {
+      spawnImpl: spawnImpl as never,
+      env: async () => ({ AIREMOTE_TOKEN: 'from-shell', PATH: '/bin' }),
+      sleep: async () => {},
+      now: () => (clock += 10_000),
+    });
+    await sup.start(command, args);
+    const [, , options] = spawnImpl.mock.calls[0] as unknown as [string, string[], { env: Record<string, string> }];
+    expect(options.env['AIREMOTE_TOKEN']).toBeUndefined();
+    // Everything else is still passed through.
+    expect(options.env['PATH']).toBe('/bin');
+  });
+
+  it('restarts with the same command and args it was started with', async () => {
+    const spawned: string[][] = [];
+    let clock = 0;
+    const sup = new DaemonSupervisor('/tmp/airemote-test', {
+      spawnImpl: ((_cmd: string, argv: string[]) => {
+        spawned.push(argv);
+        const child = fakeChild();
+        // A real child dies on SIGKILL; without that, stop() can never finish and
+        // the start-after-stop is refused as `already_running`.
+        child.kill = () => {
+          child.exitCode = 0;
+          child.emit('exit', 0, null);
+          return true;
+        };
+        return child;
+      }) as never,
+      env: async () => ({}),
+      sleep: async () => {},
+      now: () => (clock += 10_000),
+    });
+    await sup.start(command, args); // times out waiting for readiness, but records the launch
+    await sup.restart();
+    expect(spawned).toHaveLength(2);
+    expect(spawned[1]).toEqual(spawned[0]);
+  });
+
   it('falls back to the app environment when the login shell capture fails', async () => {
     const spawnImpl = vi.fn(() => fakeChild());
     // The readiness loop is bounded by wall-clock, so the fake clock must move —

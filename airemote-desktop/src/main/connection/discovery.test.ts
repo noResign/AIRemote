@@ -27,7 +27,7 @@ function runtimeInfo(over: Record<string, unknown> = {}): string {
     listen: '0.0.0.0:4780',
     tls: false,
     version: '1.8.0',
-    dataDir: '/ud/daemon-data',
+    dataDir: '/home/me/.airemote',
     tokenSource: 'file',
     ...over,
   });
@@ -39,12 +39,13 @@ function deps(opts: {
   pids?: number[];
   outcomes?: Record<string, ProbeOutcome>;
   saved?: string[];
+  managedPid?: number;
 }): ProbeDeps {
   const files = opts.files ?? {};
   const outcomes = opts.outcomes ?? {};
   return {
-    userDataDir: '/ud',
     homeDir: '/home/me',
+    managedPid: opts.managedPid ?? null,
     saved: opts.saved ?? [],
     now: () => NOW,
     readFile: (p) => files[p] ?? null,
@@ -54,7 +55,7 @@ function deps(opts: {
   };
 }
 
-const MANAGED = '/ud/daemon-data/daemon_runtime.json';
+const RUNTIME = '/home/me/.airemote/daemon_runtime.json';
 
 describe('pure discovery helpers', () => {
   it('treats a file older than the stale window as dead', () => {
@@ -95,25 +96,40 @@ describe('probeDaemons', () => {
   it('attaches to a fresh, live runtime-info file and points at its token', async () => {
     const result = await probeDaemons(
       deps({
-        files: { [MANAGED]: runtimeInfo() },
-        mtimes: { [MANAGED]: NOW - 1000 },
+        files: { [RUNTIME]: runtimeInfo() },
+        mtimes: { [RUNTIME]: NOW - 1000 },
         pids: [42],
+        managedPid: 42,
         outcomes: { 'http://127.0.0.1:4780': AUTH_OK },
       }),
     );
     expect(result.found).toMatchObject({ source: 'managed', listen: '0.0.0.0:4780', serverId: 'srv-1' });
     expect(result.localToken).toEqual({
-      path: '/ud/daemon-data/token',
+      path: '/home/me/.airemote/token',
       kind: 'token-file',
-      source: '/ud/daemon-data/token',
+      source: '~/.airemote/token',
     });
+  });
+
+  it('labels the runtime-info daemon managed by pid, default otherwise', async () => {
+    const base = {
+      files: { [RUNTIME]: runtimeInfo() },
+      mtimes: { [RUNTIME]: NOW - 1000 },
+      pids: [42],
+      outcomes: { 'http://127.0.0.1:4780': AUTH_OK },
+    };
+    expect((await probeDaemons(deps({ ...base, managedPid: 42 }))).found?.source).toBe('managed');
+    // A daemon in `~/.airemote` that is not our child (systemd, hand-started, or
+    // an orphan from a previous app run) is `default`, not `managed`.
+    expect((await probeDaemons(deps({ ...base, managedPid: 777 }))).found?.source).toBe('default');
+    expect((await probeDaemons(deps(base))).found?.source).toBe('default');
   });
 
   it('skips a stale runtime-info file and falls through to the port list', async () => {
     const result = await probeDaemons(
       deps({
-        files: { [MANAGED]: runtimeInfo({ listen: '127.0.0.1:4790' }) },
-        mtimes: { [MANAGED]: NOW - STALE_AFTER_MS - 1 },
+        files: { [RUNTIME]: runtimeInfo({ listen: '127.0.0.1:4790' }) },
+        mtimes: { [RUNTIME]: NOW - STALE_AFTER_MS - 1 },
         pids: [42],
         outcomes: { 'http://127.0.0.1:4781': AUTH_OK },
       }),
@@ -124,8 +140,8 @@ describe('probeDaemons', () => {
   it('skips a runtime-info file whose pid is gone', async () => {
     const result = await probeDaemons(
       deps({
-        files: { [MANAGED]: runtimeInfo({ listen: '127.0.0.1:4790' }) },
-        mtimes: { [MANAGED]: NOW - 1000 },
+        files: { [RUNTIME]: runtimeInfo({ listen: '127.0.0.1:4790' }) },
+        mtimes: { [RUNTIME]: NOW - 1000 },
         pids: [],
         outcomes: { 'http://127.0.0.1:4781': AUTH_OK },
       }),
@@ -137,8 +153,8 @@ describe('probeDaemons', () => {
     const result = await probeDaemons(
       deps({
         saved: ['http://127.0.0.1:4795'],
-        files: { [MANAGED]: runtimeInfo() },
-        mtimes: { [MANAGED]: NOW - 1000 },
+        files: { [RUNTIME]: runtimeInfo() },
+        mtimes: { [RUNTIME]: NOW - 1000 },
         pids: [42],
         outcomes: {
           'http://127.0.0.1:4795': AUTH_OK,
@@ -155,9 +171,10 @@ describe('probeDaemons', () => {
     const result = await probeDaemons(
       deps({
         saved: ['http://192.168.1.9:4780'],
-        files: { [MANAGED]: runtimeInfo() },
-        mtimes: { [MANAGED]: NOW - 1000 },
+        files: { [RUNTIME]: runtimeInfo() },
+        mtimes: { [RUNTIME]: NOW - 1000 },
         pids: [42],
+        managedPid: 42,
         outcomes: {
           'http://192.168.1.9:4780': AUTH_OK,
           'http://127.0.0.1:4780': AUTH_OK,
@@ -183,8 +200,8 @@ describe('probeDaemons', () => {
     const result = await probeDaemons(
       deps({
         saved: ['http://127.0.0.1:4780'],
-        files: { [MANAGED]: runtimeInfo() },
-        mtimes: { [MANAGED]: NOW - 1000 },
+        files: { [RUNTIME]: runtimeInfo() },
+        mtimes: { [RUNTIME]: NOW - 1000 },
         pids: [42],
         outcomes: { 'http://127.0.0.1:4780': AUTH_OK },
       }),
@@ -192,7 +209,7 @@ describe('probeDaemons', () => {
     expect(result.found).toMatchObject({
       source: 'saved',
       hostname: 'renbin-laptop',
-      dataDir: '/ud/daemon-data',
+      dataDir: '/home/me/.airemote',
       serverId: 'srv-1',
       tokenSource: 'file',
     });

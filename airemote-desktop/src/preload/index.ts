@@ -46,6 +46,7 @@ const api: AiremoteBridge = {
   daemonStart: (input: unknown) => ipcRenderer.invoke(IPC.daemonStart, input),
   daemonStop: () => ipcRenderer.invoke(IPC.daemonStop),
   daemonLogs: (lines?: number) => ipcRenderer.invoke(IPC.daemonLogs, lines),
+  daemonSetToken: (token?: string) => ipcRenderer.invoke(IPC.daemonSetToken, token),
   openSessionWindow: (sessionId: string) => ipcRenderer.invoke(IPC.openSessionWindow, sessionId),
   focusSession: () => ipcRenderer.invoke(IPC.focusSession),
   streamStart: (spec: StreamSpec) => ipcRenderer.invoke(IPC.streamStart, spec),

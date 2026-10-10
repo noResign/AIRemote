@@ -126,6 +126,8 @@ export class DaemonSupervisor {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly spawnImpl: typeof spawn;
   private readonly env: () => Promise<Record<string, string>>;
+  /** The last command/args we launched, so we can start the same daemon again. */
+  private lastStart: { command: DaemonCommand; args: DaemonArgsInput } | null = null;
 
   constructor(private readonly dataDir: string, deps: SupervisorDeps = {}) {
     this.now = deps.now ?? Date.now;
@@ -144,6 +146,15 @@ export class DaemonSupervisor {
 
   running(): boolean {
     return this.child !== null && this.child.exitCode === null;
+  }
+
+  /**
+   * pid of the daemon we spawned, or null when we hold no live child. Discovery
+   * uses it to tell "the daemon this app owns" from "some daemon on this machine"
+   * now that both share `~/.airemote` (there is no longer a path to tell them apart).
+   */
+  pid(): number | null {
+    return this.running() ? (this.child?.pid ?? null) : null;
   }
 
   /** Append one line of our own narration next to the daemon's output. */
@@ -183,6 +194,10 @@ export class DaemonSupervisor {
       this.log(`login shell env failed, falling back to the app environment: ${describe(err)}`);
       env = { ...process.env, ...command.env } as Record<string, string>;
     }
+    // The daemon reads `$AIREMOTE_TOKEN` *before* `<dataDir>/token` (daemon/src/config.ts),
+    // but we authenticate with the file. An inherited variable would make those two
+    // disagree and every client hit 401, so the child never sees it (§2).
+    delete env.AIREMOTE_TOKEN;
 
     // The daemon's stdout *is* our log: no pipe (nothing may block on the app
     // reading it), no inherited terminal (app is detached from a terminal).
@@ -222,6 +237,10 @@ export class DaemonSupervisor {
       this.child = null;
     });
     this.child.unref();
+
+    // Remembered so「改 token」can bring the daemon back with the exact same
+    // workspace/port/host it was launched with.
+    this.lastStart = { command, args };
 
     const pid = this.child.pid ?? -1;
     this.log(`spawned pid=${pid} ${command.command} ${command.args.join(' ')} ${buildDaemonArgs(args).join(' ')}`);
@@ -275,6 +294,19 @@ export class DaemonSupervisor {
     }
     this.cleanupFd();
     return false;
+  }
+
+  /** Start again with the last command/args we used — the other half of a restart. */
+  async startLast(): Promise<StartResult> {
+    const last = this.lastStart;
+    if (!last) return { ok: false, code: 'never_started', message: '没有本应用启动过的 daemon 可以重启' };
+    return this.start(last.command, last.args);
+  }
+
+  /** Stop, then start again with the same command/args. */
+  async restart(): Promise<StartResult> {
+    await this.stop();
+    return this.startLast();
   }
 
   /** Read the runtime file and accept it only if it belongs to our child. */

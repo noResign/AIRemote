@@ -66,6 +66,11 @@ export function SettingsPage({
   const [daemon, setDaemon] = useState<ManagedDaemonStatus | null>(null);
   const [daemonLogs, setDaemonLogs] = useState<string[]>([]);
   const [daemonBusy, setDaemonBusy] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [tokenBusy, setTokenBusy] = useState(false);
+  const [tokenConfirm, setTokenConfirm] = useState(false);
+  const [tokenResult, setTokenResult] = useState<string | null>(null);
+  const [tokenError, setTokenError] = useState<string | null>(null);
 
   useEffect(() => {
     void window.airemote.appInfo().then(setInfo);
@@ -91,6 +96,29 @@ export function SettingsPage({
     setDaemonBusy(true);
     await window.airemote.daemonStop();
     setDaemonBusy(false);
+    await refreshManaged();
+  }
+
+  /**
+   * Replace the managed daemon's token. When the daemon is running this restarts
+   * it, so the first click only warns about the disruption and the second commits.
+   */
+  async function changeToken(): Promise<void> {
+    if (daemon?.running && !tokenConfirm) {
+      setTokenConfirm(true);
+      return;
+    }
+    setTokenBusy(true);
+    setTokenConfirm(false);
+    setTokenError(null);
+    const res = await window.airemote.daemonSetToken(tokenInput.trim() || undefined);
+    setTokenBusy(false);
+    if (!res.ok) {
+      setTokenError(res.message);
+      return;
+    }
+    setTokenResult(res.token);
+    setTokenInput('');
     await refreshManaged();
   }
 
@@ -208,6 +236,43 @@ export function SettingsPage({
                   <dt>日志</dt>
                   <dd className="mono">{daemon?.logPath ?? '—'}</dd>
                 </dl>
+                <div className="field">
+                  <label htmlFor="daemon-token">访问 token</label>
+                  <input
+                    id="daemon-token"
+                    className="mono"
+                    placeholder="留空 = 随机生成；也可粘贴自定义值"
+                    value={tokenInput}
+                    onChange={(event) => {
+                      setTokenInput(event.target.value);
+                      setTokenConfirm(false);
+                    }}
+                    autoComplete="off"
+                  />
+                  <div className="settings-actions">
+                    <button className="btn primary" disabled={tokenBusy} onClick={() => void changeToken()}>
+                      {tokenBusy
+                        ? '处理中…'
+                        : tokenConfirm
+                          ? '确认：会重启 daemon、断开手机'
+                          : daemon?.running
+                            ? '保存并重启'
+                            : '保存'}
+                    </button>
+                  </div>
+                  {tokenError && <div className="error-text">{tokenError}</div>}
+                  {tokenResult && (
+                    <div className="hint">
+                      新 token：<span className="mono">{tokenResult}</span>
+                      <br />
+                      手机与其它连接已失效，请用这个 token 重新连接。
+                    </div>
+                  )}
+                  <div className="hint">
+                    daemon 只在启动时读 token，所以保存后会重启它——<b>正在跑的任务会被中断</b>。
+                    改 token 等于换掉远程 shell 的钥匙；只对本应用托管的 daemon 生效。
+                  </div>
+                </div>
                 {!daemon?.running && (
                   <div className="hint" style={{ marginTop: 0 }}>
                     启动需要先选一个工作目录（它会成为默认工作区），所以在<b>连接页</b>做：本机没探测到 daemon 时，

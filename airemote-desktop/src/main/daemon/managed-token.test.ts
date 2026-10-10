@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ensureManagedToken, tokenPath } from './managed-token';
+import { ensureManagedToken, tokenPath, writeManagedToken } from './managed-token';
 
 let dir: string;
 
@@ -44,5 +44,20 @@ describe('ensureManagedToken', () => {
     const blocked = path.join(dir, 'blocked');
     fs.writeFileSync(blocked, 'not a directory');
     expect(ensureManagedToken(path.join(blocked, 'data'))).toBeNull();
+  });
+});
+
+describe('writeManagedToken', () => {
+  it('overwrites the existing token and locks it down', () => {
+    ensureManagedToken(dir);
+    expect(writeManagedToken(dir, 'a-brand-new-secret')).toBe(true);
+    expect(fs.readFileSync(tokenPath(dir), 'utf8').trim()).toBe('a-brand-new-secret');
+    expect(fs.statSync(tokenPath(dir)).mode & 0o777).toBe(0o600);
+  });
+
+  it('returns false instead of throwing when the path is unusable', () => {
+    const blocked = path.join(dir, 'blocked');
+    fs.writeFileSync(blocked, 'not a directory');
+    expect(writeManagedToken(path.join(blocked, 'data'), 'x')).toBe(false);
   });
 });

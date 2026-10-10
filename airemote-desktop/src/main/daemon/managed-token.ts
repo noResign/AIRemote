@@ -21,6 +21,28 @@ export function tokenPath(dataDir: string): string {
   return path.join(dataDir, 'token');
 }
 
+/** A fresh random token in the same shape the daemon generates for itself. */
+export function generateToken(): string {
+  return crypto.randomBytes(TOKEN_BYTES).toString('hex');
+}
+
+/**
+ * Write `token` to `<dataDir>/token` (`0600`), replacing whatever is there.
+ * 「改 token」uses this; a running daemon only reads its token at startup, so the
+ * caller has to restart it for the new value to take effect.
+ */
+export function writeManagedToken(dataDir: string, token: string): boolean {
+  const file = tokenPath(dataDir);
+  try {
+    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
+    fs.chmodSync(file, 0o600);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Read the token, creating one when the file is absent. Returns null only when we
  * genuinely cannot produce one (unwritable directory) — the caller reports that
@@ -44,16 +66,6 @@ export function ensureManagedToken(dataDir: string): string | null {
     /* missing or unreadable — fall through and write one */
   }
 
-  const token = crypto.randomBytes(TOKEN_BYTES).toString('hex');
-  try {
-    fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-    // `mode` only applies at creation, so a pre-existing loose file is tightened
-    // explicitly: a token file others can read defeats the point of not putting
-    // it on the command line.
-    fs.writeFileSync(file, `${token}\n`, { mode: 0o600 });
-    fs.chmodSync(file, 0o600);
-    return token;
-  } catch {
-    return null;
-  }
+  const token = generateToken();
+  return writeManagedToken(dataDir, token) ? token : null;
 }

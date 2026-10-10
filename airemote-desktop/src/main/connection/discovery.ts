@@ -32,8 +32,9 @@ export type ProbeOutcome =
 
 /** Everything the discovery walk touches, injected so it can be unit tested. */
 export interface ProbeDeps {
-  userDataDir: string;
   homeDir: string;
+  /** pid of the daemon this app spawned, or null — decides `managed` vs `default`. */
+  managedPid: number | null;
   saved: string[];
   now(): number;
   readFile(p: string): string | null;
@@ -233,29 +234,27 @@ export async function probeDaemons(deps: ProbeDeps): Promise<ProbeResult> {
   }
   if (savedLocal) tried.push(`已保存的连接（${savedLocal} 个）`);
 
-  // 1 + 2. runtime-info files (managed first, then the default data dir)
-  const runtimeFiles: Array<{ p: string; source: DaemonSource }> = [
-    { p: `${deps.userDataDir}/daemon-data/daemon_runtime.json`, source: 'managed' },
-    { p: `${deps.homeDir}/.airemote/daemon_runtime.json`, source: 'default' },
-  ];
-  for (const { p, source } of runtimeFiles) {
-    const text = deps.readFile(p);
-    const label = tildify(p, deps.homeDir);
-    if (!text) continue;
-    tried.push(label);
-    const info = parseRuntimeInfo(text);
-    const mtime = deps.mtimeMs(p) ?? 0;
-    if (!info || !isFresh(mtime, deps.now()) || !deps.pidAlive(info.pid)) continue;
-    candidates.push({
-      source,
-      listen: info.listen,
-      tls: info.tls,
-      meta: info,
-      tokenHint:
-        info.tokenSource === 'file' && info.dataDir
-          ? { path: `${info.dataDir}/token`, kind: 'token-file', source: `${tildify(info.dataDir, deps.homeDir)}/token` }
-          : null,
-    });
+  // 1. runtime-info file at the default data dir — the one place every local
+  // daemon writes (the one we spawn shares `~/.airemote` too, §已定 6). Which
+  // *source* it is has to come from the pid: path no longer tells them apart.
+  const runtimeFile = `${deps.homeDir}/.airemote/daemon_runtime.json`;
+  const runtimeText = deps.readFile(runtimeFile);
+  if (runtimeText) {
+    tried.push(tildify(runtimeFile, deps.homeDir));
+    const info = parseRuntimeInfo(runtimeText);
+    const mtime = deps.mtimeMs(runtimeFile) ?? 0;
+    if (info && isFresh(mtime, deps.now()) && deps.pidAlive(info.pid)) {
+      candidates.push({
+        source: info.pid === deps.managedPid ? 'managed' : 'default',
+        listen: info.listen,
+        tls: info.tls,
+        meta: info,
+        tokenHint:
+          info.tokenSource === 'file' && info.dataDir
+            ? { path: `${info.dataDir}/token`, kind: 'token-file', source: `${tildify(info.dataDir, deps.homeDir)}/token` }
+            : null,
+      });
+    }
   }
 
   // 3. systemd user unit (Linux) — also the place we might learn a token from.

@@ -27,6 +27,7 @@ export const IPC = {
   daemonStart: 'daemon:start',
   daemonStop: 'daemon:stop',
   daemonLogs: 'daemon:logs',
+  daemonSetToken: 'daemon:set-token',
   openSessionWindow: 'app:open-session-window',
   focusSession: 'app:focus-session',
   streamStart: 'stream:start',
@@ -161,6 +162,14 @@ export interface ManagedDaemonStartInput {
 
 export type ManagedDaemonStartResult =
   | { ok: true; pid: number; listen: string | null; token: string }
+  | { ok: false; code: string; message: string };
+
+/**
+ * Outcome of「改 token」. `restarted` says whether the daemon was relaunched so
+ * the new token is already live — when false it will be picked up on next start.
+ */
+export type ManagedDaemonTokenResult =
+  | { ok: true; token: string; restarted: boolean; listen: string | null }
   | { ok: false; code: string; message: string };
 
 export interface BootstrapResult {
@@ -316,6 +325,11 @@ export interface AiremoteBridge {
   daemonStop(): Promise<void>;
   /** Recent lines of the managed daemon's log. */
   daemonLogs(lines?: number): Promise<string[]>;
+  /**
+   * Replace the managed daemon's token. Omit `token` (or pass an empty string)
+   * to generate a random one; a running daemon is restarted so it takes effect.
+   */
+  daemonSetToken(token?: string): Promise<ManagedDaemonTokenResult>;
   /** Drop one connection; `null` drops every one of them. Returns what is left. */
   connClear(id?: string): Promise<ConnectionView[]>;
   connProbe(): Promise<ProbeResult>;

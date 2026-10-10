@@ -1,4 +1,4 @@
-import { app, safeStorage } from 'electron';
+import { safeStorage } from 'electron';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +52,16 @@ export class ConnectionManager {
   private readonly entries = new Map<string, Entry>();
   private lastProbe: ProbeResult | null = null;
   private lastProbedAt = 0;
+  private managedPidProvider: () => number | null = () => null;
+
+  /**
+   * Tell discovery which pid belongs to the daemon we spawned, so it can label
+   * that hit `managed` and any other `default`. Needed because both now share
+   * `~/.airemote` — the old path-based distinction is gone.
+   */
+  setManagedPidProvider(provider: () => number | null): void {
+    this.managedPidProvider = provider;
+  }
 
   ids(): string[] {
     return [...this.entries.keys()];
@@ -239,8 +249,8 @@ export class ConnectionManager {
 
   private probeDeps(): ProbeDeps {
     return {
-      userDataDir: app.getPath('userData'),
       homeDir: os.homedir(),
+      managedPid: this.managedPidProvider(),
       saved: settings.listRecent().map((r) => r.baseUrl),
       now: () => Date.now(),
       readFile: (p) => {
@@ -307,7 +317,12 @@ export function discoveredName(found: DiscoveredDaemon): string {
   return found.hostname || '本机 daemon';
 }
 
-/** Where a daemon we spawn would keep its data (M4) — kept out of `~/.airemote`. */
+/**
+ * Where a daemon we spawn keeps its data. Deliberately the same `~/.airemote`
+ * every other local daemon uses (§已定 6), so a daemon started here and one
+ * started by hand see **one** set of sessions/workspaces/token instead of two
+ * disconnected worlds.
+ */
 export function daemonDataDir(): string {
-  return path.join(app.getPath('userData'), 'daemon-data');
+  return path.join(os.homedir(), '.airemote');
 }
