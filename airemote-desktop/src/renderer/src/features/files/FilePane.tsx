@@ -28,12 +28,17 @@ export function FilePane({ workspaceId, root, selection, view, narrowHint, empty
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!workspaceId || !selection) return;
-    let live = true;
-    setLoading(true);
-    setError(null);
+    // Clear first, even when there is nothing to load: a deselected file — or a
+    // workspace switch — must not leave the previous file on screen.
     setFile(null);
     setDiff(null);
+    setError(null);
+    if (!workspaceId || !selection) {
+      setLoading(false);
+      return;
+    }
+    let live = true;
+    setLoading(true);
     const query = { workspaceId, root: root ?? undefined, path: selection.path };
     void (selection.kind === 'diff' ? api.changesDiff(query) : api.fileContent(query)).then((res) => {
       if (!live) return;

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
@@ -20,6 +20,13 @@ export function ChatAside({ workspaceId, onCollapse }: { workspaceId: string | n
   const [mode, setMode] = useState<FileMode>('changes');
   const [root, setRoot] = useState<string | null>(null);
   const [selection, setSelection] = useState<FileSelection | null>(null);
+
+  // Root and open file are per-workspace; clear them when it changes so the
+  // panel never shows another workspace's (or host's) files.
+  useEffect(() => {
+    setRoot(null);
+    setSelection(null);
+  }, [workspaceId]);
 
   /** Drag the left edge; the panel is anchored right, so width is the remainder. */
   function startResize(event: React.MouseEvent): void {

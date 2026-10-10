@@ -76,6 +76,14 @@ export function FileBrowser({
     setExpanded({});
   }, [workspaceId, root, mode]);
 
+  // Whatever we fetched belongs to one workspace+root. Blank it when that
+  // changes, or the previous one's list would sit there behind the loading
+  // guard (which only shows a spinner when there is *nothing* yet).
+  useEffect(() => {
+    setChanges(null);
+    setListing(null);
+  }, [workspaceId, root]);
+
   useEffect(() => {
     if (!workspaceId) return;
     let live = true;

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAppearance } from '../../store/appearance';
 import { FileBrowser, type FileMode, type FileSelection } from './FileBrowser';
 import { FilePane } from './FilePane';
@@ -29,6 +29,13 @@ export function FilesPage({ workspaceId, workspaceName }: { workspaceId: string 
   const paneRef = useRef<HTMLDivElement>(null);
   const canSplit = useElementWidth(paneRef) >= SPLIT_MIN_PX;
   const effectiveView: DiffView = canSplit ? view : 'unified';
+
+  // The tree root and the open file belong to one workspace; drop them when the
+  // workspace (or host) changes so nothing from the previous one lingers.
+  useEffect(() => {
+    setRoot(null);
+    setSelection(null);
+  }, [workspaceId]);
 
   return (
     <div className="files">

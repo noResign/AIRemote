@@ -494,7 +494,11 @@ export function AppShell() {
         {page === 'settings' ? (
           <SettingsPage onBack={goBack} section={settingsSection} onSectionChange={setSettingsSection} />
         ) : page === 'files' ? (
-          <FilesPage workspaceId={workspaceId || null} workspaceName={selectedWorkspace?.name ?? null} />
+          <FilesPage
+            key={connectionId ?? 'none'}
+            workspaceId={workspaceId || null}
+            workspaceName={selectedWorkspace?.name ?? null}
+          />
         ) : (
           <div className="chat-row">
             {chatVisible ? (
@@ -512,7 +516,11 @@ export function AppShell() {
                 </button>
               </div>
             )}
-            {asideVisible && <ChatAside workspaceId={workspaceId || null} onCollapse={toggleAside} />}
+            {asideVisible && (
+              // Remount per connection: the browser's tree, root and open file
+              // are all host-specific state that must not survive a host switch.
+              <ChatAside key={connectionId ?? 'none'} workspaceId={workspaceId || null} onCollapse={toggleAside} />
+            )}
           </div>
         )}
       </main>
