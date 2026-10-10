@@ -23,6 +23,8 @@ import com.airemote.airemote.model.chat.TodoItem
 @Composable
 internal fun TodoListPanel(todos: List<TodoItem>, running: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     val completed = todos.count { it.status == "completed" }
+    // 全完成的任务列表是历史噪音：它会一直挂在输入框上方说「已完成」。只留在飞的活。
+    if (todos.isEmpty() || completed == todos.size) return
     Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
         Column {
             Row(

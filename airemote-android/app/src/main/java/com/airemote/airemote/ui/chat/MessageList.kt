@@ -32,8 +32,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.airemote.airemote.model.chat.AssistantSegment
 import com.airemote.airemote.model.chat.ChatUiMessage
 import com.airemote.airemote.model.chat.ContentBlock
+import com.airemote.airemote.model.chat.segmentBlocks
 import kotlinx.coroutines.launch
 
 @Composable
@@ -170,12 +172,13 @@ internal fun AssistantBlock(
     onAnswer: (String, String) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        message.blocks.forEach { block ->
-            when (block) {
-                is ContentBlock.Thinking -> ThinkingBlock(block.text)
-                is ContentBlock.Text -> TextBlock(block.text, streaming = !message.done)
-                is ContentBlock.ToolUse -> ToolCardView(block)
-                is ContentBlock.Question -> QuestionCard(block, streaming, onAnswer)
+        val segments = remember(message.blocks) { segmentBlocks(message.blocks) }
+        segments.forEach { segment ->
+            when (segment) {
+                is AssistantSegment.Thinking -> ThinkingBlock(segment.text)
+                is AssistantSegment.Text -> TextBlock(segment.text, streaming = !message.done)
+                is AssistantSegment.ToolGroup -> ToolGroupView(segment.tools)
+                is AssistantSegment.Question -> QuestionCard(segment.block, streaming, onAnswer)
             }
         }
         if (message.error != null) {

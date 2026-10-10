@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.airemote.airemote.model.chat.ContentBlock
 import com.airemote.airemote.model.chat.UsageInfo
+import com.airemote.airemote.model.chat.describeToolGroup
 import com.airemote.airemote.ui.theme.CodeBody
 import com.airemote.airemote.ui.theme.LocalSemanticColors
 import com.mikepenz.markdown.compose.LocalMarkdownColors
@@ -179,6 +180,67 @@ internal fun ThinkingBlock(thinking: String) {
                     style = CodeBody,
                     color = thinkingColor,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * 连续的工具调用折成一行。一个 run 常打十几个调用，每张卡各自展开会把真正的回答挤出屏幕。
+ */
+@Composable
+internal fun ToolGroupView(tools: List<ContentBlock.ToolUse>) {
+    var expanded by remember { mutableStateOf(false) }
+    val running = tools.count { it.running }
+    val failed = tools.count { it.isError }
+    val interrupted = tools.count { it.interrupted }
+    val status = buildList {
+        if (running > 0) add("$running 个运行中")
+        if (failed > 0) add("$failed 个失败")
+        if (interrupted > 0) add("$interrupted 个中断")
+    }.joinToString(" · ")
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+            ) {
+                Text(
+                    text = if (expanded) "▾" else "▸",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = describeToolGroup(tools),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f),
+                )
+                if (status.isNotEmpty()) {
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Text(
+                    text = if (expanded) "收起" else "展开",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (expanded) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    tools.forEach { ToolCardView(it) }
+                }
             }
         }
     }
