@@ -9,6 +9,8 @@ export interface PaletteItem {
   hint?: string;
   /** Extra words that should match but must not be shown. */
   keywords?: string;
+  /** Run without dismissing the palette — for rows that only extend it. */
+  keepOpen?: boolean;
   run(): void;
 }
 
@@ -44,10 +46,36 @@ export function fuzzyScore(text: string, query: string): number | null {
   return score - Math.min(haystack.length, 40) / 40;
 }
 
-export function filterPalette(items: PaletteItem[], query: string, limit = 40): PaletteItem[] {
-  const trimmed = query.trim();
-  if (!trimmed) return items.slice(0, limit);
+export interface PaletteFilter {
+  /** Cap on fuzzy-search results. Only applies when there *is* a query. */
+  limit?: number;
+  /**
+   * Empty-query cap for one section (the others are shown whole). Without it an
+   * empty list is rendered in full, so one long section — 会话 — could push the
+   * later ones (动作, 工作区) past the end and make them look missing.
+   */
+  sectionLimit?: { section: string; limit: number };
+}
 
+export function filterPalette(
+  items: PaletteItem[],
+  query: string,
+  filter: PaletteFilter = {},
+): PaletteItem[] {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    const cap = filter.sectionLimit;
+    if (!cap) return items;
+    const counts: Record<string, number> = {};
+    return items.filter((entry) => {
+      const used = counts[entry.section] ?? 0;
+      if (entry.section === cap.section && used >= cap.limit) return false;
+      counts[entry.section] = used + 1;
+      return true;
+    });
+  }
+
+  const limit = filter.limit ?? 40;
   const scored: ScoredItem[] = [];
   for (const item of items) {
     const primary = fuzzyScore(item.label, trimmed);

@@ -11,11 +11,39 @@ interface Props {
  * rather than on their own shortcuts — a command palette is the established
  * convention, and a second convention would just have to be learned.
  */
+/** How many sessions the empty list shows before「加载更多」. */
+const SESSION_PAGE = 20;
+
 export function CommandPalette({ items, onClose }: Props) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  const [sessionLimit, setSessionLimit] = useState(SESSION_PAGE);
 
-  const filtered = useMemo(() => filterPalette(items, query), [items, query]);
+  // Only sessions are capped: with a long session list the 动作/工作区 sections
+  // were pushed off the end, so「快捷键帮助」and friends looked missing.
+  const filtered = useMemo(
+    () => filterPalette(items, query, { sectionLimit: { section: '会话', limit: sessionLimit } }),
+    [items, query, sessionLimit],
+  );
+
+  // Empty query + more sessions than fit → a「加载更多」row closing that section.
+  // Searching bypasses it (those results are ranked, not paged).
+  const rows = useMemo(() => {
+    if (query.trim()) return filtered;
+    const total = items.filter((entry) => entry.section === '会话').length;
+    const shown = filtered.filter((entry) => entry.section === '会话').length;
+    if (total <= shown) return filtered;
+    const last = filtered.map((entry) => entry.section).lastIndexOf('会话');
+    if (last < 0) return filtered;
+    const more: PaletteItem = {
+      id: 'more-sessions',
+      section: '会话',
+      label: `加载更多会话（还有 ${total - shown} 个）`,
+      keepOpen: true,
+      run: () => setSessionLimit((count) => count + SESSION_PAGE),
+    };
+    return [...filtered.slice(0, last + 1), more, ...filtered.slice(last + 1)];
+  }, [filtered, items, query]);
 
   useEffect(() => {
     setCursor(0);
@@ -23,8 +51,9 @@ export function CommandPalette({ items, onClose }: Props) {
 
   function run(item: PaletteItem | undefined): void {
     if (!item) return;
-    // Close first: an action may open another overlay or navigate.
-    onClose();
+    // Close first: an action may open another overlay or navigate. Rows that
+    // only extend the list ("加载更多") opt out with `keepOpen`.
+    if (!item.keepOpen) onClose();
     item.run();
   }
 
@@ -40,13 +69,13 @@ export function CommandPalette({ items, onClose }: Props) {
           onKeyDown={(event) => {
             if (event.key === 'ArrowDown') {
               event.preventDefault();
-              setCursor((value) => Math.min(value + 1, Math.max(filtered.length - 1, 0)));
+              setCursor((value) => Math.min(value + 1, Math.max(rows.length - 1, 0)));
             } else if (event.key === 'ArrowUp') {
               event.preventDefault();
               setCursor((value) => Math.max(value - 1, 0));
             } else if (event.key === 'Enter') {
               event.preventDefault();
-              run(filtered[cursor]);
+              run(rows[cursor]);
             } else if (event.key === 'Escape') {
               event.preventDefault();
               onClose();
@@ -55,14 +84,14 @@ export function CommandPalette({ items, onClose }: Props) {
         />
 
         <div className="palette-list">
-          {filtered.length === 0 ? (
+          {rows.length === 0 ? (
             <div className="empty">没有匹配项</div>
           ) : (
-            filtered.map((item, index) => (
+            rows.map((item, index) => (
               <Fragment key={item.id}>
                 {/* A header whenever the section changes keeps the on-screen
                     order identical to the arrow-key order. */}
-                {filtered[index - 1]?.section !== item.section && (
+                {rows[index - 1]?.section !== item.section && (
                   <div className="palette-section">{item.section}</div>
                 )}
                 <button

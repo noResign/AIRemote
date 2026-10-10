@@ -9,6 +9,8 @@ const item = (label: string, keywords?: string): PaletteItem => ({
   run: () => undefined,
 });
 
+const sessionItem = (label: string): PaletteItem => ({ ...item(label), section: '会话' });
+
 describe('fuzzyScore', () => {
   it('rejects anything that is not a subsequence', () => {
     expect(fuzzyScore('新建会话', 'zzz')).toBeNull();
@@ -29,9 +31,17 @@ describe('fuzzyScore', () => {
 });
 
 describe('filterPalette', () => {
-  it('returns everything (up to the limit) for an empty query', () => {
+  it('shows an empty query whole when no section cap is given', () => {
     const items = [item('a'), item('b'), item('c')];
-    expect(filterPalette(items, '  ', 2)).toHaveLength(2);
+    expect(filterPalette(items, '  ')).toHaveLength(3);
+  });
+
+  it('caps only the named section for an empty query', () => {
+    const items = [sessionItem('s1'), sessionItem('s2'), sessionItem('s3'), item('a'), item('b')];
+    const out = filterPalette(items, '', { sectionLimit: { section: '会话', limit: 2 } });
+    expect(out.filter((entry) => entry.section === '会话')).toHaveLength(2);
+    // The other section is untouched — that is the whole point.
+    expect(out.filter((entry) => entry.section === '动作')).toHaveLength(2);
   });
 
   it('matches on keywords without showing them', () => {
