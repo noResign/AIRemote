@@ -33,6 +33,9 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { id: 'zoom-out', combo: 'mod+-', label: '缩小界面' },
   { id: 'zoom-reset', combo: 'mod+0', label: '重置缩放' },
   { id: 'toggle-tool-groups', combo: 'mod+shift+e', label: '展开/折叠全部工具组' },
+  // There is no app menu to carry this any more (see main/menu.ts) — the
+  // shortcut is the only way in, in dev and packaged builds alike.
+  { id: 'toggle-devtools', combo: 'mod+shift+i', label: '开发者工具' },
   { id: 'help', combo: '?', label: '快捷键帮助' },
 ] as const;
 

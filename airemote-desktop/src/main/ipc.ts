@@ -112,6 +112,12 @@ export function registerIpc(
     registry.setSession(BrowserWindow.fromWebContents(event.sender), typeof sessionId === 'string' ? sessionId : null);
   });
 
+  // The app menu no longer exists (see main/menu.ts), so this is the only way to
+  // reach DevTools. It acts on the window the request came from, not "the" window.
+  ipcMain.handle(IPC.toggleDevTools, (event) => {
+    BrowserWindow.fromWebContents(event.sender)?.webContents.toggleDevTools();
+  });
+
   ipcMain.handle(IPC.openSessionWindow, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string' && sessionId) shell.openSessionWindow(sessionId);
   });

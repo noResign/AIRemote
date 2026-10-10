@@ -42,6 +42,7 @@ const api: AiremoteBridge = {
     return () => ipcRenderer.removeListener(IPC.selectSession, handler);
   },
   setActiveSession: (sessionId: string | null) => ipcRenderer.invoke(IPC.setActiveSession, sessionId),
+  toggleDevTools: () => ipcRenderer.invoke(IPC.toggleDevTools),
   daemonStatus: () => ipcRenderer.invoke(IPC.daemonStatus),
   daemonStart: (input: unknown) => ipcRenderer.invoke(IPC.daemonStart, input),
   daemonStop: () => ipcRenderer.invoke(IPC.daemonStop),

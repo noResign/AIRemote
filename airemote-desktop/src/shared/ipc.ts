@@ -23,6 +23,7 @@ export const IPC = {
   notifyClose: 'app:notify:close',
   selectSession: 'app:select-session',
   setActiveSession: 'app:set-active-session',
+  toggleDevTools: 'app:toggle-devtools',
   daemonStatus: 'daemon:status',
   daemonStart: 'daemon:start',
   daemonStop: 'daemon:stop',
@@ -345,6 +346,8 @@ export interface AiremoteBridge {
   onSelectSession(listener: (sessionId: string) => void): () => void;
   /** Tell main which session this window shows — the notification rule needs it (§7.4). */
   setActiveSession(sessionId: string | null): Promise<void>;
+  /** Open/close DevTools for this window. There is no app menu to reach it now. */
+  toggleDevTools(): Promise<void>;
   /** Open a second window pinned to this session (§7.3). */
   openSessionWindow(sessionId: string): Promise<void>;
   /** The session this window was opened for, consumed once at boot. */

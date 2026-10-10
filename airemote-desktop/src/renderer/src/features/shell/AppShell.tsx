@@ -322,6 +322,7 @@ export function AppShell() {
     'zoom-out': () => setZoom(zoom - 10),
     'zoom-reset': () => setZoom(100),
     'toggle-tool-groups': toggleToolGroups,
+    'toggle-devtools': () => void window.airemote.toggleDevTools(),
     help: () => setHelpOpen(true),
   };
 
