@@ -62,6 +62,12 @@ export function dialHost(host: string): string {
   return bare;
 }
 
+/** `127.0.0.0/8`, `localhost` or `::1` — a saved address here points at this machine. */
+export function isLoopback(host: string): boolean {
+  const bare = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
+  return bare === 'localhost' || bare.startsWith('127.') || bare === '::1' || bare === '0:0:0:0:0:0:0:1';
+}
+
 /** Split `host:port` (IPv6 bracketed) into a wildcard-collapsed host and a port. */
 export function splitListen(listen: string): { host: string; port: number } | null {
   const idx = listen.lastIndexOf(':');
@@ -212,12 +218,20 @@ export async function probeDaemons(deps: ProbeDeps): Promise<ProbeResult> {
 
   const candidates: Candidate[] = [];
 
-  // 0. saved connections
+  // 0. saved connections — loopback only. The connect page renders this probe
+  // as「本机 daemon」, so a saved *remote* target would make it label another
+  // machine as local. Remote targets belong in the recent-connections list; a
+  // loopback one is still how a custom-port local daemon with no runtime-info
+  // (and no systemd unit) gets remembered.
+  let savedLocal = 0;
   for (const base of deps.saved) {
     const listen = listenOf(base);
-    if (listen) candidates.push({ source: 'saved', listen, tls: base.startsWith('https:'), meta: null, tokenHint: null });
+    const parsed = listen ? splitListen(listen) : null;
+    if (!listen || !parsed || !isLoopback(parsed.host)) continue;
+    candidates.push({ source: 'saved', listen, tls: base.startsWith('https:'), meta: null, tokenHint: null });
+    savedLocal++;
   }
-  if (deps.saved.length) tried.push(`已保存的连接（${deps.saved.length} 个）`);
+  if (savedLocal) tried.push(`已保存的连接（${savedLocal} 个）`);
 
   // 1 + 2. runtime-info files (managed first, then the default data dir)
   const runtimeFiles: Array<{ p: string; source: DaemonSource }> = [

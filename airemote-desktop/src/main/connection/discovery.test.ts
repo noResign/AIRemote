@@ -133,7 +133,25 @@ describe('probeDaemons', () => {
     expect(result.found?.source).toBe('port-scan');
   });
 
-  it('prefers a saved connection over everything else', async () => {
+  it('prefers a saved loopback connection over the runtime-info file', async () => {
+    const result = await probeDaemons(
+      deps({
+        saved: ['http://127.0.0.1:4795'],
+        files: { [MANAGED]: runtimeInfo() },
+        mtimes: { [MANAGED]: NOW - 1000 },
+        pids: [42],
+        outcomes: {
+          'http://127.0.0.1:4795': AUTH_OK,
+          'http://127.0.0.1:4780': AUTH_OK,
+        },
+      }),
+    );
+    expect(result.found).toMatchObject({ source: 'saved', listen: '127.0.0.1:4795' });
+  });
+
+  it('ignores a saved remote connection and still finds the local daemon', async () => {
+    // The connect page renders this probe as「本机 daemon」— a saved remote
+    // target must not shadow the daemon actually running on this machine.
     const result = await probeDaemons(
       deps({
         saved: ['http://192.168.1.9:4780'],
@@ -146,7 +164,17 @@ describe('probeDaemons', () => {
         },
       }),
     );
-    expect(result.found).toMatchObject({ source: 'saved', listen: '192.168.1.9:4780' });
+    expect(result.found).toMatchObject({ source: 'managed', listen: '0.0.0.0:4780' });
+  });
+
+  it('treats a remote-only saved list as「no local daemon」', async () => {
+    const result = await probeDaemons(
+      deps({
+        saved: ['http://192.168.1.9:4780'],
+        outcomes: { 'http://192.168.1.9:4780': AUTH_OK },
+      }),
+    );
+    expect(result.found).toBeNull();
   });
 
   it('enriches a saved connection with the metadata the runtime file knows', async () => {
