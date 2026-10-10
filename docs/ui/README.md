@@ -44,7 +44,7 @@
 
 | 平台 | 实现映射 |
 |---|---|
-| Android | [airemote-android/docs/ui_adapter.md](../../airemote-android/docs/ui_adapter.md) —— Design Token 落到 Compose 的对应关系 |
+| Android | [android/docs/ui_adapter.md](../../android/docs/ui_adapter.md) —— Design Token 落到 Compose 的对应关系 |
 | iOS | 待补（预留，UIKit；对齐同一套 token 与页面规格，映射见 [design-principles.md](design-principles.md) §4.5） |
 
-后端协议与权限模型见 [airemote-daemon/docs/daemon.md](../../airemote-daemon/docs/daemon.md)。
+后端协议与权限模型见 [daemon/docs/daemon.md](../../daemon/docs/daemon.md)。

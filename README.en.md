@@ -13,9 +13,9 @@
 
 <h5>Come on — can't we just get the work done lying down?</h5>
 
-[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **Security model**](#security-model-)
+[📚 **Docs**](docs/ui/README.md) • [📱 **Android client**](android/README.md) • [🖥️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **Security model**](#security-model-)
 
-[![npm](https://img.shields.io/npm/v/@noresign/airemote?color=0E9F86)](https://www.npmjs.com/package/@noresign/airemote) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
@@ -37,9 +37,9 @@ Requirements: **Node `~24`**, plus a `claude` CLI on `PATH` that is logged in
 (`claude auth login`).
 
 ```bash
-npm install -g @noresign/airemote      # the global command is `airemote`
+npm install -g @noresign/paboot      # the global command is `paboot`
 
-airemote --workspace ~/code/my-project # `--workspace` selects the working directory; defaults to where you launch the command
+paboot --workspace ~/code/my-project # `--workspace` selects the working directory; defaults to where you launch the command
 ```
 
 On first start it generates an auth token and prints it together with the LAN address
@@ -50,24 +50,24 @@ token: 3f9c…   ← paste this into the app
 LAN:   http://192.168.1.20:4780
 ```
 
-- The token is persisted at `~/.airemote/token` (delete the file to rotate); pass
+- The token is persisted at `~/.paboot/token` (delete the file to rotate); pass
   `--token` to set your own
 - Full flags, configuration, and the HTTP/SSE API live in
-  [airemote-daemon/README.md](airemote-daemon/README.md)
+  [daemon/README.md](daemon/README.md)
 
 ### 2. Build the Android client
 
-Open `airemote-android/` in Android Studio (JDK 17, `minSdk 24` / `targetSdk 36`) and
+Open `android/` in Android Studio (JDK 17, `minSdk 24` / `targetSdk 36`) and
 Run. The command-line equivalent:
 
 ```bash
-cd airemote-android
+cd android
 ./gradlew :app:assembleAlphaDebug
 ```
 
 Two channels: `alphaDebug` (alpha) and `prodDebug` (prod); release signing needs
-`airemote-android/keystore.properties`. Module layout and signing notes live in
-[airemote-android/README.md](airemote-android/README.md).
+`android/keystore.properties`. Module layout and signing notes live in
+[android/README.md](android/README.md).
 
 ### 3. Steps
 

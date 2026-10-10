@@ -1,0 +1,75 @@
+# Packaging config for the desktop client. See docs/local/electron_desktop_plan.md
+# §"安全与打包" for the reasoning behind the targets and the no-auto-update decision.
+#
+# There is deliberately no `publish` provider and no `latest-*.yml` manifest: the
+# app does not self-update, so OSS only ever receives the installers themselves.
+appId: com.noresign.paboot.desktop
+productName: paboot
+copyright: Copyright © 2026 noResign
+
+directories:
+  buildResources: build
+  output: release
+
+# Everything the app runs is already in out/: electron-vite bundles main and
+# preload, and Vite bundles the renderer. `dependencies` is therefore empty on
+# purpose and no node_modules ends up in the app.
+files:
+  - out/**
+  - package.json
+
+# The daemon ships inside the app (~900 KB of JS, no native deps) so the app and
+# its daemon can never drift apart in version — see daemon/bundled-entry.ts.
+# Without this, "start a local daemon" has nothing to run on a packaged install.
+extraResources:
+  - from: ../daemon/dist
+    to: daemon
+
+asar: true
+# No native modules to rebuild.
+npmRebuild: false
+
+artifactName: paboot-${version}-${arch}.${ext}
+
+# electron-builder does NOT read .npmrc's electron_mirror — it has its own cache
+# and goes straight to GitHub for the Electron zip and its SHASUMS256.txt, even
+# when the zip is already cached. Without this, packaging stalls on that fetch.
+# Same mirror as .npmrc; drop it if your network reaches GitHub.
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: build/icon.png
+  maintainer: noResign
+  synopsis: Remote client for a local coding agent
+  # Makes the .desktop entry's StartupWMClass match the app_id Electron derives
+  # from package.json `desktopName`, so the window links to the launcher icon.
+  syncDesktopName: true
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  icon: build/icon.png
+  # Unsigned on purpose (no $99/year Apple Developer account). First launch is
+  # gated by Gatekeeper; distribution is via `curl` to avoid the quarantine bit.
+  identity: null
+
+dmg:
+  sign: false
+
+win:
+  target:
+    - nsis
+  icon: build/icon.png
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  shortcutName: paboot

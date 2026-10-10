@@ -28,20 +28,20 @@ AIRemote/
 │  │  ├─ appendix.md      数据映射 / 里程碑 / 接口契约
 │  │  └─ preview.html     可交互原型
 │  └─ local/              本机私有方案笔记（gitignore，不入库：权限/工作区、Files Tab、分页 …）
-├─ airemote-daemon/       daemon 子项目（Node 24 + Express + SQLite）
+├─ daemon/                daemon 子项目（Node 24 + Express + SQLite）
 │  ├─ src/                daemon 源码
 │  ├─ client/             极简测试网页客户端（index.html，零依赖）
 │  ├─ tests/              Vitest 单测
 │  └─ docs/daemon.md      daemon 技术方案（架构/协议/权限/数据模型/端点表）
-├─ airemote-android/      Android 客户端（Kotlin + Compose，M1 已实现）
+├─ android/               Android 客户端（Kotlin + Compose，M1 已实现）
 │  ├─ app/                业务上层（MVVM + Compose UI + 仓库编排）
 │  └─ lib-network/        网络底座（依赖 + wire DTO + Retrofit API + SSE + LLM 抽象）
-└─ airemote-ios/          iOS 客户端（预留，原生 UIKit）
+└─ ios/                   iOS 客户端（预留，原生 UIKit）
 ```
 
-- **airemote-daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
-- **airemote-android/**：已实现 M1（连接/会话列表/聊天/审批/新建会话/设置）。
-- **传输契约**：跨端共享的 DTO、SSE 事件 union、错误形状放 `airemote-daemon/src/types/api.ts`。
+- **daemon/**：负责 `/api/*`、spawn agent、会话/run 持久化、权限审批、SSE 流。
+- **android/**：已实现 M1（连接/会话列表/聊天/审批/新建会话/设置）。
+- **传输契约**：跨端共享的 DTO、SSE 事件 union、错误形状放 `daemon/src/types/api.ts`。
 
 ## 技术栈
 
@@ -65,7 +65,7 @@ AIRemote/
   **不再**在 `dto/` 下按域建子目录。理由：一个实体和它的列表包装永远同生共死，拆开只是噪音。
 - **传输契约**：改 `types/api.ts` 前先想清对 Android/iOS 两端的影响；Android 侧 DTO 与之一一
   对齐（字段名/类型/多态判别）。
-- **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `airemote-daemon/docs/daemon.md`；
+- **文档同步**：行为/协议/安全模型变化时，同步对应文档（daemon → `daemon/docs/daemon.md`；
   UI → `docs/ui/`）。
 
 ### daemon
@@ -78,14 +78,14 @@ AIRemote/
   默认拒绝都属安全边界，改动必须保持 deny-by-default。
 - **Claude Code API 不稳**：CLI flag 随版本变，能力必须先 `--help` 探测再传参
   （`runtimes/claude/detect.ts`），不要假设某 flag 恒存在。
-- **数据路径**：daemon 数据根默认 `~/.airemote`（`--data-dir` 可改），SQLite/token 都在其下。
+- **数据路径**：daemon 数据根默认 `~/.paboot`（`--data-dir` 可改），SQLite/token 都在其下。
 - **配置**：env 变量可写入 `.env`（参考 `.env.example`，运行目录自动加载，flag 优先）。
 - **测试/产物**：测试放 `tests/`；`dist/`、`node_modules/` 不入库，不要手改 `dist/`。
 - **提交前**：至少 `pnpm typecheck` + `pnpm test`（涉及入口/打包再加 `pnpm build`）。
 
 ### Android
 
-- **模块**：`:app`（业务）+ `:lib-network`（网络底座，包名 `com.airemote.network`）。
+- **模块**：`:app`（业务）+ `:lib-network`（网络底座，包名 `com.noresign.paboot.network`）。
   **网络相关的东西全在 `:lib-network`**：okhttp / retrofit / coroutines / kotlinx-serialization
   依赖、wire DTO、Retrofit 接口与客户端工厂、SSE 传输、网络错误包装。`app` 不自己声明这些依赖，
   直接用 `:lib-network` 的类型（依赖以 `api` 暴露）。`:lib-network` 不引用任何 `android.*`，
@@ -96,12 +96,12 @@ AIRemote/
   2. `http/` REST 结果包装——`NetworkResult` + `safeApiCall`；
   3. `llm/` 大模型供应商抽象——`LlmProvider`（`Flow` 流式 + 非流式）、`OpenAiCompatLlmProvider`
      （OpenAI 兼容协议）、`RoutingLlmProvider` + `ModelResolver`（按 model 路由，依赖倒置）；
-  4. `airemote/` daemon 协议层——`AiremoteApi`（Retrofit）、`AiremoteClient`（工厂）、
-     `AiremoteStream` + `ChatStreamEvent`、`dto/`（5 个按域分的 `<域>Dtos.kt`，与 `types/api.ts`
+  4. `daemon/` daemon 协议层——`PabootApi`（Retrofit）、`PabootClient`（工厂）、
+     `PabootStream` + `ChatStreamEvent`、`dto/`（5 个按域分的 `<域>Dtos.kt`，与 `types/api.ts`
      一一对齐）。
 - **分层（`:app`）**：`data/repository`（业务编排，直接调 `:lib-network`）、`data/local`（MMKV 设置）、
   `model`（页面模型）、`viewmodel`、`ui`、`navigation`，严格 MVVM，UI 层不碰网络。
-- **传输契约**：改 `types/api.ts` 时同步改 `:lib-network` 的 `airemote/dto/`（字段名/类型/多态判别
+- **传输契约**：改 `types/api.ts` 时同步改 `:lib-network` 的 `daemon/dto/`（字段名/类型/多态判别
   一一对齐）；跨 module 的 DTO 属性不能智能转换，先用局部变量接再判空。
 - **持久化**：MMKV（`SettingsStore`，留在 `:app`）。
 - **UI**：以 `docs/ui/` 为唯一设计源；「runtime 身份」（图标/色/名）做成可配置映射，
@@ -146,28 +146,28 @@ AIRemote/
 
 规则：
 
-- `airemote-daemon/src/**`、`package.json`、`pnpm-lock.yaml`、`tsconfig.json` 等有改动时：
+- `daemon/src/**`、`package.json`、`pnpm-lock.yaml`、`tsconfig.json` 等有改动时：
   - `test` / `alpha`：`pnpm build` + 重启本地 daemon，不发 OSS
   - `prod`：`pnpm build` + 重启本地 daemon，再 `release-daemon.sh --skip-build` 打成 `.tgz` 上传 OSS `daemon/`，并覆盖 `airemote-latest.tgz`
-  - 若存在 systemd user service `airemote.service`：`systemctl --user restart airemote`
+  - 若存在 systemd user service `paboot.service`：`systemctl --user restart paboot`
   - 否则回退到旧 `dist/index.js` kill + nohup 逻辑
   - 健康检查 `http://127.0.0.1:<port>/api/health`
-- `airemote-android/**` 有改动时：`.claude/skills/deploy/scripts/release-android.sh alpha|prod`
+- `android/**` 有改动时：`.claude/skills/deploy/scripts/release-android.sh alpha|prod`
 - 没有改动的部分自动跳过。
 
-Android 版本号：版本源是 `airemote-android/version.txt`（语义化，`1.0.0 → 1.0.1` 小修 /
+Android 版本号：版本源是 `android/version.txt`（语义化，`1.0.0 → 1.0.1` 小修 /
 `→ 1.1.0` 加功能 / `→ 2.0.0` 大改）。发布脚本据此生成 versionName（alpha 追加 `-alpha.<时间戳>`），
 release variant（AS 直接 Build APK 或发布脚本）自动读它并取
 versionCode = `epoch 秒`；debug variant 才是本地包，固定 versionCode = `1`、versionName = `0.0.0-*`。
-约定与踩坑记录见 `airemote-android/docs/local/updater.md` §7.1（私有，不入库）——
+约定与踩坑记录见 `android/docs/local/updater.md` §7.1（私有，不入库）——
 **正式包的 versionCode 和 versionName 都必须高于本地 debug 构建**，否则安装器会判降级拒装。
 
-Daemon 版本号：版本源是 `airemote-daemon/package.json` 的 `version`（同样语义化，
+Daemon 版本号：版本源是 `daemon/package.json` 的 `version`（同样语义化，
 `1.0.0 → 1.0.1` 小修 / `→ 1.1.0` 加功能 / `→ 2.0.0` 大改），`--version`、`/api/health`
 和发布产物版本都由它派生。
 
-版本文件必须入库：`airemote-android/version.txt`（Android release 构建与发布脚本都依赖）、
-`airemote-daemon/src/version.ts`（daemon 编译与运行时依赖，源是 package.json）。
+版本文件必须入库：`android/version.txt`（Android release 构建与发布脚本都依赖）、
+`daemon/src/version.ts`（daemon 编译与运行时依赖，源是 package.json）。
 
 Claude Code 部署 skill 在 `.claude/skills/deploy/SKILL.md`。只有用户明确说“发布/部署/发版”时才执行。
 

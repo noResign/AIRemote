@@ -1,0 +1,10 @@
+# 应用内更新通道配置（复制为 updater.properties 后填写；updater.properties 不入库）。
+#
+# 两个 URL 分别对应 alpha / prod flavor 的 manifest 地址。留空或整份文件缺失时，
+# 构建出的 App 没有更新通道：设置页不显示「检查更新」，AppUpdater.enabled 为 false。
+# 也可以不建本文件，改用 -PalphaManifestUrl=... / -PprodManifestUrl=... 在命令行注入。
+#
+# manifest 格式见 android/docs/local/updater.md §3。
+
+alphaManifestUrl=https://<your-bucket>.oss-cn-hangzhou.aliyuncs.com/android/alpha/manifest.json
+prodManifestUrl=https://<your-bucket>.oss-cn-hangzhou.aliyuncs.com/android/prod/manifest.json

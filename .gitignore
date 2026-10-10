@@ -14,6 +14,6 @@ release/
 .claude/
 docs/local/
 
-airemote-android/docs/local/
-airemote-ios/docs/local/
-airemote-desktop/docs/local/
+android/docs/local/
+ios/docs/local/
+desktop/docs/local/

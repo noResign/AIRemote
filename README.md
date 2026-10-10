@@ -13,9 +13,9 @@
 
 <h5>咱就说，能不能躺着把活干了</h5>
 
-[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](airemote-android/README.md) • [🖥️ **daemon**](airemote-daemon/README.md) • [🍎 **iOS**](airemote-ios/README.md) • [🔒 **安全模型**](#安全模型-)
+[📚 **文档**](docs/ui/README.md) • [📱 **Android 客户端**](android/README.md) • [🖥️ **daemon**](daemon/README.md) • [🍎 **iOS**](ios/README.md) • [🔒 **安全模型**](#安全模型-)
 
-[![npm](https://img.shields.io/npm/v/@noresign/airemote?color=0E9F86)](https://www.npmjs.com/package/@noresign/airemote) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
+[![npm](https://img.shields.io/npm/v/@noresign/paboot?color=0E9F86)](https://www.npmjs.com/package/@noresign/paboot) [![license](https://img.shields.io/badge/license-Apache--2.0-0E9F86)](LICENSE)
 
 </div>
 
@@ -33,9 +33,9 @@ Android 系统通知会提醒你处理审批或查看任务结果，不局限于
 前置：**Node `~24`**，以及本机已装并登录 `claude` CLI（`claude auth login`）：
 
 ```bash
-npm install -g @noresign/airemote      # 全局命令名是 airemote
+npm install -g @noresign/paboot      # 全局命令名是 paboot
 
-airemote --workspace ~/code/my-project # workspace参数指定工作空间，默认为命令启动目录
+paboot --workspace ~/code/my-project # workspace参数指定工作空间，默认为命令启动目录
 ```
 
 首次启动会生成 token 并打印，同时打印手机可以连的局域网地址：
@@ -45,22 +45,22 @@ token: 3f9c…   ← 手机连的时候要填这个
 LAN:   http://192.168.1.20:4780
 ```
 
-- token 持久化在 `~/.airemote/token`，删掉即轮换；也可以用 `--token` 指定
-- 完整参数、配置项与 HTTP/SSE 接口见 [airemote-daemon/README.md](airemote-daemon/README.md)。
+- token 持久化在 `~/.paboot/token`，删掉即轮换；也可以用 `--token` 指定
+- 完整参数、配置项与 HTTP/SSE 接口见 [daemon/README.md](daemon/README.md)。
 
 ### 2. 编译 Android 客户端
 
-用 Android Studio 打开 `airemote-android/`（JDK 17，`minSdk 24` / `targetSdk 36`），
+用 Android Studio 打开 `android/`（JDK 17，`minSdk 24` / `targetSdk 36`），
 选 flavor 后直接 Run。命令行等价于：
 
 ```bash
-cd airemote-android
+cd android
 ./gradlew :app:assembleAlphaDebug
 ```
 
 两个通道：`alphaDebug`（测试）与 `prodDebug`（正式）；正式签名需要
-`airemote-android/keystore.properties`。模块划分与签名说明见
-[airemote-android/README.md](airemote-android/README.md)。
+`android/keystore.properties`。模块划分与签名说明见
+[android/README.md](android/README.md)。
 
 
 ### 3. 操作步骤

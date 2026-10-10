@@ -1,0 +1,37 @@
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+android {
+    namespace 'com.noresign.paboot.network'
+    compileSdk 36
+
+    defaultConfig {
+        minSdk 24
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+// 全部网络能力（依赖 + 传输 + 协议 + 数据模型）都收在这个 module 里，上层只依赖它。
+// api 暴露给上层：okhttp（Request 出现在 SseSource 签名里）、retrofit（PabootApi 是公开接口）、
+// coroutines（Flow 出现在签名里）、kotlinx-serialization（JsonElement 出现在 DTO 签名里）。
+dependencies {
+    api libs.okhttp
+    api libs.retrofit
+    api libs.kotlinx.coroutines.core
+    api libs.kotlinx.serialization.json
+    implementation libs.retrofit.converter.kotlinx.serialization
+
+    testImplementation libs.junit
+    testImplementation libs.kotlinx.coroutines.test
+}
