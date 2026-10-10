@@ -102,6 +102,9 @@ const EFFECTS: Partial<Record<FxId, (canvas: HTMLCanvasElement) => () => void>> 
 - `prefers-reduced-motion: reduce` 时整个特效层**不挂载**——不是「挂载了但不动」。
 - 窗口隐藏（`visibilitychange`）时拆掉特效，切回来重建。
 - 皮肤选择的持久化（localStorage）、`data-skin` 的同步、设置页的列表。
+- 皮肤激活时 `--bg` / `--surface` / `--surface-2` 会**自动透明**（沉浸式：只留边框），
+  所以卡片、气泡、列表这些不用为皮肤态写任何特殊处理。**前提是新写的容器自带 `border`**——
+  没有边框的元素透明后会连边界一起消失。
 
 ## 三处扩展点，别的都别碰
 

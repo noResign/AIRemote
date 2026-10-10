@@ -1858,6 +1858,17 @@ a.btn {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/*
+ * The user bubble is the one surface painted with the accent colour, so it can't
+ * ride on the token swap above (--primary must stay opaque for buttons/links).
+ * It also has no border of its own, and its dark text was picked to sit on the
+ * fill — both need an explicit replacement once the fill goes away.
+ */
+:root[data-fx]:not([data-fx='none']) .msg.user .bubble {
+  background: transparent;
+  border: 1px solid var(--primary);
+  color: var(--text-primary);
+}
 .msg.assistant {
   display: flex;
   flex-direction: column;

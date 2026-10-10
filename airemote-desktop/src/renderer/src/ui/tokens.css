@@ -66,6 +66,16 @@
 }
 :root[data-fx]:not([data-fx='none']) {
   --page-bg: transparent;
+  /*
+   * Skin mode: surfaces stand aside so the effect layer is what you're looking
+   * at — a card is delimited by its border, not by a fill. Doing it at the token
+   * level is safe because these three are used *only* as backgrounds (nothing
+   * paints a border or text with them), and every surface-backed rule already
+   * draws a border, so nothing disappears.
+   */
+  --bg: transparent;
+  --surface: transparent;
+  --surface-2: transparent;
 }
 
 /* Desktop density: 48px touch targets shrink, radii tighten, blocks compress. */
