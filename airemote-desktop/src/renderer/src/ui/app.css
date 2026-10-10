@@ -12,7 +12,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--bg);
+  background: var(--page-bg);
 }
 
 .gate-card {
@@ -363,7 +363,7 @@ input.mono {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--page-bg);
 }
 
 .main-head {
@@ -608,7 +608,7 @@ kbd {
 
 .composer {
   flex: none;
-  background: var(--bg);
+  background: var(--page-bg);
   padding: 10px 22px 14px;
   display: flex;
   flex-direction: column;
@@ -1811,7 +1811,7 @@ a.btn {
   flex: 1;
   overflow: auto;
   min-height: 0;
-  background: var(--bg);
+  background: var(--page-bg);
 }
 /*
  * No card: assistant turns are plain content straight on the chat ground, and
@@ -2339,7 +2339,7 @@ a.btn {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg);
+  background: var(--page-bg);
 }
 .fpane-head {
   flex: none;
@@ -2539,7 +2539,7 @@ a.btn {
 .chat-aside .fpane {
   flex: 1;
   min-height: 0;
-  background: var(--bg);
+  background: var(--page-bg);
 }
 .ftree-buttons {
   display: flex;

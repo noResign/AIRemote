@@ -86,6 +86,17 @@ const EFFECTS: Partial<Record<FxId, (canvas: HTMLCanvasElement) => () => void>> 
   桌面端一开一整天，空转的帧就是电池。`ripple.ts` 里的 `schedule()` 就是这个模式。
 - **分辨率按 `devicePixelRatio` 缩放**，否则高分屏上会糊。
 
+## 页面上新增「铺满屏」的容器时
+
+页面铺底写的是 `--page-bg`，不是 `--bg`：有特效时它会被设成 `transparent`（见 `tokens.css`），
+好让画布透出来。所以**新加一个铺满屏的容器时，背景用 `var(--page-bg)`**，否则它会把特效层挡在下面——
+这正是最初 `.main` / `.chat-scroll` 挡住涟漪的原因。
+
+区分两者：
+
+- `--page-bg`：**页面底色**（该让特效透出来）。
+- `--bg`：叠在 surface 之上的**小控件**（只读框、徽章）的底色，要保持不透明——它得盖住背后的东西。
+
 ## 这些不用你管（`SkinFx` 已处理）
 
 - `prefers-reduced-motion: reduce` 时整个特效层**不挂载**——不是「挂载了但不动」。

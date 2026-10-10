@@ -55,6 +55,19 @@
  * `ui/fx/` and `ui/SkinFx.tsx`.
  */
 
+/*
+ * Page backdrop. Full-screen containers paint `--page-bg`, not `--bg`: when a
+ * skin's effect layer (ui/SkinFx) is active the backdrop goes transparent so the
+ * canvas shows through. `--bg` stays opaque for things that sit *on* a surface
+ * (readonly fields, badges) — those must keep covering what is behind them.
+ */
+:root {
+  --page-bg: var(--bg);
+}
+:root[data-fx]:not([data-fx='none']) {
+  --page-bg: transparent;
+}
+
 /* Desktop density: 48px touch targets shrink, radii tighten, blocks compress. */
 :root {
   --r-card: 10px;
@@ -95,6 +108,10 @@ body {
 .skin-fx {
   position: fixed;
   inset: 0;
+  /* A canvas is a replaced element: `inset: 0` alone leaves it at its intrinsic
+     300×150 instead of stretching it, so the size has to be spelled out. */
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
 }

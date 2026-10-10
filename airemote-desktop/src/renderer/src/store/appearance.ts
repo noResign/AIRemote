@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { DEFAULT_SKIN_ID, SKINS, type SkinId } from '../ui/skins';
+import { DEFAULT_SKIN_ID, SKINS, skinById, type SkinId } from '../ui/skins';
 
 /**
  * Appearance preferences. These live in `localStorage`, which is legitimate here
@@ -174,6 +174,9 @@ export function applyAppearance(state: Stored): void {
   // The skin is an effect layer, not a colour scheme — `ui/SkinFx` reads the same
   // value back through the store. Kept on the DOM too so CSS can target it.
   document.documentElement.dataset['skin'] = state.skin;
+  // `data-fx` lets CSS know an effect is live: `--page-bg` (tokens.css) goes
+  // transparent off it, so the canvas is not covered by page backdrops.
+  document.documentElement.dataset['fx'] = skinById(state.skin).fx;
   // Chromium-only `zoom` is fine: Electron means there is exactly one engine.
   document.body.style.zoom = `${state.zoom}%`;
 }
