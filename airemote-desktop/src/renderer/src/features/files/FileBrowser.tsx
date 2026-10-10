@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../ipc/client';
+import { useConnection } from '../../store/connection';
+import { changesKey, useFilesCache } from '../../store/files';
 import { apiErrorOf, friendlyMessage } from '../../../../shared/errors';
 import { formatBytes } from '../../../../shared/format';
 import { directoryLabel, fileName } from './pathLabel';
@@ -65,7 +67,15 @@ export function FileBrowser({
   /** Bumped by 刷新 to re-run the fetch. */
   const [reload, setReload] = useState(0);
 
-  const [changes, setChanges] = useState<ChangesResponse | null>(null);
+  // The change list lives in a renderer-side cache keyed by (connection,
+  // workspace, root): this panel unmounts on navigation, and re-running git on
+  // every open is slow exactly when it hurts — while a run rewrites the tree.
+  // A cold key still falls back to `null`, which is what shows「正在读取…」.
+  const connectionId = useConnection((state) => state.activeId);
+  const cacheKey = connectionId && workspaceId ? changesKey(connectionId, workspaceId, root) : null;
+  const changes = useFilesCache((state) => (cacheKey ? state.changes[cacheKey] : undefined)) ?? null;
+  const putChanges = useFilesCache((state) => state.putChanges);
+
   const [listing, setListing] = useState<FilesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,18 +86,21 @@ export function FileBrowser({
     setExpanded({});
   }, [workspaceId, root, mode]);
 
-  // Whatever we fetched belongs to one workspace+root. Blank it when that
-  // changes, or the previous one's list would sit there behind the loading
-  // guard (which only shows a spinner when there is *nothing* yet).
+  // The "all files" listing belongs to one workspace+root; blank it when that
+  // changes, or the previous one would sit there behind the loading guard (which
+  // only shows a spinner when there is *nothing* yet). The change list needs no
+  // such reset — it is cache-keyed, so a different root is a different entry.
   useEffect(() => {
-    setChanges(null);
     setListing(null);
   }, [workspaceId, root]);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId || !cacheKey) return;
     let live = true;
-    setLoading(true);
+    // A cached change list renders immediately and refreshes *silently*; only a
+    // cold key pays the「正在读取…」state.
+    const hasCached = mode === 'changes' && useFilesCache.getState().changes[cacheKey] !== undefined;
+    if (!hasCached) setLoading(true);
     setError(null);
     const query = { workspaceId, root: root ?? undefined };
     void (mode === 'changes' ? api.changes(query) : api.files({ ...query, path: dir, showHidden, showIgnored })).then(
@@ -99,14 +112,14 @@ export function FileBrowser({
           setError(friendlyMessage(apiCode, res.status, message, '读取失败'));
           return;
         }
-        if (mode === 'changes') setChanges(res.data as ChangesResponse);
+        if (mode === 'changes') putChanges(cacheKey, res.data as ChangesResponse);
         else setListing(res.data as FilesResponse);
       },
     );
     return () => {
       live = false;
     };
-  }, [workspaceId, root, mode, dir, showHidden, showIgnored, reload]);
+  }, [workspaceId, cacheKey, root, mode, dir, showHidden, showIgnored, reload, putChanges]);
 
   /** Second click collapses; the listing is refetched on the next expand. */
   async function toggleDir(path: string): Promise<void> {
