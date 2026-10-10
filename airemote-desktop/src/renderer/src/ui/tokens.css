@@ -48,6 +48,13 @@
   --grad: linear-gradient(135deg, #2bc7a4, #4ad8b8);
 }
 
+/*
+ * Another palette? Add a `:root[data-skin='<id>'] { --bg: …; }` block here and
+ * register that id in `ui/skins.ts` — it then shows up in 设置 → 外观 → 皮肤.
+ * This file is colours only; anything animated or pointer-driven is code, see
+ * `ui/fx/` and `ui/SkinFx.tsx`.
+ */
+
 /* Desktop density: 48px touch targets shrink, radii tighten, blocks compress. */
 :root {
   --r-card: 10px;
@@ -78,6 +85,22 @@ body {
   color: var(--text-primary);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * The skin effect layer (ui/SkinFx): a click-through canvas behind everything.
+ * The app content is lifted above it so a full-screen canvas can never cover the
+ * UI, and `pointer-events: none` keeps it from eating any input.
+ */
+.skin-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+#root {
+  position: relative;
+  z-index: 1;
 }
 
 .mono {

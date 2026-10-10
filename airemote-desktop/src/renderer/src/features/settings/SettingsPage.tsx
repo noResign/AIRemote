@@ -3,6 +3,7 @@ import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
 import { PreferencesSection } from './PreferencesSection';
+import { SKINS } from '../../ui/skins';
 import { modLabel } from '../../shortcuts/shortcuts';
 import { IS_MAC } from '../../ui/platform';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
@@ -57,9 +58,11 @@ export function SettingsPage({
   const disconnectAll = useConnection((state) => state.disconnectAll);
 
   const theme = useAppearance((state) => state.theme);
+  const skin = useAppearance((state) => state.skin);
   const zoom = useAppearance((state) => state.zoom);
   const railWidth = useAppearance((state) => state.railWidth);
   const setTheme = useAppearance((state) => state.setTheme);
+  const setSkin = useAppearance((state) => state.setSkin);
   const setZoom = useAppearance((state) => state.setZoom);
   const setRailWidth = useAppearance((state) => state.setRailWidth);
 
@@ -379,6 +382,24 @@ export function SettingsPage({
                         <b>{THEME_LABEL[option]}</b>
                       </button>
                     ))}
+                  </div>
+                </div>
+                <div className="field">
+                  <label>皮肤</label>
+                  <div className="mode-picker">
+                    {SKINS.map((option) => (
+                      <button
+                        key={option.id}
+                        className={`mode-option${option.id === skin ? ' active' : ''}`}
+                        onClick={() => setSkin(option.id)}
+                      >
+                        <b>{option.label}</b>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="hint">
+                    皮肤在光/暗之外再叠一层动效（背景、鼠标波纹）。系统开启「减少动态效果」时会自动关闭，
+                    窗口切到后台也会暂停。
                   </div>
                 </div>
                 <div className="field">

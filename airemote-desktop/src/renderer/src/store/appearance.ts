@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_SKIN_ID, SKINS, type SkinId } from '../ui/skins';
 
 /**
  * Appearance preferences. These live in `localStorage`, which is legitimate here
@@ -18,6 +19,8 @@ export const ASIDE_MAX = 800;
 
 interface AppearanceState {
   theme: ThemePreference;
+  /** Effect-layer skin — a second axis on top of light/dark (see `ui/skins`). */
+  skin: SkinId;
   zoom: number;
   railWidth: number;
   /** The files page's left column (tree / changes list). */
@@ -30,6 +33,7 @@ interface AppearanceState {
   asideVisible: boolean;
   asideWidth: number;
   setTheme(theme: ThemePreference): void;
+  setSkin(skin: SkinId): void;
   setZoom(zoom: number): void;
   setRailWidth(width: number): void;
   toggleFileTree(): void;
@@ -43,6 +47,7 @@ const STORAGE_KEY = 'airemote.appearance';
 
 interface Stored {
   theme: ThemePreference;
+  skin: SkinId;
   zoom: number;
   railWidth: number;
   fileTreeVisible: boolean;
@@ -64,6 +69,7 @@ export function resolveTheme(preference: ThemePreference, prefersDark: boolean):
 function load(): Stored {
   const fallback: Stored = {
     theme: 'system',
+    skin: DEFAULT_SKIN_ID,
     zoom: 100,
     railWidth: 300,
     fileTreeVisible: true,
@@ -78,6 +84,9 @@ function load(): Stored {
     const parsed = JSON.parse(raw) as Partial<Stored>;
     return {
       theme: parsed.theme === 'light' || parsed.theme === 'dark' ? parsed.theme : 'system',
+      // An id that no longer exists (renamed/removed skin) falls back, rather
+      // than leaving `data-skin` pointing at nothing.
+      skin: SKINS.some((skin) => skin.id === parsed.skin) ? (parsed.skin as SkinId) : DEFAULT_SKIN_ID,
       zoom: clamp(Number(parsed.zoom) || 100, ZOOM_MIN, ZOOM_MAX),
       railWidth: clamp(Number(parsed.railWidth) || 300, RAIL_MIN, RAIL_MAX),
       // These default to open: an absent field means "written before this existed".
@@ -98,6 +107,11 @@ export const useAppearance = create<AppearanceState>((set, get) => ({
 
   setTheme(theme) {
     set({ theme });
+    persist(get());
+    applyAppearance(get());
+  },
+  setSkin(skin) {
+    set({ skin });
     persist(get());
     applyAppearance(get());
   },
@@ -138,6 +152,7 @@ function persist(state: Stored): void {
       STORAGE_KEY,
       JSON.stringify({
         theme: state.theme,
+        skin: state.skin,
         zoom: state.zoom,
         railWidth: state.railWidth,
         fileTreeVisible: state.fileTreeVisible,
@@ -156,6 +171,9 @@ function persist(state: Stored): void {
 export function applyAppearance(state: Stored): void {
   const media = window.matchMedia('(prefers-color-scheme: dark)');
   document.documentElement.dataset['theme'] = resolveTheme(state.theme, media.matches);
+  // The skin is an effect layer, not a colour scheme — `ui/SkinFx` reads the same
+  // value back through the store. Kept on the DOM too so CSS can target it.
+  document.documentElement.dataset['skin'] = state.skin;
   // Chromium-only `zoom` is fine: Electron means there is exactly one engine.
   document.body.style.zoom = `${state.zoom}%`;
 }

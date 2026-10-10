@@ -5,6 +5,8 @@ AIRemote 的桌面客户端：Electron（主进程 + preload）+ React/Vite 渲�
 
 设计文档（本机私有，不入库）：`docs/local/electron_desktop_plan.md`、`docs/local/desktop_ui_design.md`。
 
+自定义皮肤（配色 / 背景动效 / 鼠标波纹）：看 [docs/skins.md](docs/skins.md)——加一套皮肤只改几行代码。
+
 ## 运行
 
 ```bash
