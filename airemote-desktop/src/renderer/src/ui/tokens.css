@@ -8,6 +8,10 @@
   --bg: #f6f8f7;
   --surface: #ffffff;
   --surface-2: #ffffff;
+  /* Opaque twins of the two above. Skin mode blanks the originals out; subtrees
+     that must stay filled (overlays) re-point at these instead — see app.css. */
+  --surface-solid: #ffffff;
+  --surface-2-solid: #ffffff;
   --border: #e3eae6;
   --text-primary: #16211d;
   --text-secondary: #5a6b64;
@@ -30,6 +34,8 @@
   --bg: #0e1512;
   --surface: #17201c;
   --surface-2: #1e2823;
+  --surface-solid: #17201c;
+  --surface-2-solid: #1e2823;
   --border: #293430;
   --text-primary: #e7efeb;
   --text-secondary: #a2b0aa;
@@ -67,13 +73,14 @@
 :root[data-fx]:not([data-fx='none']) {
   --page-bg: transparent;
   /*
-   * Skin mode: surfaces stand aside so the effect layer is what you're looking
-   * at — a card is delimited by its border, not by a fill. Doing it at the token
-   * level is safe because these three are used *only* as backgrounds (nothing
-   * paints a border or text with them), and every surface-backed rule already
-   * draws a border, so nothing disappears.
+   * Skin mode: surfaces stand aside so the effect layer is what you look at —
+   * a card is delimited by its border, not by a fill.
+   *
+   * `--bg` is deliberately NOT here: `body` paints itself with it, and a
+   * transparent body shows the window's own backdrop (which reads as black).
+   * The two small controls that do use `--bg` (.readonly, .help-combo) are
+   * opted out individually in app.css instead.
    */
-  --bg: transparent;
   --surface: transparent;
   --surface-2: transparent;
 }

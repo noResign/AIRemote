@@ -828,6 +828,34 @@ kbd {
   font-size: 12.5px;
   color: var(--text-secondary);
 }
+/*
+ * Skin mode: the only two controls painted with `--bg`. That token stays opaque
+ * (see tokens.css — `body` depends on it), so they opt out individually to keep
+ * the "border, no fill" look.
+ */
+:root[data-fx]:not([data-fx='none']) .readonly,
+:root[data-fx]:not([data-fx='none']) .help-combo {
+  background: transparent;
+}
+/*
+ * Overlays stay opaque in skin mode: a modal is meant to sit *above* the page —
+ * that is what makes it readable and modal. Rather than exempting each control
+ * inside one, we re-declare the surface tokens for the whole subtree, so every
+ * fill beneath snaps back in one place. (`.palette` is the command palette,
+ * which is an overlay too but not a `.modal`.)
+ */
+:root[data-fx]:not([data-fx='none']) .modal,
+:root[data-fx]:not([data-fx='none']) .palette {
+  --surface: var(--surface-solid);
+  --surface-2: var(--surface-2-solid);
+}
+/* ...including the two controls that were switched off globally just above. */
+:root[data-fx]:not([data-fx='none']) .modal .readonly,
+:root[data-fx]:not([data-fx='none']) .modal .help-combo,
+:root[data-fx]:not([data-fx='none']) .palette .readonly,
+:root[data-fx]:not([data-fx='none']) .palette .help-combo {
+  background: var(--bg);
+}
 .agent-picker,
 .mode-picker {
   display: flex;
