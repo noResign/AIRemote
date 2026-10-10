@@ -13,6 +13,8 @@ import type { SessionDto, WorkspaceDto } from '../../../shared/contract';
 export interface ConnectionScope {
   workspaces: WorkspaceDto[];
   sessions: SessionDto[];
+  /** Which workspace `sessions` was loaded for — see {@link visibleSessions}. */
+  sessionsWorkspaceId: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -20,6 +22,7 @@ export interface ConnectionScope {
 export const EMPTY_SCOPE: ConnectionScope = {
   workspaces: [],
   sessions: [],
+  sessionsWorkspaceId: null,
   loading: false,
   error: null,
 };
@@ -30,10 +33,25 @@ export type WorkspaceMutation = { ok: true; workspace?: WorkspaceDto } | { ok: f
 interface SessionsState {
   byConnection: Record<string, ConnectionScope>;
   /**
-   * `silent` skips the loading flag: the rail polls this on a timer, and
-   * flipping `loading` would flash skeletons over a list the user is reading.
+   * Workspaces and sessions load **separately**: the workspace list is what
+   * decides which sessions to ask for, so sessions can only be fetched once a
+   * workspace is chosen. `loadSessions` deliberately *requires* a `workspaceId`
+   * — asking the daemon without one returns every workspace's sessions, which is
+   * the batch that used to flash into the rail before the default workspace
+   * resolved.
+   *
+   * `silent` skips the loading flag: the rail polls on a timer, and flipping
+   * `loading` would flash skeletons over a list the user is reading.
    */
-  load(connectionId: string, workspaceId?: string, options?: { silent?: boolean }): Promise<void>;
+  loadWorkspaces(connectionId: string, options?: { silent?: boolean }): Promise<void>;
+  loadSessions(connectionId: string, workspaceId: string, options?: { silent?: boolean }): Promise<void>;
+  /**
+   * Re-read whatever batch the rail is currently showing. The store knows which
+   * workspace that is (`sessionsWorkspaceId`), so a caller like "a run just
+   * ended" doesn't have to — and can't accidentally ask for *all* workspaces.
+   * A no-op before the first batch has landed.
+   */
+  refreshCurrent(connectionId: string, options?: { silent?: boolean }): Promise<void>;
   patchTitle(connectionId: string, sessionId: string, title: string): void;
   remove(connectionId: string, sessionId: string): void;
 
@@ -49,10 +67,10 @@ interface SessionsState {
   removeWorkspaceDir(connectionId: string, id: string, path: string): Promise<WorkspaceMutation>;
 }
 
-export const useSessions = create<SessionsState>((set) => ({
+export const useSessions = create<SessionsState>((set, get) => ({
   byConnection: {},
 
-  async load(connectionId, workspaceId, options) {
+  async loadWorkspaces(connectionId, options) {
     if (!options?.silent) {
       set((state) => ({
         byConnection: {
@@ -62,8 +80,7 @@ export const useSessions = create<SessionsState>((set) => ({
       }));
     }
 
-    const [workspaces, sessions] = await Promise.all([api.workspaces(), api.sessions(workspaceId)]);
-    const failed = [workspaces, sessions].find((r) => !r.ok);
+    const res = await api.workspaces();
 
     set((state) => {
       const previous = state.byConnection[connectionId] ?? EMPTY_SCOPE;
@@ -71,14 +88,51 @@ export const useSessions = create<SessionsState>((set) => ({
         byConnection: {
           ...state.byConnection,
           [connectionId]: {
-            workspaces: workspaces.ok ? workspaces.data.workspaces : previous.workspaces,
-            sessions: sessions.ok ? sessions.data.sessions : previous.sessions,
+            ...previous,
+            workspaces: res.ok ? res.data.workspaces : previous.workspaces,
             loading: false,
-            error: failed ? `加载失败（HTTP ${failed.status}）` : null,
+            error: res.ok ? null : `加载失败（HTTP ${res.status}）`,
           },
         },
       };
     });
+  },
+
+  async loadSessions(connectionId, workspaceId, options) {
+    if (!options?.silent) {
+      set((state) => ({
+        byConnection: {
+          ...state.byConnection,
+          [connectionId]: { ...(state.byConnection[connectionId] ?? EMPTY_SCOPE), loading: true, error: null },
+        },
+      }));
+    }
+
+    const res = await api.sessions(workspaceId);
+
+    set((state) => {
+      const previous = state.byConnection[connectionId] ?? EMPTY_SCOPE;
+      return {
+        byConnection: {
+          ...state.byConnection,
+          [connectionId]: {
+            ...previous,
+            sessions: res.ok ? res.data.sessions : previous.sessions,
+            // Only a successful fetch establishes provenance — a failed one must
+            // not relabel the old batch as belonging to the new workspace.
+            sessionsWorkspaceId: res.ok ? workspaceId : previous.sessionsWorkspaceId,
+            loading: false,
+            error: res.ok ? null : `加载失败（HTTP ${res.status}）`,
+          },
+        },
+      };
+    });
+  },
+
+  async refreshCurrent(connectionId, options) {
+    const workspaceId = get().byConnection[connectionId]?.sessionsWorkspaceId;
+    if (!workspaceId) return;
+    await get().loadSessions(connectionId, workspaceId, options);
   },
 
   patchTitle(connectionId, sessionId, title) {
@@ -171,4 +225,14 @@ function mapWorkspaces(
 /** Read one connection's scope in a component. */
 export function useScope(connectionId: string | null): ConnectionScope {
   return useSessions((state) => (connectionId ? state.byConnection[connectionId] : undefined)) ?? EMPTY_SCOPE;
+}
+
+/**
+ * The sessions the rail may show: the loaded batch only counts when it was
+ * fetched for `workspaceId`. A batch belonging to another workspace — left over
+ * mid-switch, or the daemon's "every workspace" answer that used to arrive
+ * before a workspace was chosen — must never render.
+ */
+export function visibleSessions(scope: ConnectionScope, workspaceId: string): SessionDto[] {
+  return scope.sessionsWorkspaceId === workspaceId ? scope.sessions : [];
 }

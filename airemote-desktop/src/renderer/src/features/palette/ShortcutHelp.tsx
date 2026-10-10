@@ -1,6 +1,5 @@
-import { formatCombo, SHORTCUTS } from '../../shortcuts/shortcuts';
-
-const isMac = navigator.platform.toLowerCase().includes('mac');
+import { formatCombo, modLabel, SHORTCUTS } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 
 /** `?` — generated from the shortcut table, so it can never drift from it. */
 export function ShortcutHelp({ onClose }: { onClose(): void }) {
@@ -16,13 +15,13 @@ export function ShortcutHelp({ onClose }: { onClose(): void }) {
         <ul className="help-list">
           {SHORTCUTS.map((shortcut) => (
             <li key={shortcut.id}>
-              <kbd className="help-combo mono">{formatCombo(shortcut.combo, isMac)}</kbd>
+              <kbd className="help-combo mono">{formatCombo(shortcut.combo, IS_MAC)}</kbd>
               <span>{shortcut.label}</span>
             </li>
           ))}
         </ul>
         <div className="hint">
-          会话内还有：审批弹窗 <b>⌘⏎</b> 允许 / <b>⌘⌫</b> 拒绝（Esc 只会聚焦「拒绝」，不会关闭弹窗）。
+          会话内还有：审批弹窗 <b>{modLabel(IS_MAC)}⏎</b> 允许 / <b>{modLabel(IS_MAC)}⌫</b> 拒绝（Esc 只会聚焦「拒绝」，不会关闭弹窗）。
         </div>
       </div>
     </div>

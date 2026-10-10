@@ -5,6 +5,8 @@ import { useSessions } from '../../store/sessions';
 import { formatContextUsage, contextPercent } from '../../../../shared/format';
 import { PERMISSION_MODE_LABEL } from '../../../../shared/runtime-identity';
 import { RuntimeBadge } from '../../ui/RuntimeIcon';
+import { comboLabel } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 import { requiresModal } from '../../store/chat/permissions';
 import { Transcript } from './Transcript';
 import { Composer } from './Composer';
@@ -111,7 +113,7 @@ export function ChatView({ workspaceName, asideVisible, onToggleAside, onCollaps
           {chat.contextUsage && <ContextRing usage={chat.contextUsage} />}
           <RunStatus chat={chat} />
           {busy && (
-            <button className="btn" onClick={stop} title="停止当前运行 ⌘.">
+            <button className="btn" onClick={stop} title={`停止当前运行 ${comboLabel('stop-run', IS_MAC)}`}>
               停止
             </button>
           )}

@@ -3,6 +3,8 @@ import { useConnection } from '../../store/connection';
 import { useAppearance, ZOOM_MAX, ZOOM_MIN, RAIL_MIN, RAIL_MAX, type ThemePreference } from '../../store/appearance';
 import { WorkspaceSection } from '../workspaces/WorkspaceSection';
 import { PreferencesSection } from './PreferencesSection';
+import { modLabel } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 import type { AppInfo, AppPrefs, ManagedDaemonStatus } from '../../../../shared/ipc';
 
 const THEME_LABEL: Record<ThemePreference, string> = { light: '浅色', dark: '深色', system: '跟随系统' };
@@ -380,7 +382,7 @@ export function SettingsPage({
                   </div>
                 </div>
                 <div className="field">
-                  <label>界面缩放（{zoom}%，⌘+/−/0）</label>
+                  <label>界面缩放（{zoom}%，{modLabel(IS_MAC)}+/−/0）</label>
                   <input
                     type="range"
                     min={ZOOM_MIN}

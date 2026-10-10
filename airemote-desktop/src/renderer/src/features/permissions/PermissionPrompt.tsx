@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { PermissionDetail } from './PermissionDetail';
 import { UserInputPrompt } from './UserInputPrompt';
 import { RuntimeIcon } from '../../ui/RuntimeIcon';
+import { modLabel } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 import type { PendingPermission } from '../../store/chat/types';
 
 interface Props {
@@ -104,7 +106,7 @@ function ToolApprovalPrompt({ permission, queueLabel, submitting, inputError, ru
 
       <div className="perm-actions">
         <button className="btn primary" disabled={submitting} onClick={allow}>
-          允许 <kbd>⌘⏎</kbd>
+          允许 <kbd>{modLabel(IS_MAC)}⏎</kbd>
         </button>
         <button
           className="btn"
@@ -115,7 +117,7 @@ function ToolApprovalPrompt({ permission, queueLabel, submitting, inputError, ru
           允许全部
         </button>
         <button ref={denyRef} className="btn danger" disabled={submitting} onClick={deny}>
-          拒绝 <kbd>⌘⌫</kbd>
+          拒绝 <kbd>{modLabel(IS_MAC)}⌫</kbd>
         </button>
         <button className="btn ghost" disabled={submitting} onClick={() => setShowReason((value) => !value)}>
           理由

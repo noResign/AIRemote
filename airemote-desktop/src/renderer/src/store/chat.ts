@@ -419,7 +419,10 @@ export const useChat = create<ChatStore>((set, get) => ({
       if (event.outcome !== 'cancelled') {
         notifyRunFinished(event.outcome, runIdBeforeClose, { id: chat.sessionId, title: chat.title }, chat.error);
       }
-      void useSessions.getState().load(chat.connectionId, undefined);
+      // Refresh the batch the rail is showing (running/title just changed).
+      // `refreshCurrent` re-reads the workspace it is displaying — asking with no
+      // workspace would pull *every* workspace's sessions into the rail.
+      void useSessions.getState().refreshCurrent(chat.connectionId);
     }
   },
 

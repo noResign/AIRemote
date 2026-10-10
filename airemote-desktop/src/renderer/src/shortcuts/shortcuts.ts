@@ -92,6 +92,11 @@ export function matchShortcut(event: ComboMatchInput): Shortcut | null {
   return null;
 }
 
+/** Just the `mod` glyph — for prose like「⌘+/−/0」that isn't one combo. */
+export function modLabel(isMac: boolean): string {
+  return isMac ? '⌘' : 'Ctrl';
+}
+
 /** Human-readable combo for the help panel; `mod` renders per platform. */
 export function formatCombo(combo: string, isMac: boolean): string {
   return combo
@@ -99,13 +104,22 @@ export function formatCombo(combo: string, isMac: boolean): string {
     .map((part) => {
       const lower = part.trim().toLowerCase();
       if (MODIFIER_KEYS.has(lower)) {
-        if (lower === 'mod') return isMac ? '⌘' : 'Ctrl';
+        if (lower === 'mod') return modLabel(isMac);
         if (lower === 'shift') return isMac ? '⇧' : 'Shift';
         return isMac ? '⌥' : 'Alt';
       }
       return KEY_LABELS[lower] ?? part.trim().toUpperCase();
     })
     .join(isMac ? '' : '+');
+}
+
+/**
+ * Display string for a shortcut id — taken from the same table the help panel
+ * uses, so a rebind can never drift from a tooltip. `''` when the id is unknown.
+ */
+export function comboLabel(id: string, isMac: boolean): string {
+  const shortcut = SHORTCUTS.find((item) => item.id === id);
+  return shortcut ? formatCombo(shortcut.combo, isMac) : '';
 }
 
 export function isEditableTarget(target: EventTarget | null): boolean {

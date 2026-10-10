@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConnection } from '../../store/connection';
-import { useScope, useSessions } from '../../store/sessions';
+import { useScope, useSessions, visibleSessions } from '../../store/sessions';
 import { fallbackWorkspaceId } from '../../store/workspaceList';
 import { useChat, type NewSessionOptions } from '../../store/chat';
 import { useAppearance, type ThemePreference } from '../../store/appearance';
@@ -17,9 +17,11 @@ import { CommandPalette } from '../palette/CommandPalette';
 import { ShortcutHelp } from '../palette/ShortcutHelp';
 import { ConnectionSwitcher } from '../connect/ConnectionSwitcher';
 import { useToolGroups } from '../chat/toolGroups';
-import { isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
+import { comboLabel, isEditableTarget, isModifierless, matchShortcut } from '../../shortcuts/shortcuts';
+import { IS_MAC } from '../../ui/platform';
 import { createWindowFocus } from './windowFocus';
 import type { PaletteItem } from '../../commands/palette';
+import type { SessionDto } from '../../../../shared/contract';
 
 /** One per renderer process — see `windowFocus.ts` for why it is memoized. */
 const windowFocus = createWindowFocus(() => window.airemote.focusSession());
@@ -30,8 +32,8 @@ type Page = 'chat' | 'settings' | 'files';
  * macOS runs with `titleBarStyle: 'hiddenInset'` (src/main/window.ts), so the
  * traffic lights float over the web content rather than sitting in a title bar.
  * The class reserves the strip they occupy — see `.shell.darwin` in app.css.
+ * (`IS_MAC` itself lives in `ui/platform`.)
  */
-const IS_MAC = window.airemote.platform === 'darwin';
 
 /** How often the rail re-asks the daemon what is running (sessions.md §6.2). */
 const SESSION_POLL_MS = 5000;
@@ -47,7 +49,8 @@ export function AppShell() {
   const connectionId = useConnection((state) => state.activeId);
   const disconnectAll = useConnection((state) => state.disconnectAll);
   const scope = useScope(connectionId);
-  const load = useSessions((state) => state.load);
+  const loadWorkspaces = useSessions((state) => state.loadWorkspaces);
+  const loadSessions = useSessions((state) => state.loadSessions);
   const patchTitle = useSessions((state) => state.patchTitle);
   const dropSession = useSessions((state) => state.remove);
 
@@ -81,9 +84,16 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // The palette searches every workspace, not just the one the rail shows.
+  // Fetched fresh each time it opens; until then it falls back to the rail's list.
+  const [paletteSessions, setPaletteSessions] = useState<SessionDto[] | null>(null);
 
   const needsInput = useMemo(() => parseNeedsInput(waitingKey), [waitingKey]);
   const failed = useMemo(() => new Set(failedIds ? failedIds.split(',') : []), [failedIds]);
+  // The loaded batch only belongs to the workspace it was fetched for. Anything
+  // else — the "every workspace" answer that used to land before the default
+  // workspace resolved, or a batch left over mid-switch — must not render.
+  const sessions = useMemo(() => visibleSessions(scope, workspaceId), [scope, workspaceId]);
 
   // A different host means a different session list: drop the rail's selection
   // and let the default-workspace effect pick again.
@@ -92,10 +102,19 @@ export function AppShell() {
     setWorkspaceId('');
   }, [connectionId]);
 
+  // Workspaces first: they decide which workspace's sessions to ask for.
   useEffect(() => {
     if (!connectionId) return;
-    void load(connectionId, workspaceId || undefined);
-  }, [connectionId, workspaceId, load]);
+    void loadWorkspaces(connectionId);
+  }, [connectionId, loadWorkspaces]);
+
+  // Sessions only once a workspace is chosen. Never with an empty id — the daemon
+  // answers that with *every* workspace's sessions, which is the batch that used
+  // to flash into the rail before the default workspace resolved.
+  useEffect(() => {
+    if (!connectionId || !workspaceId) return;
+    void loadSessions(connectionId, workspaceId);
+  }, [connectionId, workspaceId, loadSessions]);
 
   /*
    * The rail's running marker comes from polling, not push (sessions.md §6.2):
@@ -105,17 +124,17 @@ export function AppShell() {
    * with it. Silent, so a poll never flashes skeletons over what is on screen.
    */
   useEffect(() => {
-    if (!connectionId) return;
+    if (!connectionId || !workspaceId) return;
     let inFlight = false;
     const timer = setInterval(() => {
       if (inFlight) return;
       inFlight = true;
-      void load(connectionId, workspaceId || undefined, { silent: true }).finally(() => {
+      void loadSessions(connectionId, workspaceId, { silent: true }).finally(() => {
         inFlight = false;
       });
     }, SESSION_POLL_MS);
     return () => clearInterval(timer);
-  }, [connectionId, workspaceId, load]);
+  }, [connectionId, workspaceId, loadSessions]);
 
   // Pick the default workspace once, then keep whatever the user chose.
   useEffect(() => {
@@ -147,14 +166,28 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [toast]);
 
+  // The command palette spans the whole host, so it needs a session list the
+  // rail deliberately doesn't hold (the rail only ever shows one workspace).
+  // Pulled on open — a snapshot is enough for search.
+  useEffect(() => {
+    if (!paletteOpen || !connectionId) return;
+    let cancelled = false;
+    void api.sessions().then((res) => {
+      if (!cancelled && res.ok) setPaletteSessions(res.data.sessions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [paletteOpen, connectionId]);
+
   // The tray lives in main; only the renderer knows what is running.
   useEffect(() => {
-    const running = scope.sessions.filter((session) => session.running);
+    const running = sessions.filter((session) => session.running);
     void window.airemote.trayState({
       runningCount: running.length,
       sessions: running.map((session) => ({ id: session.id, title: session.title ?? '未命名会话' })),
     });
-  }, [scope.sessions]);
+  }, [sessions]);
 
   /*
    * Report which session this window shows: the notification rule needs it, and
@@ -189,7 +222,7 @@ export function AppShell() {
   );
 
   const selectedWorkspace = scope.workspaces.find((workspace) => workspace.id === workspaceId) ?? null;
-  const runningCount = scope.sessions.filter((session) => session.running).length;
+  const runningCount = sessions.filter((session) => session.running).length;
   const overlayOpen = paletteOpen || helpOpen || newSessionOpen;
 
   function openSettings(section: SettingsSection = 'connection'): void {
@@ -203,6 +236,16 @@ export function AppShell() {
     if (connectionId) void openSession(connectionId, id);
   }
 
+  /**
+   * Open a session picked from the palette. If it lives in another workspace,
+   * switch there first — the rail only ever shows the current workspace, so
+   * otherwise there would be no row to highlight.
+   */
+  function openSessionIn(id: string, targetWorkspaceId: string | null): void {
+    if (targetWorkspaceId && targetWorkspaceId !== workspaceId) setWorkspaceId(targetWorkspaceId);
+    select(id);
+  }
+
   function switchWorkspace(id: string): void {
     setWorkspaceId(id);
     setSelectedId(null);
@@ -210,14 +253,18 @@ export function AppShell() {
   }
 
   function stepSession(delta: number): void {
-    if (scope.sessions.length === 0) return;
-    const index = scope.sessions.findIndex((session) => session.id === selectedId);
-    const next = scope.sessions[(index + delta + scope.sessions.length) % scope.sessions.length];
+    if (sessions.length === 0) return;
+    const index = sessions.findIndex((session) => session.id === selectedId);
+    const next = sessions[(index + delta + sessions.length) % sessions.length];
     if (next) select(next.id);
   }
 
   function refresh(): void {
-    if (connectionId) void load(connectionId, workspaceId || undefined);
+    if (!connectionId) return;
+    // Refresh both: a workspace another device just created only shows up if we
+    // re-ask for the list (the poll below only re-reads sessions).
+    void loadWorkspaces(connectionId, { silent: true });
+    if (workspaceId) void loadSessions(connectionId, workspaceId);
   }
 
   async function renameSession(id: string, title: string): Promise<void> {
@@ -295,14 +342,20 @@ export function AppShell() {
 
   function buildPaletteItems(): PaletteItem[] {
     const items: PaletteItem[] = [];
-    for (const session of scope.sessions) {
+    for (const session of paletteSessions ?? sessions) {
       items.push({
         id: `session:${session.id}`,
         section: '会话',
         label: session.title ?? '未命名会话',
-        hint: [session.runtime, session.running ? '运行中' : null].filter(Boolean).join(' · '),
+        hint: [
+          scope.workspaces.find((workspace) => workspace.id === session.workspaceId)?.name,
+          session.runtime,
+          session.running ? '运行中' : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         keywords: session.cwd,
-        run: () => select(session.id),
+        run: () => openSessionIn(session.id, session.workspaceId),
       });
     }
     for (const workspace of scope.workspaces) {
@@ -368,7 +421,7 @@ export function AppShell() {
         // back is ⌘B or the palette, both invisible (matches the right panel's
         // collapse-to-44px in the design preview).
         <div className="rail-strip">
-          <button className="link-btn" title="展开会话栏 ⌘B" onClick={toggleRail}>
+          <button className="link-btn" title={`展开会话栏 ${comboLabel('toggle-rail', IS_MAC)}`} onClick={toggleRail}>
             ⇥
           </button>
         </div>
@@ -384,7 +437,7 @@ export function AppShell() {
                 </option>
               ))}
             </select>
-            <button className="btn primary" onClick={() => setNewSessionOpen(true)} title="新建会话 ⌘N">
+            <button className="btn primary" onClick={() => setNewSessionOpen(true)} title={`新建会话 ${comboLabel('new-session', IS_MAC)}`}>
               ＋ 新建会话
             </button>
           </div>
@@ -396,7 +449,7 @@ export function AppShell() {
               </div>
             ) : (
               <SessionList
-                sessions={scope.sessions}
+                sessions={sessions}
                 selectedId={selectedId}
                 needsInput={needsInput}
                 failed={failed}
@@ -422,13 +475,13 @@ export function AppShell() {
             <button className={`link-btn${page === 'settings' ? ' active' : ''}`} onClick={() => openSettings()}>
               ⚙ 设置
             </button>
-            <button className="link-btn" title="刷新 ⌘R" onClick={refresh}>
+            <button className="link-btn" title={`刷新 ${comboLabel('refresh', IS_MAC)}`} onClick={refresh}>
               <RefreshIcon />
             </button>
-            <button className="link-btn" title="命令面板 ⌘K" onClick={() => setPaletteOpen(true)}>
-              ⌘K
+            <button className="link-btn" title={`命令面板 ${comboLabel('command-palette', IS_MAC)}`} onClick={() => setPaletteOpen(true)}>
+              {comboLabel('command-palette', IS_MAC)}
             </button>
-            <button className="link-btn" title="收起会话栏 ⌘B" onClick={toggleRail}>
+            <button className="link-btn" title={`收起会话栏 ${comboLabel('toggle-rail', IS_MAC)}`} onClick={toggleRail}>
               ⇤
             </button>
             <span className="rail-running">{runningCount > 0 ? `● ${runningCount}` : ''}</span>

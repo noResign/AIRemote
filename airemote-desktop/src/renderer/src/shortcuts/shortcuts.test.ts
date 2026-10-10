@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { comboMatches, formatCombo, matchShortcut, SHORTCUTS, type ComboMatchInput } from './shortcuts';
+import { comboLabel, comboMatches, formatCombo, matchShortcut, SHORTCUTS, type ComboMatchInput } from './shortcuts';
 
 function key(over: Partial<ComboMatchInput> & { key: string }): ComboMatchInput {
   return { metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over };
@@ -58,5 +58,13 @@ describe('formatCombo', () => {
 
   it('spells named keys instead of uppercasing them', () => {
     expect(formatCombo('escape', true)).toBe('Esc');
+  });
+});
+
+describe('comboLabel', () => {
+  it('resolves a shortcut id through the shared table, per platform', () => {
+    expect(comboLabel('command-palette', true)).toBe('⌘K');
+    expect(comboLabel('command-palette', false)).toBe('Ctrl+K');
+    expect(comboLabel('nope', true)).toBe('');
   });
 });
